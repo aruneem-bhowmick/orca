@@ -59,10 +59,10 @@ wandb/
 outputs/
 .hydra/
 
-# Data directories (local dev)
-data/
-models/
-logs/
+# Data directories (local dev — anchored to repo root to avoid ignoring source packages)
+/data/
+/models/
+/logs/
 
 # MinIO local data
 minio-data/
