@@ -1,0 +1,29 @@
+# @package _global_.model
+name: maml
+algorithm: MAML
+
+# Inner loop (task-level adaptation)
+inner_lr: 0.01
+inner_steps: 5
+first_order: false          # Set true for FOMAML (faster, slightly less accurate)
+
+# Outer loop (meta-optimizer)
+outer_lr: 0.001
+meta_batch_size: 4          # Number of tasks per meta-update
+
+# Base model architecture (MLP for tabular tasks)
+base_model:
+  type: mlp
+  hidden_dims: [256, 128, 64]
+  activation: relu
+  dropout: 0.2
+  batch_norm: true
+
+# Meta-training schedule
+max_meta_epochs: 1000
+eval_every: 50
+patience: 100               # Early stopping patience in meta-epochs
+
+# Task sampling
+support_size: 10            # K in K-shot learning
+query_size: 15

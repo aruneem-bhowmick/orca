@@ -1,0 +1,28 @@
+# @package _global_.dataset
+name: openml
+source: openml
+
+# OpenML benchmark suite
+suite_id: 271               # OpenML-CC18 curated classification suite
+max_tasks: 72               # Cap for development; set to null for all tasks
+
+# Dataset filtering
+min_samples: 100
+max_samples: 100000
+min_features: 2
+max_features: 500
+task_types:
+  - classification
+  - regression
+
+# Preprocessing
+imputation_strategy: median
+scaling: standard
+categorical_encoding: ordinal
+train_ratio: 0.7
+val_ratio: 0.15
+test_ratio: 0.15
+
+# Caching
+cache_dir: ${paths.data_dir}/openml
+force_reload: false
