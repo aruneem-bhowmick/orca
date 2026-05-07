@@ -1,6 +1,6 @@
 # Tool/editor directories
-.history
-.specstory
+.history/
+.specstory/
 .cursorindexingignore
 
 # Project docs (non-source)
@@ -8,3 +8,69 @@ docs-orca/
 
 # Environment
 .env
+.env.*
+!.env.example
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+build/
+dist/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+
+# Testing & coverage
+.pytest_cache/
+.coverage
+.coverage.*
+htmlcov/
+coverage.xml
+
+# Type checking
+.mypy_cache/
+.dmypy.json
+dmypy.json
+
+# IDEs
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.DS_Store
+
+# ML / experiment artifacts
+mlruns/
+mlartifacts/
+*.pt
+*.pth
+*.ckpt
+*.pkl
+*.joblib
+wandb/
+outputs/
+.hydra/
+
+# Data directories (local dev — anchored to repo root to avoid ignoring source packages)
+/data/
+/models/
+/logs/
+
+# MinIO local data
+minio-data/
+
+# Jupyter
+.ipynb_checkpoints/
+*.ipynb
+
+# uv
+.python-version
+uv.lock

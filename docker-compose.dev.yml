@@ -1,0 +1,165 @@
+# Development environment for the Orca ecosystem.
+# Start with: make docker-up  OR  docker compose -f docker-compose.dev.yml up -d
+
+version: "3.9"
+
+x-restart-policy: &restart-policy
+  restart: unless-stopped
+
+x-logging: &default-logging
+  logging:
+    driver: json-file
+    options:
+      max-size: "10m"
+      max-file: "3"
+
+services:
+  # ── Postgres 15 ─────────────────────────────────────────────────────────────
+  postgres:
+    image: postgres:15-alpine
+    <<: [*restart-policy, *default-logging]
+    environment:
+      POSTGRES_USER: orca
+      POSTGRES_PASSWORD: orca_dev_secret
+      POSTGRES_DB: orca_registry
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    ports:
+      - "5432:5432"
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U orca -d orca_registry"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # ── Redis 7 ─────────────────────────────────────────────────────────────────
+  redis:
+    image: redis:7-alpine
+    <<: [*restart-policy, *default-logging]
+    command: redis-server --save 60 1 --loglevel warning
+    volumes:
+      - redis-data:/data
+    ports:
+      - "6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
+
+  # ── MinIO (S3-compatible object storage) ────────────────────────────────────
+  minio:
+    image: minio/minio:latest
+    <<: [*restart-policy, *default-logging]
+    command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: orca_minio_user
+      MINIO_ROOT_PASSWORD: orca_minio_secret
+    volumes:
+      - minio-data:/data
+    ports:
+      - "9000:9000"   # S3 API
+      - "9001:9001"   # MinIO console UI
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
+  # ── MLflow tracking server ───────────────────────────────────────────────────
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:v2.10.0
+    <<: [*restart-policy, *default-logging]
+    command: >
+      mlflow server
+        --backend-store-uri postgresql://orca:orca_dev_secret@postgres:5432/orca_registry
+        --default-artifact-root s3://mlflow-artifacts/
+        --host 0.0.0.0
+        --port 5000
+    environment:
+      MLFLOW_S3_ENDPOINT_URL: http://minio:9000
+      AWS_ACCESS_KEY_ID: orca_minio_user
+      AWS_SECRET_ACCESS_KEY: orca_minio_secret
+    ports:
+      - "5000:5000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5000/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ── Prefect server ───────────────────────────────────────────────────────────
+  prefect:
+    image: prefecthq/prefect:2-latest
+    <<: [*restart-policy, *default-logging]
+    command: prefect server start --host 0.0.0.0 --port 4200
+    environment:
+      PREFECT_UI_API_URL: http://localhost:4200/api
+      PREFECT_API_DATABASE_CONNECTION_URL: postgresql+asyncpg://orca:orca_dev_secret@postgres:5432/orca_registry
+    ports:
+      - "4200:4200"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:4200/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+  # ── OrcaMind (stub — uncomment when image is built) ─────────────────────────
+  # orcamind:
+  #   build:
+  #     context: .
+  #     dockerfile: packages/orcamind/Dockerfile
+  #   ports:
+  #     - "8000:8000"
+  #   environment:
+  #     DATABASE_URL: postgresql+asyncpg://orca:orca_dev_secret@postgres:5432/orca_registry
+  #     REDIS_URL: redis://redis:6379
+  #     MINIO_ENDPOINT: minio:9000
+  #     MINIO_ACCESS_KEY: orca_minio_user
+  #     MINIO_SECRET_KEY: orca_minio_secret
+  #     MLFLOW_TRACKING_URI: http://mlflow:5000
+  #   depends_on:
+  #     - postgres
+  #     - redis
+  #     - minio
+  #     - mlflow
+
+  # ── OrcaLab (stub — future package) ─────────────────────────────────────────
+  # orcalab:
+  #   build:
+  #     context: .
+  #     dockerfile: packages/orcalab/Dockerfile
+  #   ports:
+  #     - "8001:8001"
+  #   depends_on:
+  #     - postgres
+  #     - redis
+  #     - orcamind
+
+  # ── OrcaNet (stub — future package) ─────────────────────────────────────────
+  # orcanet:
+  #   build:
+  #     context: .
+  #     dockerfile: packages/orcanet/Dockerfile
+  #   ports:
+  #     - "8002:8002"
+  #   depends_on:
+  #     - postgres
+  #     - orcamind
+
+volumes:
+  postgres-data:
+  redis-data:
+  minio-data:
+
+networks:
+  default:
+    name: orca-dev-network
