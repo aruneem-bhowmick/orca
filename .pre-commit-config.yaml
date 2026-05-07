@@ -1,0 +1,25 @@
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.1.9
+    hooks:
+      - id: ruff
+        args: [--fix]
+      - id: ruff-format
+
+  - repo: https://github.com/pre-commit/mirrors-mypy
+    rev: v1.7.1
+    hooks:
+      - id: mypy
+        additional_dependencies:
+          - pydantic>=2.4.0
+          - types-redis
+        args: [--config-file=pyproject.toml]
+
+  - repo: local
+    hooks:
+      - id: pytest-unit
+        name: pytest (unit tests only)
+        entry: pytest packages/orcamind/tests/unit packages/orca-shared/tests -x -q
+        language: system
+        pass_filenames: false
+        stages: [pre-push]
