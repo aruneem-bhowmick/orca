@@ -74,6 +74,10 @@ class StatisticalEmbedder(TaskEmbedder):
         n_rows, n_cols = dataset.shape
         if n_rows == 0 or n_cols == 0:
             return vec
+        if labels is not None and len(labels) != n_rows:
+            raise ValueError(
+                f"labels length ({len(labels)}) must match dataset rows ({n_rows})"
+            )
 
         # ---- 0: log_n_samples ----
         vec[0] = _safe(np.log10(max(n_rows, 1)))
