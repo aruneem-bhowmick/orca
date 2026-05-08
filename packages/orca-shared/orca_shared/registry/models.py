@@ -8,7 +8,7 @@ from typing import Any, AsyncGenerator, Optional
 from sqlalchemy import BigInteger, Boolean, Float, ForeignKey, Integer, String, Text, func
 from sqlalchemy.dialects.postgresql import ARRAY, JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column, relationship
 from sqlalchemy.types import DateTime
 
@@ -213,10 +213,13 @@ class SearchSpace(Base):
     )
 
 
-def get_engine(database_url: str):
+def get_engine(database_url: str) -> AsyncEngine:
     """Return an AsyncEngine for the given asyncpg database URL."""
-    if database_url.startswith("postgresql://"):
-        database_url = database_url.replace("postgresql://", "postgresql+asyncpg://", 1)
+    if "+" not in database_url.split("://")[0]:
+        if database_url.startswith("postgres://"):
+            database_url = "postgresql+asyncpg://" + database_url[len("postgres://"):]
+        elif database_url.startswith("postgresql://"):
+            database_url = "postgresql+asyncpg://" + database_url[len("postgresql://"):]
     return create_async_engine(database_url, echo=False, pool_pre_ping=True)
 
 
