@@ -1,0 +1,194 @@
+from __future__ import annotations
+
+import uuid
+from datetime import datetime, timezone
+from typing import Any, Optional
+
+from sqlalchemy import select, update
+from sqlalchemy.ext.asyncio import AsyncSession
+
+from orca_shared.registry.models import (
+    Experiment as ExperimentORM,
+    Performance as PerformanceORM,
+    Task as TaskORM,
+)
+from orca_shared.schemas.metrics import MetricPoint, PerformanceMetrics
+from orca_shared.schemas.task import Task, TaskCreate, TaskSummary
+from orca_shared.schemas.training import ExperimentResult
+
+
+class TaskRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def create(self, data: TaskCreate) -> Task:
+        row = TaskORM(
+            task_id=uuid.uuid4(),
+            name=data.name,
+            domain=data.domain,
+            task_type=data.task_type,
+            n_samples=data.n_samples,
+            n_features=data.n_features,
+            n_classes=data.n_classes,
+            dataset_uri=data.dataset_uri,
+            task_metadata=data.metadata,
+            created_at=datetime.now(timezone.utc),
+            updated_at=datetime.now(timezone.utc),
+        )
+        self._session.add(row)
+        await self._session.flush()
+        return Task.model_validate(row)
+
+    async def get_by_id(self, task_id: uuid.UUID) -> Optional[Task]:
+        result = await self._session.execute(
+            select(TaskORM).where(TaskORM.task_id == task_id)
+        )
+        row = result.scalar_one_or_none()
+        return Task.model_validate(row) if row is not None else None
+
+    async def list_by_domain(
+        self, domain: str, *, limit: int = 500, offset: int = 0
+    ) -> list[TaskSummary]:
+        result = await self._session.execute(
+            select(TaskORM).where(TaskORM.domain == domain).limit(limit).offset(offset)
+        )
+        return [TaskSummary.model_validate(r) for r in result.scalars()]
+
+    async def list_by_type(
+        self, task_type: str, *, limit: int = 500, offset: int = 0
+    ) -> list[TaskSummary]:
+        result = await self._session.execute(
+            select(TaskORM).where(TaskORM.task_type == task_type).limit(limit).offset(offset)
+        )
+        return [TaskSummary.model_validate(r) for r in result.scalars()]
+
+    async def update_embedding(self, task_id: uuid.UUID, embedding_id: uuid.UUID) -> None:
+        await self._session.execute(
+            update(TaskORM)
+            .where(TaskORM.task_id == task_id)
+            .values(embedding_id=embedding_id, updated_at=datetime.now(timezone.utc))
+        )
+
+
+class ExperimentRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def create(
+        self,
+        task_id: uuid.UUID,
+        model_id: uuid.UUID,
+        training_config: dict[str, Any] | None = None,
+        created_by: str | None = None,
+    ) -> ExperimentResult:
+        row = ExperimentORM(
+            experiment_id=uuid.uuid4(),
+            task_id=task_id,
+            model_id=model_id,
+            training_config=training_config,
+            status="pending",
+            created_by=created_by,
+        )
+        self._session.add(row)
+        await self._session.flush()
+        return ExperimentResult.model_validate(row)
+
+    async def get_by_id(self, experiment_id: uuid.UUID) -> Optional[ExperimentResult]:
+        result = await self._session.execute(
+            select(ExperimentORM).where(ExperimentORM.experiment_id == experiment_id)
+        )
+        row = result.scalar_one_or_none()
+        return ExperimentResult.model_validate(row) if row is not None else None
+
+    async def list_by_task(
+        self, task_id: uuid.UUID, *, limit: int = 500, offset: int = 0
+    ) -> list[ExperimentResult]:
+        result = await self._session.execute(
+            select(ExperimentORM)
+            .where(ExperimentORM.task_id == task_id)
+            .limit(limit)
+            .offset(offset)
+        )
+        return [ExperimentResult.model_validate(r) for r in result.scalars()]
+
+    async def update_status(self, experiment_id: uuid.UUID, status: str) -> None:
+        await self._session.execute(
+            update(ExperimentORM)
+            .where(ExperimentORM.experiment_id == experiment_id)
+            .values(status=status)
+        )
+
+    async def mark_complete(
+        self, experiment_id: uuid.UUID, mlflow_run_id: str
+    ) -> None:
+        await self._session.execute(
+            update(ExperimentORM)
+            .where(ExperimentORM.experiment_id == experiment_id)
+            .values(
+                status="completed",
+                mlflow_run_id=mlflow_run_id,
+                completed_at=datetime.now(timezone.utc),
+            )
+        )
+
+
+class PerformanceRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def log_metric(
+        self,
+        experiment_id: uuid.UUID,
+        name: str,
+        value: float,
+        epoch: int | None = None,
+        is_final: bool = False,
+    ) -> MetricPoint:
+        row = PerformanceORM(
+            performance_id=uuid.uuid4(),
+            experiment_id=experiment_id,
+            metric_name=name,
+            metric_value=value,
+            epoch=epoch,
+            is_final=is_final,
+        )
+        self._session.add(row)
+        await self._session.flush()
+        return MetricPoint(name=name, value=value, step=epoch, is_final=is_final)
+
+    async def get_final_metrics(self, experiment_id: uuid.UUID) -> PerformanceMetrics:
+        result = await self._session.execute(
+            select(PerformanceORM).where(
+                PerformanceORM.experiment_id == experiment_id,
+                PerformanceORM.is_final.is_(True),
+            )
+        )
+        rows = list(result.scalars())
+        final_metrics = {
+            r.metric_name: r.metric_value for r in rows if r.metric_name is not None
+        }
+        best_epoch = max((r.epoch for r in rows if r.epoch is not None), default=None)
+        return PerformanceMetrics(
+            experiment_id=experiment_id,
+            final_metrics=final_metrics,
+            best_epoch=best_epoch,
+        )
+
+    async def get_history(
+        self, experiment_id: uuid.UUID, metric_name: str
+    ) -> list[MetricPoint]:
+        result = await self._session.execute(
+            select(PerformanceORM).where(
+                PerformanceORM.experiment_id == experiment_id,
+                PerformanceORM.metric_name == metric_name,
+            )
+        )
+        return [
+            MetricPoint(
+                name=r.metric_name,
+                value=r.metric_value if r.metric_value is not None else 0.0,
+                step=r.epoch,
+                is_final=r.is_final,
+            )
+            for r in result.scalars()
+        ]
