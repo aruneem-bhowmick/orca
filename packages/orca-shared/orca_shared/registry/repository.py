@@ -176,8 +176,8 @@ class PerformanceRepository:
         )
         return [
             MetricPoint(
-                name=r.metric_name or metric_name,
-                value=r.metric_value or 0.0,
+                name=r.metric_name,
+                value=r.metric_value if r.metric_value is not None else 0.0,
                 step=r.epoch,
                 is_final=r.is_final,
             )
