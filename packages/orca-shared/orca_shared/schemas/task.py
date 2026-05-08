@@ -4,7 +4,7 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field
 
 
 class TaskCreate(BaseModel):
@@ -19,7 +19,10 @@ class TaskCreate(BaseModel):
 
 
 class Task(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
+    # populate_by_name lets callers use "metadata" directly while
+    # from_attributes mode will resolve via "task_metadata" on the ORM row
+    # (avoiding the DeclarativeBase.metadata class-attribute collision).
+    model_config = ConfigDict(from_attributes=True, populate_by_name=True)
 
     task_id: UUID
     name: str
@@ -29,7 +32,10 @@ class Task(BaseModel):
     n_features: int | None = None
     n_classes: int | None = None
     dataset_uri: str | None = None
-    metadata: dict[str, Any] | None = None
+    metadata: dict[str, Any] | None = Field(
+        default=None,
+        validation_alias=AliasChoices("task_metadata", "metadata"),
+    )
     embedding_id: UUID | None = None
     created_at: datetime
     updated_at: datetime
