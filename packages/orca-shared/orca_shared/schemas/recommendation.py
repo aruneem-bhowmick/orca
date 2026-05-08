@@ -2,14 +2,14 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class RecommendationRequest(BaseModel):
     task_embedding: list[float]
     domain: str | None = None
     task_type: str | None = None
-    top_k: int = 5
+    top_k: int = Field(default=5, ge=1)
 
 
 class ModelRecommendation(BaseModel):
