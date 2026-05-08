@@ -4,13 +4,13 @@ from datetime import datetime
 from typing import Any
 from uuid import UUID
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 
 class TrainingConfig(BaseModel):
-    batch_size: int = 32
-    lr: float = 1e-3
-    epochs: int = 10
+    batch_size: int = Field(default=32, gt=0)
+    lr: float = Field(default=1e-3, gt=0)
+    epochs: int = Field(default=10, gt=0)
     optimizer: str = "adam"
     scheduler: str | None = None
     extra: dict[str, Any] | None = None
