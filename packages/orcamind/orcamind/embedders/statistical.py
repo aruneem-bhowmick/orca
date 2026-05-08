@@ -170,51 +170,52 @@ class StatisticalEmbedder(TaskEmbedder):
         # ---- 20–24: class-feature relationships (classification only) ----
         if is_classification and labels is not None:
             numeric_X = dataset.select_dtypes(include=[np.number])
-            if numeric_X.shape[1] > 0 and numeric_X.shape[0] >= 5:
-                valid_mask = labels.notna().values
-                X = numeric_X.values[valid_mask]
-                y = labels.values[valid_mask]
+            if numeric_X.shape[1] > 0:
+                aligned_labels = labels.reindex(dataset.index)
+                valid_mask = aligned_labels.notna()
+                X = numeric_X.loc[valid_mask].values
+                y = aligned_labels.loc[valid_mask].values
+                if X.shape[0] >= 5:
+                    # Impute NaN columns with column mean so sklearn doesn't choke
+                    col_means_imp = np.nanmean(X, axis=0)
+                    nan_cols = np.isnan(col_means_imp)
+                    col_means_imp[nan_cols] = 0.0
+                    nan_mask = np.isnan(X)
+                    X = np.where(nan_mask, np.broadcast_to(col_means_imp, X.shape), X)
 
-                # Impute NaN columns with column mean so sklearn doesn't choke
-                col_means_imp = np.nanmean(X, axis=0)
-                nan_cols = np.isnan(col_means_imp)
-                col_means_imp[nan_cols] = 0.0
-                nan_mask = np.isnan(X)
-                X = np.where(nan_mask, np.broadcast_to(col_means_imp, X.shape), X)
+                    classes_unique = np.unique(y)
+                    if len(classes_unique) >= 2:
+                        try:
+                            f_vals, _ = f_classif(X, y)
+                            f_vals = np.nan_to_num(f_vals.astype(float), nan=0.0, posinf=0.0, neginf=0.0)
+                            vec[20] = _safe(float(np.mean(f_vals)))
+                            vec[21] = _safe(float(np.std(f_vals, ddof=0)))
+                        except Exception:
+                            pass
 
-                classes_unique = np.unique(y)
-                if len(classes_unique) >= 2:
-                    try:
-                        f_vals, _ = f_classif(X, y)
-                        f_vals = np.nan_to_num(f_vals.astype(float), nan=0.0, posinf=0.0, neginf=0.0)
-                        vec[20] = _safe(float(np.mean(f_vals)))
-                        vec[21] = _safe(float(np.std(f_vals, ddof=0)))
-                    except Exception:
-                        pass
+                        try:
+                            mi_vals = mutual_info_classif(X, y, random_state=0)
+                            mi_vals = np.nan_to_num(mi_vals.astype(float), nan=0.0, posinf=0.0, neginf=0.0)
+                            vec[22] = _safe(float(np.mean(mi_vals)))
+                            vec[23] = _safe(float(np.std(mi_vals, ddof=0)))
+                        except Exception:
+                            pass
 
-                    try:
-                        mi_vals = mutual_info_classif(X, y, random_state=0)
-                        mi_vals = np.nan_to_num(mi_vals.astype(float), nan=0.0, posinf=0.0, neginf=0.0)
-                        vec[22] = _safe(float(np.mean(mi_vals)))
-                        vec[23] = _safe(float(np.std(mi_vals, ddof=0)))
-                    except Exception:
-                        pass
-
-                    # class_separability: between-class var / within-class var ratio
-                    try:
-                        grand_mean = np.mean(X, axis=0)
-                        between_var = sum(
-                            np.sum((np.mean(X[y == c], axis=0) - grand_mean) ** 2) * np.sum(y == c)
-                            for c in classes_unique
-                        ) / max(X.shape[0], 1)
-                        within_var = sum(
-                            np.sum((X[y == c] - np.mean(X[y == c], axis=0)) ** 2)
-                            for c in classes_unique
-                        ) / max(X.shape[0], 1)
-                        if within_var > 1e-10:
-                            vec[24] = _safe(float(between_var / within_var))
-                    except Exception:
-                        pass
+                        # class_separability: between-class var / within-class var ratio
+                        try:
+                            grand_mean = np.mean(X, axis=0)
+                            between_var = sum(
+                                np.sum((np.mean(X[y == c], axis=0) - grand_mean) ** 2) * np.sum(y == c)
+                                for c in classes_unique
+                            ) / max(X.shape[0], 1)
+                            within_var = sum(
+                                np.sum((X[y == c] - np.mean(X[y == c], axis=0)) ** 2)
+                                for c in classes_unique
+                            ) / max(X.shape[0], 1)
+                            if within_var > 1e-10:
+                                vec[24] = _safe(float(between_var / within_var))
+                        except Exception:
+                            pass
 
         return vec
 
