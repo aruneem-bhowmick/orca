@@ -12,10 +12,11 @@ class LocalStorageBackend(StorageBackend):
     def __init__(self, base_path: str | Path) -> None:
         self._base = Path(base_path)
         self._base.mkdir(parents=True, exist_ok=True)
+        self._resolved_base = self._base.resolve()
 
     def _resolve(self, key: str) -> Path:
         path = (self._base / key).resolve()
-        if not str(path).startswith(str(self._base.resolve())):
+        if not str(path).startswith(str(self._resolved_base) + "/"):
             raise ValueError(f"Key '{key}' escapes the storage root")
         return path
 
