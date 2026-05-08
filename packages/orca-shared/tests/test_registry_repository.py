@@ -406,6 +406,7 @@ class TestPerformanceRepositoryGetFinalMetrics:
 
         assert "acc" in result.final_metrics
         assert None not in result.final_metrics
+        assert result.best_epoch == 3
 
     @pytest.mark.asyncio
     async def test_best_epoch_none_when_all_epochs_none(self, mock_session, experiment_id):
