@@ -15,5 +15,6 @@ class MetricLogger:
         mlflow.log_metric(name, value, step=step, run_id=self._run_id)
 
     def log_batch(self, metrics: dict[str, float], step: int | None = None) -> None:
-        for name, value in metrics.items():
-            self.log(name, value, step=step)
+        import mlflow
+
+        mlflow.log_metrics(metrics, step=step, run_id=self._run_id)
