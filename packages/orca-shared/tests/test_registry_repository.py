@@ -200,7 +200,7 @@ class TestExperimentRepositoryCreate:
             task_id, model_id, training_config=cfg
         )
         # training_config is stored on the ORM row; ExperimentResult has no field for it
-        added_row = mock_session.add.call_args[0][0]
+        added_row = mock_session.add.call_args.args[0]
         assert added_row.training_config == cfg
 
     @pytest.mark.asyncio
@@ -208,7 +208,7 @@ class TestExperimentRepositoryCreate:
         await ExperimentRepository(mock_session).create(
             task_id, model_id, created_by="alice"
         )
-        added_row = mock_session.add.call_args[0][0]
+        added_row = mock_session.add.call_args.args[0]
         assert added_row.created_by == "alice"
 
     @pytest.mark.asyncio
@@ -336,7 +336,7 @@ class TestPerformanceRepositoryLogMetric:
         await PerformanceRepository(mock_session).log_metric(
             experiment_id, "acc", 0.9, epoch=3, is_final=True
         )
-        row = mock_session.add.call_args[0][0]
+        row = mock_session.add.call_args.args[0]
         assert row.metric_name == "acc"
         assert row.metric_value == pytest.approx(0.9)
         assert row.epoch == 3
