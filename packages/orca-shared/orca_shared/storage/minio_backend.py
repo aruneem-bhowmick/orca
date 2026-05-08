@@ -69,15 +69,20 @@ class MinioStorageBackend(StorageBackend):
         bucket, obj = self._split_key(key)
 
         def _remove() -> bool:
+            from minio.error import S3Error
+
             try:
                 self._client.remove_object(bucket, obj)
                 return True
-            except Exception:
+            except S3Error:
                 return False
 
         return await asyncio.to_thread(_remove)
 
     async def list(self, prefix: str = "") -> list[str]:
+        if not prefix:
+            return []
+
         bucket, obj_prefix = (prefix.split("/", 1) + [""])[:2] if "/" in prefix else (prefix, "")
 
         def _list() -> list[str]:
