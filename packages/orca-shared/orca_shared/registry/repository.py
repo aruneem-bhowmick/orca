@@ -46,15 +46,19 @@ class TaskRepository:
         row = result.scalar_one_or_none()
         return Task.model_validate(row) if row is not None else None
 
-    async def list_by_domain(self, domain: str) -> list[TaskSummary]:
+    async def list_by_domain(
+        self, domain: str, *, limit: int = 500, offset: int = 0
+    ) -> list[TaskSummary]:
         result = await self._session.execute(
-            select(TaskORM).where(TaskORM.domain == domain)
+            select(TaskORM).where(TaskORM.domain == domain).limit(limit).offset(offset)
         )
         return [TaskSummary.model_validate(r) for r in result.scalars()]
 
-    async def list_by_type(self, task_type: str) -> list[TaskSummary]:
+    async def list_by_type(
+        self, task_type: str, *, limit: int = 500, offset: int = 0
+    ) -> list[TaskSummary]:
         result = await self._session.execute(
-            select(TaskORM).where(TaskORM.task_type == task_type)
+            select(TaskORM).where(TaskORM.task_type == task_type).limit(limit).offset(offset)
         )
         return [TaskSummary.model_validate(r) for r in result.scalars()]
 
@@ -96,9 +100,14 @@ class ExperimentRepository:
         row = result.scalar_one_or_none()
         return ExperimentResult.model_validate(row) if row is not None else None
 
-    async def list_by_task(self, task_id: uuid.UUID) -> list[ExperimentResult]:
+    async def list_by_task(
+        self, task_id: uuid.UUID, *, limit: int = 500, offset: int = 0
+    ) -> list[ExperimentResult]:
         result = await self._session.execute(
-            select(ExperimentORM).where(ExperimentORM.task_id == task_id)
+            select(ExperimentORM)
+            .where(ExperimentORM.task_id == task_id)
+            .limit(limit)
+            .offset(offset)
         )
         return [ExperimentResult.model_validate(r) for r in result.scalars()]
 
