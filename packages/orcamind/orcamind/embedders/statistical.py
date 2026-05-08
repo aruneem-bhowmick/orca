@@ -207,6 +207,8 @@ class StatisticalEmbedder(TaskEmbedder):
 
     def embed_batch(self, datasets: list[tuple[pd.DataFrame, pd.Series | None]]) -> np.ndarray:
         results = [self.embed(df, lbl) for df, lbl in datasets]
+        if not results:
+            return np.empty((0, _DIM), dtype=np.float64)
         return np.stack(results, axis=0)
 
     # ------------------------------------------------------------------
