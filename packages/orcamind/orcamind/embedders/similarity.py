@@ -28,6 +28,8 @@ class FaissIndex:
         self._task_ids.append(task_id)
 
     def search(self, query: np.ndarray, k: int = 10) -> list[tuple[str, float]]:
+        if k <= 0:
+            raise ValueError(f"k must be a positive integer, got {k}")
         if len(self) == 0:
             return []
         k_eff = min(k, len(self))
@@ -37,7 +39,7 @@ class FaissIndex:
         distances, indices = self._index.search(q, k_eff)
         results = [
             (self._task_ids[i], float(d))
-            for i, d in zip(indices[0], distances[0])
+            for i, d in zip(indices[0], distances[0], strict=False)
             if i != -1
         ]
         return results
@@ -51,9 +53,23 @@ class FaissIndex:
 
     def load(self, path: str) -> None:
         p = Path(path)
-        self._index = faiss.read_index(str(p.with_suffix(".index")))
+        idx = faiss.read_index(str(p.with_suffix(".index")))
         with p.with_suffix(".meta").open("r", encoding="utf-8") as f:
             meta = json.load(f)
+        if meta["dim"] != idx.d:
+            raise ValueError(
+                f"index dimension {idx.d} does not match metadata dim {meta['dim']}"
+            )
+        if len(meta["task_ids"]) != idx.ntotal:
+            raise ValueError(
+                f"task_ids length {len(meta['task_ids'])} does not match index size {idx.ntotal}"
+            )
+        expected_type = faiss.IndexFlatIP if meta["metric"] == "cosine" else faiss.IndexFlatL2
+        if not isinstance(idx, expected_type):
+            raise ValueError(
+                f"index type {type(idx).__name__!r} does not match metadata metric {meta['metric']!r}"
+            )
+        self._index = idx
         self._task_ids = meta["task_ids"]
         self._dim = meta["dim"]
         self._metric = meta["metric"]

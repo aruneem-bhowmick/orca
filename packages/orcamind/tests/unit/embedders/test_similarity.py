@@ -157,3 +157,79 @@ class TestMetrics:
         import faiss
 
         assert isinstance(FaissIndex(_DIM)._index, faiss.IndexFlatIP)
+
+
+class TestSearchValidation:
+    def test_k_zero_raises(self) -> None:
+        index = FaissIndex(_DIM)
+        query = _random_l2_normalized(1, _DIM)[0]
+        with pytest.raises(ValueError, match="k must be a positive"):
+            index.search(query, k=0)
+
+    def test_k_negative_raises(self) -> None:
+        index = FaissIndex(_DIM)
+        query = _random_l2_normalized(1, _DIM)[0]
+        with pytest.raises(ValueError, match="k must be a positive"):
+            index.search(query, k=-1)
+
+
+class TestLoadValidation:
+    def test_load_dim_mismatch_raises(self, tmp_path: object) -> None:
+        import json
+        from pathlib import Path
+
+        index = FaissIndex(_DIM, metric="cosine")
+        vecs = _random_l2_normalized(5, _DIM, seed=1)
+        for i, v in enumerate(vecs):
+            index.add(f"t{i}", v)
+        save_path = str(Path(str(tmp_path)) / "idx")
+        index.save(save_path)
+
+        meta_path = Path(save_path).with_suffix(".meta")
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        meta["dim"] = _DIM * 2
+        meta_path.write_text(json.dumps(meta), encoding="utf-8")
+
+        fresh = FaissIndex(_DIM, metric="cosine")
+        with pytest.raises(ValueError, match="dimension"):
+            fresh.load(save_path)
+
+    def test_load_task_ids_count_mismatch_raises(self, tmp_path: object) -> None:
+        import json
+        from pathlib import Path
+
+        index = FaissIndex(_DIM, metric="cosine")
+        vecs = _random_l2_normalized(5, _DIM, seed=2)
+        for i, v in enumerate(vecs):
+            index.add(f"t{i}", v)
+        save_path = str(Path(str(tmp_path)) / "idx")
+        index.save(save_path)
+
+        meta_path = Path(save_path).with_suffix(".meta")
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        meta["task_ids"] = meta["task_ids"][:3]
+        meta_path.write_text(json.dumps(meta), encoding="utf-8")
+
+        fresh = FaissIndex(_DIM, metric="cosine")
+        with pytest.raises(ValueError, match="task_ids"):
+            fresh.load(save_path)
+
+    def test_load_metric_mismatch_raises(self, tmp_path: object) -> None:
+        import json
+        from pathlib import Path
+
+        index = FaissIndex(_DIM, metric="cosine")
+        vecs = _random_l2_normalized(5, _DIM, seed=3)
+        for i, v in enumerate(vecs):
+            index.add(f"t{i}", v)
+        save_path = str(Path(str(tmp_path)) / "idx")
+        index.save(save_path)
+
+        meta_path = Path(save_path).with_suffix(".meta")
+        meta = json.loads(meta_path.read_text(encoding="utf-8"))
+        meta["metric"] = "l2"
+        meta_path.write_text(json.dumps(meta), encoding="utf-8")
+
+        fresh = FaissIndex(_DIM, metric="cosine")
+        with pytest.raises(ValueError, match="metric"):
+            fresh.load(save_path)
