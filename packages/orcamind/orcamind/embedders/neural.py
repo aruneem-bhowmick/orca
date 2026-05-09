@@ -81,6 +81,8 @@ class NeuralEmbedder(TaskEmbedder):
     ) -> None:
         if hidden_dims is None:
             hidden_dims = [128, 64]
+        if not hidden_dims:
+            raise ValueError("hidden_dims must contain at least one layer")
         self._input_dim = input_dim
         self._hidden_dims = hidden_dims
         self._output_dim = output_dim
@@ -125,6 +127,10 @@ class NeuralEmbedder(TaskEmbedder):
         n = len(dataset_list)
         if n < 2:
             raise ValueError("fit() requires at least 2 datasets")
+        if len(set(domain_labels)) == n:
+            raise ValueError(
+                "fit() requires at least two datasets sharing a domain label; all labels are unique"
+            )
 
         stat = self._stat_embedder.embed_batch(dataset_list)
         x_tensor = torch.tensor(stat, dtype=torch.float32)

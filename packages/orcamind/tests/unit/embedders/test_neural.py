@@ -178,3 +178,16 @@ class TestFitValidation:
         X, y = sample_dataset
         with pytest.raises(ValueError, match="at least 2"):
             embedder.fit([(X, y)], [0], epochs=1)
+
+    def test_fit_raises_when_all_labels_unique(
+        self, embedder: NeuralEmbedder, sample_dataset: tuple
+    ) -> None:
+        X, y = sample_dataset
+        with pytest.raises(ValueError, match="unique"):
+            embedder.fit([(X, y), (X, y)], [0, 1], epochs=1)
+
+
+class TestInitValidation:
+    def test_empty_hidden_dims_raises(self) -> None:
+        with pytest.raises(ValueError, match="hidden_dims"):
+            NeuralEmbedder(hidden_dims=[])
