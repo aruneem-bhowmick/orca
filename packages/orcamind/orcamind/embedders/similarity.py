@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-import pickle
+import json
 from pathlib import Path
 
 import faiss
@@ -46,14 +46,14 @@ class FaissIndex:
         p = Path(path)
         faiss.write_index(self._index, str(p.with_suffix(".index")))
         meta = {"task_ids": self._task_ids, "dim": self._dim, "metric": self._metric}
-        with p.with_suffix(".meta").open("wb") as f:
-            pickle.dump(meta, f)
+        with p.with_suffix(".meta").open("w", encoding="utf-8") as f:
+            json.dump(meta, f, ensure_ascii=False)
 
     def load(self, path: str) -> None:
         p = Path(path)
         self._index = faiss.read_index(str(p.with_suffix(".index")))
-        with p.with_suffix(".meta").open("rb") as f:
-            meta = pickle.load(f)
+        with p.with_suffix(".meta").open("r", encoding="utf-8") as f:
+            meta = json.load(f)
         self._task_ids = meta["task_ids"]
         self._dim = meta["dim"]
         self._metric = meta["metric"]

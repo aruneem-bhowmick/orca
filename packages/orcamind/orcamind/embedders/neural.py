@@ -2,9 +2,7 @@
 
 from __future__ import annotations
 
-import math
-import pickle
-from pathlib import Path
+import logging
 
 import numpy as np
 import pandas as pd
@@ -16,6 +14,8 @@ from torch.utils.data import DataLoader, TensorDataset
 
 from .base import TaskEmbedder
 from .statistical import StatisticalEmbedder
+
+logger = logging.getLogger(__name__)
 
 
 class _MLP(nn.Module):
@@ -156,7 +156,7 @@ class NeuralEmbedder(TaskEmbedder):
                 epoch_loss += loss.item()
                 n_batches += 1
             mean_loss = epoch_loss / max(n_batches, 1)
-            print(f"epoch {epoch}/{epochs}  loss={mean_loss:.4f}")
+            logger.info("epoch %d/%d  loss=%.4f", epoch, epochs, mean_loss)
 
     def save(self, path: str) -> None:
         checkpoint = {
@@ -171,7 +171,7 @@ class NeuralEmbedder(TaskEmbedder):
 
     @classmethod
     def load(cls, path: str) -> NeuralEmbedder:
-        checkpoint = torch.load(path, map_location="cpu", weights_only=False)
+        checkpoint = torch.load(path, map_location="cpu", weights_only=True)
         cfg = checkpoint["config"]
         obj = cls(
             input_dim=cfg["input_dim"],
