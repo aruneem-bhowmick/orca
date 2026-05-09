@@ -84,6 +84,9 @@ class MAML(MetaLearner):
         first_order=False.  For first_order=True (FOMAML), first-order
         meta-gradients are computed manually and accumulated on self.model.
         """
+        if not task_batch:
+            return {"meta_train_loss": 0.0, "meta_train_accuracy": 0.0}
+
         self.model.train()
         self._outer_opt.zero_grad()
 

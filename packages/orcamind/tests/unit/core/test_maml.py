@@ -180,6 +180,17 @@ class TestMetaUpdate:
         )
         assert changed
 
+    def test_empty_task_batch_returns_zero_metrics(self, maml: MAML) -> None:
+        result = maml.meta_update([])
+        assert result["meta_train_loss"] == 0.0
+        assert result["meta_train_accuracy"] == 0.0
+
+    def test_empty_task_batch_does_not_modify_model(self, maml: MAML) -> None:
+        orig_state = {k: v.clone() for k, v in maml.model.state_dict().items()}
+        maml.meta_update([])
+        for key, orig_val in orig_state.items():
+            assert torch.equal(maml.model.state_dict()[key], orig_val), f"{key} was modified"
+
 
 # ---------------------------------------------------------------------------
 # Meta-training convergence test
