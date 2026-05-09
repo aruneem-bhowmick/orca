@@ -115,7 +115,7 @@ class MAML(MetaLearner):
 
                 if self.first_order:
                     fo_grads = torch.autograd.grad(task_loss, list(fmodel.parameters()))
-                    for orig_p, grad in zip(self.model.parameters(), fo_grads):
+                    for orig_p, grad in zip(self.model.parameters(), fo_grads, strict=True):
                         scaled = grad.detach() / n_tasks
                         orig_p.grad = scaled if orig_p.grad is None else orig_p.grad + scaled
                 else:
