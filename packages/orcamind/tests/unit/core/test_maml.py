@@ -179,3 +179,63 @@ class TestMetaUpdate:
             for k in orig_state
         )
         assert changed
+
+
+# ---------------------------------------------------------------------------
+# Meta-training convergence test
+# ---------------------------------------------------------------------------
+
+
+class TestConvergence:
+    def test_meta_loss_decreases_over_20_steps(self) -> None:
+        """Meta-loss averaged over the last 5 steps should be lower than the first 5."""
+        torch.manual_seed(0)
+        model = _SinusoidModel()
+        maml = MAML(model, inner_lr=0.01, outer_lr=0.001, inner_steps=5, loss_fn=F.mse_loss)
+
+        losses: list[float] = []
+        for step in range(20):
+            tasks = [_make_sin_task(seed=step * 4 + i) for i in range(4)]
+            metrics = maml.meta_update(tasks)
+            losses.append(metrics["meta_train_loss"])
+
+        first_five = sum(losses[:5]) / 5
+        last_five = sum(losses[15:]) / 5
+        assert last_five < first_five, (
+            f"Meta-loss did not decrease: first-5 avg={first_five:.4f}, last-5 avg={last_five:.4f}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# FOMAML gradient direction test
+# ---------------------------------------------------------------------------
+
+
+class TestFOMAMLGradientDirection:
+    def test_fomaml_update_direction_correlates_with_full_maml(self) -> None:
+        """FOMAML and second-order MAML meta-gradients should have Pearson correlation > 0.9.
+
+        With inner_steps=1, the two-order terms vanish and both variants produce
+        nearly identical gradients, making correlation > 0.9 reliably achievable.
+        """
+        torch.manual_seed(42)
+        model_so = _SinusoidModel()
+        model_fo = copy.deepcopy(model_so)
+
+        tasks = [_make_sin_task(seed=i) for i in range(4)]
+
+        maml_so = MAML(model_so, inner_lr=0.01, outer_lr=0.001, inner_steps=1, first_order=False, loss_fn=F.mse_loss)
+        maml_fo = MAML(model_fo, inner_lr=0.01, outer_lr=0.001, inner_steps=1, first_order=True, loss_fn=F.mse_loss)
+
+        maml_so.meta_update(tasks)
+        maml_fo.meta_update(tasks)
+
+        # optimizer.step() does not clear .grad, so gradients are still available
+        grads_so = torch.cat([p.grad.flatten() for p in model_so.parameters() if p.grad is not None])
+        grads_fo = torch.cat([p.grad.flatten() for p in model_fo.parameters() if p.grad is not None])
+
+        assert grads_so.numel() > 0, "No gradients found for second-order MAML"
+        assert grads_fo.numel() > 0, "No gradients found for FOMAML"
+
+        corr = torch.corrcoef(torch.stack([grads_so, grads_fo]))[0, 1].item()
+        assert corr > 0.9, f"FOMAML/MAML gradient correlation {corr:.4f} not > 0.9"
