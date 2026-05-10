@@ -103,6 +103,37 @@ class WarmStartTransfer:
             return {"lr_multiplier": 0.3, "freeze_backbone_epochs": 2}
         return {"lr_multiplier": 1.0, "freeze_backbone_epochs": 0}
 
+    async def warm_start(
+        self,
+        target_task_id: str,
+        target_model: nn.Module,
+        target_embedding: np.ndarray,
+    ) -> tuple[nn.Module, dict]:
+        """Orchestrate: find source → download checkpoint → transfer → schedule.
+
+        Returns *(initialized_model, schedule_dict)*.  If no similar tasks are
+        found the original *target_model* is returned with the default schedule.
+        """
+        candidates = self.find_source_task(target_embedding)
+        if not candidates:
+            logger.warning(
+                "No source tasks found for %s; returning model unchanged with default schedule.",
+                target_task_id,
+            )
+            return target_model, {"lr_multiplier": 1.0, "freeze_backbone_epochs": 0}
+
+        source_task_id, score = candidates[0]
+        source_task = await self._task_repository.get_by_id(uuid.UUID(source_task_id))
+        target_task = await self._task_repository.get_by_id(uuid.UUID(target_task_id))
+        checkpoint_uri: str = (source_task.metadata or {}).get(
+            "checkpoint_uri",
+            f"models/{source_task_id}/checkpoint",
+        )
+        source_model = await self._artifact_manager.download_model(checkpoint_uri)
+        initialized_model = self.transfer_weights(source_model, target_model, self._layer_selection)
+        schedule = self.get_adaptive_schedule(source_task, target_task, score)
+        return initialized_model, schedule
+
     # ------------------------------------------------------------------
     # Private helpers
     # ------------------------------------------------------------------
