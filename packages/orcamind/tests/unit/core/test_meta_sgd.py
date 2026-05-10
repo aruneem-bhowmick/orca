@@ -327,3 +327,42 @@ class TestClassificationAccuracy:
         result = meta_sgd.meta_update(tasks)
         assert "meta_train_accuracy" in result
         assert 0.0 <= result["meta_train_accuracy"] <= 1.0
+
+    def test_adapted_accuracy_above_chance_on_separable_task(self) -> None:
+        """Adapted model achieves accuracy > chance on a trivially separable task.
+
+        Label = (x[:,0] > 0).long() (binary, two-feature input).  After a few
+        meta-update steps the adapted model should predict correctly more often
+        than random (50% chance for balanced binary labels).
+        """
+        torch.manual_seed(42)
+
+        class _BinaryModel(nn.Module):
+            def __init__(self) -> None:
+                super().__init__()
+                self.net = nn.Sequential(nn.Linear(2, 8), nn.ReLU(), nn.Linear(8, 2))
+
+            def forward(self, x: torch.Tensor) -> torch.Tensor:
+                return self.net(x)
+
+        def _make_separable_task(seed: int, n: int = 30) -> Task:
+            rng = torch.Generator()
+            rng.manual_seed(seed)
+            x = torch.randn(n, 2, generator=rng)
+            y = (x[:, 0] > 0).long()
+            mid = n // 2
+            return Task(support_x=x[:mid], support_y=y[:mid], query_x=x[mid:], query_y=y[mid:])
+
+        model = _BinaryModel()
+        meta_sgd = MetaSGD(model, outer_lr=0.005, inner_steps=5, loss_fn=F.cross_entropy)
+
+        for step in range(10):
+            tasks = [_make_separable_task(seed=step * 4 + i) for i in range(4)]
+            meta_sgd.meta_update(tasks)
+
+        eval_task = _make_separable_task(seed=999)
+        adapted = meta_sgd.adapt(eval_task.support_x, eval_task.support_y)
+        result = meta_sgd.evaluate_task(adapted, eval_task.query_x, eval_task.query_y)
+        assert result["accuracy"] > 0.5, (
+            f"Expected accuracy above chance (0.5) on a separable task, got {result['accuracy']:.3f}"
+        )
