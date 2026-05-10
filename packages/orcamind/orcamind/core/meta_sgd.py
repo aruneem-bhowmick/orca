@@ -47,10 +47,7 @@ class MetaSGD(nn.Module, MetaLearner):
         )
 
         # Outer optimizer updates both model weights and the learnable rates
-        self._outer_opt = torch.optim.Adam(
-            list(model.parameters()) + list(self.lrs.parameters()),
-            lr=outer_lr,
-        )
+        self._outer_opt = torch.optim.Adam(self.parameters(), lr=outer_lr)
 
     # ------------------------------------------------------------------
     # MetaLearner interface
