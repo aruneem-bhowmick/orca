@@ -23,6 +23,17 @@ _HEAD_KEYWORDS: tuple[str, ...] = ("head", "classifier", "output")
 _VALID_STRATEGIES: frozenset[str] = frozenset({"all", "encoder_only", "head_only"})
 
 
+def _name_matches_keywords(name: str, keywords: tuple[str, ...]) -> bool:
+    """Return True if any dot-separated segment of *name* exactly equals a keyword.
+
+    Segment-level matching prevents ``"pre_encoder.weight"`` from being claimed
+    by the ``"encoder"`` keyword — only ``"encoder.weight"`` (or deeper paths
+    like ``"backbone.layer1.weight"``) will match.
+    """
+    segments = set(name.split("."))
+    return bool(segments.intersection(keywords))
+
+
 class WarmStartTransfer:
     """Transfer weights from a similar historical task to warm-start a new model."""
 
@@ -77,9 +88,9 @@ class WarmStartTransfer:
         for name, target_param in target_model.named_parameters():
             if name not in source_params:
                 continue
-            if strategy == "encoder_only" and not any(kw in name for kw in _ENCODER_KEYWORDS):
+            if strategy == "encoder_only" and not _name_matches_keywords(name, _ENCODER_KEYWORDS):
                 continue
-            if strategy == "head_only" and not any(kw in name for kw in _HEAD_KEYWORDS):
+            if strategy == "head_only" and not _name_matches_keywords(name, _HEAD_KEYWORDS):
                 continue
             source_param = source_params[name]
             if source_param.shape != target_param.shape:
@@ -168,4 +179,4 @@ class WarmStartTransfer:
             if s is not None and t is not None and max(s, t) > 0:
                 scores.append(min(s, t) / max(s, t))
         scores.append(1.0 if source.task_type == target.task_type else 0.0)
-        return float(np.mean(scores)) if scores else 0.5
+        return float(np.mean(scores))
