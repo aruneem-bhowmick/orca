@@ -160,30 +160,42 @@ class TestMetaUpdate:
         """Reptile outer update reduces the distance to the adapted parameters.
 
         With outer_lr=0.5, the interpolation is halfway, so distance must halve.
+
+        The test calls inner_loop *before* meta_update while θ is still at its
+        initial value.  meta_update internally re-runs inner_loop from the same
+        θ, so both invocations produce the same φ — a guarantee that holds as
+        long as the inner optimiser (SGD on this deterministic MLP) is
+        reproducible.  torch.use_deterministic_algorithms(True) makes that
+        requirement explicit and turns accidental non-determinism into an error.
         """
         torch.manual_seed(0)
-        model = _SinusoidModel()
-        reptile = Reptile(model, inner_lr=0.02, outer_lr=0.5, inner_steps=5, loss_fn=F.mse_loss)
+        torch.use_deterministic_algorithms(True)
+        try:
+            model = _SinusoidModel()
+            reptile = Reptile(model, inner_lr=0.02, outer_lr=0.5, inner_steps=5, loss_fn=F.mse_loss)
 
-        # Snapshot adapted params before any outer update
-        adapted, _ = reptile.inner_loop(sin_task.support_x, sin_task.support_y)
-        adapted_params = [p.data.clone() for p in adapted.parameters()]
+            # φ computed from initial θ; meta_update will produce the same φ
+            # internally because θ has not been modified yet.
+            adapted, _ = reptile.inner_loop(sin_task.support_x, sin_task.support_y)
+            adapted_params = [p.data.clone() for p in adapted.parameters()]
 
-        dist_before = sum(
-            (p.data - phi).norm().item()
-            for p, phi in zip(reptile.model.parameters(), adapted_params)
-        )
+            dist_before = sum(
+                (p.data - phi).norm().item()
+                for p, phi in zip(reptile.model.parameters(), adapted_params)
+            )
 
-        reptile.meta_update([sin_task])
+            reptile.meta_update([sin_task])
 
-        dist_after = sum(
-            (p.data - phi).norm().item()
-            for p, phi in zip(reptile.model.parameters(), adapted_params)
-        )
+            dist_after = sum(
+                (p.data - phi).norm().item()
+                for p, phi in zip(reptile.model.parameters(), adapted_params)
+            )
 
-        assert dist_after < dist_before, (
-            f"Reptile did not move params toward adapted: before={dist_before:.4f}, after={dist_after:.4f}"
-        )
+            assert dist_after < dist_before, (
+                f"Reptile did not move params toward adapted: before={dist_before:.4f}, after={dist_after:.4f}"
+            )
+        finally:
+            torch.use_deterministic_algorithms(False)
 
 
 # ---------------------------------------------------------------------------
@@ -246,19 +258,27 @@ class TestConvergence:
     """Convergence test: meta-loss should decrease over 20 outer-loop steps."""
 
     def test_meta_loss_decreases_over_20_steps(self) -> None:
-        """Mean query loss over steps 15–19 is below mean over steps 0–4."""
+        """Mean query loss over steps 15–19 is below mean over steps 0–4.
+
+        torch.use_deterministic_algorithms(True) is set to ensure the seed-based
+        reproducibility that the 5%-improvement threshold depends on.
+        """
         torch.manual_seed(0)
-        model = _SinusoidModel()
-        reptile = Reptile(model, inner_lr=0.02, outer_lr=0.1, inner_steps=5, loss_fn=F.mse_loss)
+        torch.use_deterministic_algorithms(True)
+        try:
+            model = _SinusoidModel()
+            reptile = Reptile(model, inner_lr=0.02, outer_lr=0.1, inner_steps=5, loss_fn=F.mse_loss)
 
-        losses: list[float] = []
-        for step in range(20):
-            tasks = [_make_sin_task(seed=step * 4 + i) for i in range(4)]
-            metrics = reptile.meta_update(tasks)
-            losses.append(metrics["meta_train_loss"])
+            losses: list[float] = []
+            for step in range(20):
+                tasks = [_make_sin_task(seed=step * 4 + i) for i in range(4)]
+                metrics = reptile.meta_update(tasks)
+                losses.append(metrics["meta_train_loss"])
 
-        first_five = sum(losses[:5]) / 5
-        last_five = sum(losses[15:]) / 5
-        assert last_five < 0.95 * first_five, (
-            f"Reptile meta-loss did not decrease by ≥5%: first-5 avg={first_five:.4f}, last-5 avg={last_five:.4f}"
-        )
+            first_five = sum(losses[:5]) / 5
+            last_five = sum(losses[15:]) / 5
+            assert last_five < 0.95 * first_five, (
+                f"Reptile meta-loss did not decrease by ≥5%: first-5 avg={first_five:.4f}, last-5 avg={last_five:.4f}"
+            )
+        finally:
+            torch.use_deterministic_algorithms(False)
