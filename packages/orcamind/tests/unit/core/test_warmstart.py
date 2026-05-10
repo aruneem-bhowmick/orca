@@ -1,13 +1,15 @@
-"""Unit tests for WarmStartTransfer — weight transfer strategies."""
+"""Unit tests for WarmStartTransfer — weight transfer strategies, scheduling, and orchestration."""
 
 from __future__ import annotations
 
 import logging
+import uuid
 
+import numpy as np
 import pytest
 import torch
 import torch.nn as nn
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from orcamind.core.warmstart import WarmStartTransfer
 
@@ -187,3 +189,160 @@ class TestTransferWeightsShapeMismatch:
         # head shapes mismatch → NOT copied
         assert torch.all(target.head.weight == 0.0)
         assert torch.all(target.head.bias == 0.0)
+
+
+# ---------------------------------------------------------------------------
+# Helpers for schedule / orchestration tests
+# ---------------------------------------------------------------------------
+
+
+def _make_mock_task(**kwargs: object) -> MagicMock:
+    task = MagicMock()
+    task.task_type = kwargs.get("task_type", "classification")
+    task.n_samples = kwargs.get("n_samples", 100)
+    task.n_features = kwargs.get("n_features", 10)
+    task.n_classes = kwargs.get("n_classes", 2)
+    task.metadata = kwargs.get("metadata", {})
+    return task
+
+
+# ---------------------------------------------------------------------------
+# get_adaptive_schedule — similarity bands
+# ---------------------------------------------------------------------------
+
+
+class TestGetAdaptiveSchedule:
+    """Schedule dict reflects the correct band for the given similarity score."""
+
+    def test_high_similarity(self, wst: WarmStartTransfer) -> None:
+        schedule = wst.get_adaptive_schedule(_make_mock_task(), _make_mock_task(), similarity_score=0.95)
+        assert schedule == {"lr_multiplier": 0.1, "freeze_backbone_epochs": 5}
+
+    def test_medium_similarity(self, wst: WarmStartTransfer) -> None:
+        schedule = wst.get_adaptive_schedule(_make_mock_task(), _make_mock_task(), similarity_score=0.75)
+        assert schedule == {"lr_multiplier": 0.3, "freeze_backbone_epochs": 2}
+
+    def test_low_similarity(self, wst: WarmStartTransfer) -> None:
+        schedule = wst.get_adaptive_schedule(_make_mock_task(), _make_mock_task(), similarity_score=0.3)
+        assert schedule == {"lr_multiplier": 1.0, "freeze_backbone_epochs": 0}
+
+    def test_boundary_above_0_9_is_high(self, wst: WarmStartTransfer) -> None:
+        schedule = wst.get_adaptive_schedule(_make_mock_task(), _make_mock_task(), similarity_score=0.91)
+        assert schedule["lr_multiplier"] == pytest.approx(0.1)
+
+    def test_boundary_exactly_0_9_is_medium(self, wst: WarmStartTransfer) -> None:
+        # score > 0.9 is high; score == 0.9 falls into medium band
+        schedule = wst.get_adaptive_schedule(_make_mock_task(), _make_mock_task(), similarity_score=0.9)
+        assert schedule["lr_multiplier"] == pytest.approx(0.3)
+
+    def test_boundary_exactly_0_6_is_medium(self, wst: WarmStartTransfer) -> None:
+        schedule = wst.get_adaptive_schedule(_make_mock_task(), _make_mock_task(), similarity_score=0.6)
+        assert schedule["lr_multiplier"] == pytest.approx(0.3)
+
+    def test_boundary_below_0_6_is_low(self, wst: WarmStartTransfer) -> None:
+        schedule = wst.get_adaptive_schedule(_make_mock_task(), _make_mock_task(), similarity_score=0.59)
+        assert schedule["lr_multiplier"] == pytest.approx(1.0)
+
+
+# ---------------------------------------------------------------------------
+# find_source_task — delegation
+# ---------------------------------------------------------------------------
+
+
+class TestFindSourceTask:
+    """find_source_task delegates correctly to the similarity index."""
+
+    def test_delegates_search_call(self, wst: WarmStartTransfer, mock_index: MagicMock) -> None:
+        embedding = np.random.default_rng(0).random(64).astype(np.float32)
+        mock_index.search.return_value = [("task-a", 0.9), ("task-b", 0.8)]
+        result = wst.find_source_task(embedding, k=5)
+        mock_index.search.assert_called_once_with(embedding, k=5)
+        assert result == [("task-a", 0.9), ("task-b", 0.8)]
+
+    def test_default_k_is_5(self, wst: WarmStartTransfer, mock_index: MagicMock) -> None:
+        embedding = np.random.default_rng(1).random(64).astype(np.float32)
+        mock_index.search.return_value = []
+        wst.find_source_task(embedding)
+        mock_index.search.assert_called_once_with(embedding, k=5)
+
+
+# ---------------------------------------------------------------------------
+# warm_start — orchestration
+# ---------------------------------------------------------------------------
+
+
+class TestWarmStart:
+    """warm_start correctly orchestrates the find → download → transfer → schedule flow."""
+
+    async def test_full_flow_returns_initialized_model_and_schedule(
+        self,
+        wst: WarmStartTransfer,
+        mock_index: MagicMock,
+        mock_artifacts: MagicMock,
+        mock_repo: MagicMock,
+    ) -> None:
+        src_id = str(uuid.uuid4())
+        tgt_id = str(uuid.uuid4())
+        embedding = np.random.default_rng(0).random(64).astype(np.float32)
+
+        mock_index.search.return_value = [(src_id, 0.95)]
+        source_task = _make_mock_task(metadata={"checkpoint_uri": f"models/{src_id}/ckpt"})
+        target_task = _make_mock_task()
+        mock_repo.get_by_id = AsyncMock(side_effect=[source_task, target_task])
+        source_model = _SplitModel()
+        mock_artifacts.download_model = AsyncMock(return_value=source_model)
+        target_model = _SplitModel()
+
+        result_model, schedule = await wst.warm_start(tgt_id, target_model, embedding)
+
+        assert result_model is target_model
+        assert "lr_multiplier" in schedule
+        assert "freeze_backbone_epochs" in schedule
+        # score 0.95 > 0.9 → high-similarity schedule
+        assert schedule["lr_multiplier"] == pytest.approx(0.1)
+        assert schedule["freeze_backbone_epochs"] == 5
+
+    async def test_no_candidates_returns_default_schedule(
+        self,
+        wst: WarmStartTransfer,
+        mock_index: MagicMock,
+    ) -> None:
+        mock_index.search.return_value = []
+        target_model = _SplitModel()
+        tgt_id = str(uuid.uuid4())
+        embedding = np.random.default_rng(2).random(64).astype(np.float32)
+
+        result_model, schedule = await wst.warm_start(tgt_id, target_model, embedding)
+
+        assert result_model is target_model
+        assert schedule == {"lr_multiplier": 1.0, "freeze_backbone_epochs": 0}
+
+    async def test_layer_selection_respected(
+        self,
+        mock_index: MagicMock,
+        mock_artifacts: MagicMock,
+        mock_repo: MagicMock,
+    ) -> None:
+        """With layer_selection='encoder_only', only encoder params are transferred."""
+        wst_enc = WarmStartTransfer(
+            similarity_index=mock_index,
+            artifact_manager=mock_artifacts,
+            task_repository=mock_repo,
+            layer_selection="encoder_only",
+        )
+        src_id = str(uuid.uuid4())
+        tgt_id = str(uuid.uuid4())
+        embedding = np.random.default_rng(3).random(64).astype(np.float32)
+
+        mock_index.search.return_value = [(src_id, 0.7)]
+        mock_repo.get_by_id = AsyncMock(side_effect=[_make_mock_task(), _make_mock_task()])
+        source_model = _SplitModel()
+        _fill(source_model, 1.0)
+        mock_artifacts.download_model = AsyncMock(return_value=source_model)
+        target_model = _SplitModel()
+        _fill(target_model, 0.0)
+
+        await wst_enc.warm_start(tgt_id, target_model, embedding)
+
+        assert torch.all(target_model.encoder.weight == 1.0), "encoder not transferred"
+        assert torch.all(target_model.head.weight == 0.0), "head should not be transferred"
