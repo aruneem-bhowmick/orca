@@ -104,7 +104,7 @@ class MetaSGD(nn.Module, MetaLearner):
         the outer Adam optimizer, so gradients must flow through the inner loop.
         """
         if not task_batch:
-            return {"meta_train_loss": 0.0, "meta_train_accuracy": 0.0}
+            return {"meta_train_loss": 0.0, "meta_train_accuracy": float("nan")}
 
         self.model.train()
         self._outer_opt.zero_grad()

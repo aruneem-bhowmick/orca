@@ -80,7 +80,7 @@ class Reptile(MetaLearner):
         are interpolated toward the adapted parameters: θ ← θ + ε * (φ − θ).
         """
         if not task_batch:
-            return {"meta_train_loss": 0.0, "meta_train_accuracy": 0.0}
+            return {"meta_train_loss": 0.0, "meta_train_accuracy": float("nan")}
 
         self.model.train()
         n_tasks = len(task_batch)
