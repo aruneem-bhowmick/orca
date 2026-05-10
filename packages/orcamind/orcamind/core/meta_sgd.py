@@ -153,6 +153,11 @@ class MetaSGD(nn.Module, MetaLearner):
 
         self._outer_opt.step()
 
+        # Keep LRs strictly positive so the inner update direction is always valid.
+        with torch.no_grad():
+            for lr in self.lrs:
+                lr.clamp_(min=1e-8)
+
         if is_classification and total_samples > 0:
             accuracy: float = total_correct / total_samples
         else:
