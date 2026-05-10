@@ -265,3 +265,64 @@ class TestPositiveLearningRates:
 
         all_positive = all((lr > 0).all().item() for lr in meta_sgd.lrs)
         assert all_positive, "Some per-parameter learning rates became non-positive"
+
+
+# ---------------------------------------------------------------------------
+# Classification accuracy branch tests
+# ---------------------------------------------------------------------------
+
+
+class _ClassificationModel(nn.Module):
+    """Minimal MLP classifier; outputs logits of shape (N, num_classes)."""
+
+    def __init__(self, num_classes: int = 5) -> None:
+        super().__init__()
+        self.net = nn.Sequential(
+            nn.Linear(4, 16),
+            nn.ReLU(),
+            nn.Linear(16, num_classes),
+        )
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        """Forward pass returning per-class logits."""
+        return self.net(x)
+
+
+def _make_cls_task(
+    seed: int = 0,
+    support_size: int = 20,
+    query_size: int = 20,
+    num_classes: int = 5,
+) -> Task:
+    """Create a multi-class classification Task with random integer labels."""
+    rng = np.random.default_rng(seed)
+    support_x = torch.FloatTensor(rng.standard_normal((support_size, 4)))
+    support_y = torch.LongTensor(rng.integers(0, num_classes, support_size))
+    query_x = torch.FloatTensor(rng.standard_normal((query_size, 4)))
+    query_y = torch.LongTensor(rng.integers(0, num_classes, query_size))
+    return Task(support_x=support_x, support_y=support_y, query_x=query_x, query_y=query_y)
+
+
+class TestClassificationAccuracy:
+    """Verify the argmax-based accuracy branch in evaluate_task and meta_update."""
+
+    def test_evaluate_task_classification_accuracy_in_range(self) -> None:
+        """evaluate_task returns accuracy in [0, 1] for multi-class classification."""
+        torch.manual_seed(0)
+        model = _ClassificationModel()
+        meta_sgd = MetaSGD(model, outer_lr=0.001, inner_steps=3, loss_fn=F.cross_entropy)
+        task = _make_cls_task(seed=0)
+        adapted = meta_sgd.adapt(task.support_x, task.support_y)
+        result = meta_sgd.evaluate_task(adapted, task.query_x, task.query_y)
+        assert "accuracy" in result
+        assert 0.0 <= result["accuracy"] <= 1.0
+
+    def test_meta_update_classification_accuracy_in_range(self) -> None:
+        """meta_update returns meta_train_accuracy in [0, 1] for multi-class classification."""
+        torch.manual_seed(0)
+        model = _ClassificationModel()
+        meta_sgd = MetaSGD(model, outer_lr=0.001, inner_steps=3, loss_fn=F.cross_entropy)
+        tasks = [_make_cls_task(seed=i) for i in range(2)]
+        result = meta_sgd.meta_update(tasks)
+        assert "meta_train_accuracy" in result
+        assert 0.0 <= result["meta_train_accuracy"] <= 1.0
