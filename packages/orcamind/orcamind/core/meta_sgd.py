@@ -14,7 +14,7 @@ from torch import Tensor
 from .base import MetaLearner, Task
 
 
-class MetaSGD(MetaLearner):
+class MetaSGD(nn.Module, MetaLearner):
     """Meta-SGD meta-learner (Li et al. 2017).
 
     Extends MAML by making the inner-loop learning rates learnable: each parameter
@@ -35,6 +35,7 @@ class MetaSGD(MetaLearner):
         inner_steps: int = 5,
         loss_fn: Callable = F.cross_entropy,
     ) -> None:
+        super().__init__()
         self.model = model
         self.outer_lr = outer_lr
         self.inner_steps = inner_steps
