@@ -94,7 +94,7 @@ class Reptile(MetaLearner):
 
             # Reptile interpolation: θ ← θ + ε * (φ − θ)
             with torch.no_grad():
-                for p, phi in zip(self.model.parameters(), adapted.parameters()):
+                for p, phi in zip(self.model.parameters(), adapted.parameters(), strict=True):
                     p.data.add_(self.outer_lr * (phi.data - p.data))
 
             # Query metrics from the adapted model (no-grad, eval only)

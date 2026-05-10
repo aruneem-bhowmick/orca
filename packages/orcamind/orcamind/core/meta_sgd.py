@@ -92,7 +92,7 @@ class MetaSGD(nn.Module, MetaLearner):
                 )
                 fmodel.fast_params = [
                     fp - lr * g if g is not None else fp
-                    for fp, lr, g in zip(fmodel.fast_params, self.lrs, grads)
+                    for fp, lr, g in zip(fmodel.fast_params, self.lrs, grads, strict=True)
                 ]
 
         return fmodel, losses
@@ -134,7 +134,7 @@ class MetaSGD(nn.Module, MetaLearner):
                     )
                     fmodel.fast_params = [
                         fp - lr * g if g is not None else fp
-                        for fp, lr, g in zip(fmodel.fast_params, self.lrs, grads)
+                        for fp, lr, g in zip(fmodel.fast_params, self.lrs, grads, strict=True)
                     ]
 
                 query_pred = fmodel(task.query_x)
@@ -177,7 +177,7 @@ class MetaSGD(nn.Module, MetaLearner):
             loss = self.loss_fn(adapted(support_x), support_y)
             loss.backward()
             with torch.no_grad():
-                for p, lr in zip(adapted.parameters(), adapted_lrs):
+                for p, lr in zip(adapted.parameters(), adapted_lrs, strict=True):
                     if p.grad is not None:
                         p.data.sub_(lr * p.grad)
 
