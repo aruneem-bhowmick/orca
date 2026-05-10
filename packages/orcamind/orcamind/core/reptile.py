@@ -87,6 +87,7 @@ class Reptile(MetaLearner):
         total_loss = 0.0
         total_correct = 0
         total_samples = 0
+        is_classification = False
 
         for task in task_batch:
             adapted, _ = self.inner_loop(task.support_x, task.support_y)
@@ -105,9 +106,13 @@ class Reptile(MetaLearner):
                 n = task.query_y.size(0)
                 total_samples += n
                 if query_pred.dim() > 1 and query_pred.size(1) > 1:
+                    is_classification = True
                     total_correct += (query_pred.argmax(dim=1) == task.query_y).sum().item()
 
-        accuracy = total_correct / total_samples if total_samples > 0 else 0.0
+        if is_classification and total_samples > 0:
+            accuracy: float = total_correct / total_samples
+        else:
+            accuracy = float("nan")
         return {
             "meta_train_loss": total_loss / n_tasks,
             "meta_train_accuracy": accuracy,
@@ -135,5 +140,5 @@ class Reptile(MetaLearner):
         if pred.dim() > 1 and pred.size(1) > 1:
             result["accuracy"] = (pred.argmax(dim=1) == query_y).float().mean().item()
         else:
-            result["accuracy"] = 0.0
+            result["accuracy"] = float("nan")
         return result
