@@ -258,6 +258,6 @@ class TestConvergence:
 
         first_five = sum(losses[:5]) / 5
         last_five = sum(losses[15:]) / 5
-        assert last_five < first_five, (
-            f"Reptile meta-loss did not decrease: first-5 avg={first_five:.4f}, last-5 avg={last_five:.4f}"
+        assert last_five < 0.95 * first_five, (
+            f"Reptile meta-loss did not decrease by ≥5%: first-5 avg={first_five:.4f}, last-5 avg={last_five:.4f}"
         )

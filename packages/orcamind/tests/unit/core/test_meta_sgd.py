@@ -252,8 +252,8 @@ class TestPositiveLearningRates:
     def test_lrs_remain_positive_after_meta_training(self) -> None:
         """All lr elements stay > 0 after several meta-update steps.
 
-        With outer_lr=0.001 and init at 0.01, the Adam updates over 5 steps
-        cannot drive any element negative.
+        meta_update clamps each lr to ≥ 1e-8 after the outer optimizer step,
+        so positivity is guaranteed regardless of Adam's update trajectory.
         """
         torch.manual_seed(0)
         model = _SinusoidModel()
