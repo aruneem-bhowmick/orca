@@ -346,3 +346,107 @@ class TestWarmStart:
 
         assert torch.all(target_model.encoder.weight == 1.0), "encoder not transferred"
         assert torch.all(target_model.head.weight == 0.0), "head should not be transferred"
+
+
+# ---------------------------------------------------------------------------
+# strategy validation
+# ---------------------------------------------------------------------------
+
+
+class TestStrategyValidation:
+    """transfer_weights rejects unrecognised strategy values immediately."""
+
+    def test_invalid_strategy_raises_value_error(self, wst: WarmStartTransfer) -> None:
+        source = _SplitModel()
+        target = _SplitModel()
+        with pytest.raises(ValueError, match="Unknown strategy"):
+            wst.transfer_weights(source, target, strategy="backbone_only")
+
+    def test_valid_strategies_do_not_raise(self, wst: WarmStartTransfer) -> None:
+        source = _SplitModel()
+        for strategy in ("all", "encoder_only", "head_only"):
+            target = _SplitModel()
+            wst.transfer_weights(source, target, strategy=strategy)  # must not raise
+
+
+# ---------------------------------------------------------------------------
+# UUID validation in warm_start
+# ---------------------------------------------------------------------------
+
+
+class TestUUIDValidation:
+    """warm_start raises ValueError with context for malformed UUID strings."""
+
+    async def test_invalid_source_uuid_raises_value_error(
+        self,
+        wst: WarmStartTransfer,
+        mock_index: MagicMock,
+    ) -> None:
+        mock_index.search.return_value = [("not-a-valid-uuid", 0.9)]
+        embedding = np.random.default_rng(0).random(64).astype(np.float32)
+        tgt_id = str(uuid.uuid4())
+        with pytest.raises(ValueError, match="source task"):
+            await wst.warm_start(tgt_id, _SplitModel(), embedding)
+
+    async def test_invalid_target_uuid_raises_value_error(
+        self,
+        wst: WarmStartTransfer,
+        mock_index: MagicMock,
+        mock_repo: MagicMock,
+    ) -> None:
+        src_id = str(uuid.uuid4())
+        mock_index.search.return_value = [(src_id, 0.9)]
+        mock_repo.get_by_id = AsyncMock(return_value=_make_mock_task())
+        embedding = np.random.default_rng(0).random(64).astype(np.float32)
+        with pytest.raises(ValueError, match="target task"):
+            await wst.warm_start("not-a-valid-uuid", _SplitModel(), embedding)
+
+
+# ---------------------------------------------------------------------------
+# Segment-aware layer name matching
+# ---------------------------------------------------------------------------
+
+
+class _PrefixedModel(nn.Module):
+    """Module names that *contain* keywords only as substrings, not as exact segments."""
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.pre_encoder = nn.Linear(4, 8)   # "encoder" is substring of "pre_encoder" only
+        self.full_head = nn.Linear(8, 2)     # "head" is substring of "full_head" only
+
+    def forward(self, x: torch.Tensor) -> torch.Tensor:
+        return self.full_head(torch.relu(self.pre_encoder(x)))
+
+
+class TestSegmentAwareMatching:
+    """Keyword matching operates on exact dot-path segments, not substrings."""
+
+    def test_substring_encoder_not_matched_by_encoder_only(self, wst: WarmStartTransfer) -> None:
+        source = _PrefixedModel()
+        target = _PrefixedModel()
+        _fill(source, 1.0)
+        _fill(target, 0.0)
+        wst.transfer_weights(source, target, strategy="encoder_only")
+        # "pre_encoder" is not an exact match for the "encoder" keyword
+        assert torch.all(target.pre_encoder.weight == 0.0)
+        assert torch.all(target.pre_encoder.bias == 0.0)
+
+    def test_substring_head_not_matched_by_head_only(self, wst: WarmStartTransfer) -> None:
+        source = _PrefixedModel()
+        target = _PrefixedModel()
+        _fill(source, 1.0)
+        _fill(target, 0.0)
+        wst.transfer_weights(source, target, strategy="head_only")
+        # "full_head" is not an exact match for the "head" keyword
+        assert torch.all(target.full_head.weight == 0.0)
+        assert torch.all(target.full_head.bias == 0.0)
+
+    def test_exact_segment_encoder_still_matched(self, wst: WarmStartTransfer) -> None:
+        """Exact-segment names like "encoder.weight" are still transferred."""
+        source = _SplitModel()
+        target = _SplitModel()
+        _fill(source, 1.0)
+        _fill(target, 0.0)
+        wst.transfer_weights(source, target, strategy="encoder_only")
+        assert torch.all(target.encoder.weight == 1.0)
