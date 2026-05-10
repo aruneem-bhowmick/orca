@@ -1,0 +1,120 @@
+"""Warm-start transfer: initialise a new task's model from a similar historical checkpoint."""
+
+from __future__ import annotations
+
+import logging
+import uuid
+from typing import TYPE_CHECKING
+
+import numpy as np
+import torch.nn as nn
+
+from orcamind.embedders.similarity import FaissIndex
+
+if TYPE_CHECKING:
+    from orca_shared.registry.repository import TaskRepository
+    from orca_shared.schemas.task import Task
+    from orca_shared.tracking.artifacts import ArtifactManager
+
+logger = logging.getLogger(__name__)
+
+_ENCODER_KEYWORDS: tuple[str, ...] = ("encoder", "backbone", "feature")
+_HEAD_KEYWORDS: tuple[str, ...] = ("head", "classifier", "output")
+
+
+class WarmStartTransfer:
+    """Transfer weights from a similar historical task to warm-start a new model."""
+
+    def __init__(
+        self,
+        similarity_index: FaissIndex,
+        artifact_manager: ArtifactManager,
+        task_repository: TaskRepository,
+        layer_selection: str = "all",
+    ) -> None:
+        self._similarity_index = similarity_index
+        self._artifact_manager = artifact_manager
+        self._task_repository = task_repository
+        self._layer_selection = layer_selection
+
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
+    def find_source_task(
+        self,
+        target_embedding: np.ndarray,
+        k: int = 5,
+    ) -> list[tuple[str, float]]:
+        """Return top-k (task_id, score) pairs from the similarity index."""
+        return self._similarity_index.search(target_embedding, k=k)
+
+    def transfer_weights(
+        self,
+        source_model: nn.Module,
+        target_model: nn.Module,
+        strategy: str = "all",
+    ) -> nn.Module:
+        """Copy parameters from *source_model* into *target_model* per *strategy*.
+
+        Strategies:
+            "all"          — copy all parameters whose names match between models
+            "encoder_only" — copy only params whose name contains encoder/backbone/feature
+            "head_only"    — copy only params whose name contains head/classifier/output
+
+        Parameters with mismatched shapes are silently skipped (warning logged).
+        Returns *target_model* in-place.
+        """
+        source_params = dict(source_model.named_parameters())
+        for name, target_param in target_model.named_parameters():
+            if name not in source_params:
+                continue
+            if strategy == "encoder_only" and not any(kw in name for kw in _ENCODER_KEYWORDS):
+                continue
+            if strategy == "head_only" and not any(kw in name for kw in _HEAD_KEYWORDS):
+                continue
+            source_param = source_params[name]
+            if source_param.shape != target_param.shape:
+                logger.warning(
+                    "Skipping %s: shape mismatch %s vs %s",
+                    name,
+                    source_param.shape,
+                    target_param.shape,
+                )
+                continue
+            target_param.data.copy_(source_param.data)
+        return target_model
+
+    def get_adaptive_schedule(
+        self,
+        source_task: Task,
+        target_task: Task,
+        similarity_score: float | None = None,
+    ) -> dict:
+        """Return a training schedule dict calibrated to the source→target similarity.
+
+        If *similarity_score* is not provided it is derived from task metadata fields.
+        """
+        if similarity_score is None:
+            similarity_score = self._metadata_similarity(source_task, target_task)
+        if similarity_score > 0.9:
+            return {"lr_multiplier": 0.1, "freeze_backbone_epochs": 5}
+        if similarity_score >= 0.6:
+            return {"lr_multiplier": 0.3, "freeze_backbone_epochs": 2}
+        return {"lr_multiplier": 1.0, "freeze_backbone_epochs": 0}
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _metadata_similarity(source: Task, target: Task) -> float:
+        """Heuristic similarity score derived from task metadata fields."""
+        scores: list[float] = []
+        for field in ("n_samples", "n_features", "n_classes"):
+            s = getattr(source, field, None)
+            t = getattr(target, field, None)
+            if s is not None and t is not None and max(s, t) > 0:
+                scores.append(min(s, t) / max(s, t))
+        scores.append(1.0 if source.task_type == target.task_type else 0.0)
+        return float(np.mean(scores)) if scores else 0.5
