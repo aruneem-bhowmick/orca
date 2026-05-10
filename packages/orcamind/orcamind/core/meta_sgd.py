@@ -129,9 +129,10 @@ class MetaSGD(nn.Module, MetaLearner):
                         inner_loss,
                         list(fmodel.fast_params),
                         create_graph=True,
+                        allow_unused=True,
                     )
                     fmodel.fast_params = [
-                        fp - lr * g
+                        fp - lr * g if g is not None else fp
                         for fp, lr, g in zip(fmodel.fast_params, self.lrs, grads)
                     ]
 
