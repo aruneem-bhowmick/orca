@@ -20,6 +20,7 @@ logger = logging.getLogger(__name__)
 
 _ENCODER_KEYWORDS: tuple[str, ...] = ("encoder", "backbone", "feature")
 _HEAD_KEYWORDS: tuple[str, ...] = ("head", "classifier", "output")
+_VALID_STRATEGIES: frozenset[str] = frozenset({"all", "encoder_only", "head_only"})
 
 
 class WarmStartTransfer:
@@ -64,7 +65,14 @@ class WarmStartTransfer:
 
         Parameters with mismatched shapes are silently skipped (warning logged).
         Returns *target_model* in-place.
+
+        Raises:
+            ValueError: if *strategy* is not one of the accepted values.
         """
+        if strategy not in _VALID_STRATEGIES:
+            raise ValueError(
+                f"Unknown strategy {strategy!r}. Valid strategies: {sorted(_VALID_STRATEGIES)}"
+            )
         source_params = dict(source_model.named_parameters())
         for name, target_param in target_model.named_parameters():
             if name not in source_params:
