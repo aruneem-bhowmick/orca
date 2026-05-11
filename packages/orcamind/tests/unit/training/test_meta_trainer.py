@@ -194,11 +194,11 @@ class TestMakeTrainer:
         with (
             patch("torch.cuda.is_available", return_value=True),
             patch("torch.cuda.device_count", return_value=2),
+            patch("orcamind.training.meta_trainer.pl.Trainer") as mock_trainer_cls,
         ):
-            import pytorch_lightning as pl
-
-            trainer = MetaTrainer.make_trainer(max_epochs=1, enable_progress_bar=False)
-            assert isinstance(trainer, pl.Trainer)
+            MetaTrainer.make_trainer(max_epochs=1, enable_progress_bar=False)
+            _, kwargs = mock_trainer_cls.call_args
+            assert kwargs.get("strategy") == "ddp"
 
     def test_no_ddp_strategy_with_single_device(self):
         """strategy is not overridden to 'ddp' on a single-device machine."""
