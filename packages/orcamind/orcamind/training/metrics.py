@@ -56,6 +56,10 @@ def adaptation_efficiency(losses_by_step: list[list[float]]) -> float:
         raise ValueError("losses_by_step must not be empty")
 
     n_steps = len(losses_by_step[0])
+    if n_steps == 0:
+        raise ValueError(
+            "each task loss trajectory must contain at least one step"
+        )
     for i, steps in enumerate(losses_by_step):
         if len(steps) != n_steps:
             raise ValueError(

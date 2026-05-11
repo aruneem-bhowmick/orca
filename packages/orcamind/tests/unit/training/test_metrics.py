@@ -131,6 +131,11 @@ class TestAdaptationEfficiency:
         with pytest.raises(ValueError):
             adaptation_efficiency([])
 
+    def test_raises_on_empty_trajectory(self):
+        """ValueError when each task's step list is empty."""
+        with pytest.raises(ValueError, match="at least one step"):
+            adaptation_efficiency([[], []])
+
 
 class TestCatastrophicForgetting:
     def test_returns_non_negative_float(self):
