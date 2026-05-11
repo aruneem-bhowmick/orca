@@ -62,7 +62,7 @@ class NearestNeighborSelector(ModelSelector):
         for candidate in candidate_models:
             weighted_sum = 0.0
             sim_sum = 0.0
-            for idx, sim in zip(anchor_indices, anchor_sims):
+            for idx, sim in zip(anchor_indices, anchor_sims, strict=True):
                 if self._configs[idx].model_id == candidate.model_id:
                     weighted_sum += float(sim) * self._performances[idx]
                     sim_sum += float(sim)

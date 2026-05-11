@@ -56,9 +56,7 @@ class LearningToRankSelector(ModelSelector):
         X = np.stack(
             [_build_feature_row(task_embeddings[i], model_configs[i]) for i in range(n)]
         )
-        # Each (task, model) pair is its own group of size 1 for pairwise training.
-        # Group all samples as a single query group so XGBoost can rank within it.
-        groups = np.array([n], dtype=np.int32)
+        # Assign all samples to a single query group (qid=0) for pairwise ranking.
         y = performances.astype(np.float64)
         self._ranker.fit(X, y, qid=np.zeros(n, dtype=np.int32))
         self._fitted = True
