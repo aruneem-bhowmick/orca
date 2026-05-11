@@ -59,8 +59,8 @@ class TestBestModelSelection:
             recs = fitted_selector.recommend(emb, model_configs, top_k=1)
             if recs[0].model_id == best_id:
                 hits += 1
-        # Must beat random baseline (1/N_MODELS = 0.2) — with structured data expect 100%
-        assert hits / len(held_out_embeddings) > 1.0 / N_MODELS
+        # Synthetic data has a clear best model; expect perfect retrieval on held-out tasks.
+        assert hits == len(held_out_embeddings)
 
 
 class TestConfidence:
@@ -71,7 +71,9 @@ class TestConfidence:
     ) -> None:
         query = np.random.default_rng(7).standard_normal(EMBED_DIM)
         recs = fitted_selector.recommend(query, model_configs, top_k=3)
-        assert all(r.confidence is not None and r.confidence >= 0.0 for r in recs)
+        assert all(
+            r.confidence is not None and 0.0 <= r.confidence <= 1.0 for r in recs
+        )
 
 
 class TestFitValidation:

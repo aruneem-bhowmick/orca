@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import re
+
 import numpy as np
 import pytest
 
@@ -44,6 +46,20 @@ class TestTopKCount:
         query = np.random.default_rng(31).standard_normal(EMBED_DIM)
         recs = fitted_predictor.recommend(query, model_configs, top_k=3)
         assert all(isinstance(r, ModelRecommendation) for r in recs)
+
+    def test_recommendations_are_sorted_by_predicted_mean(
+        self,
+        fitted_predictor: PerformancePredictor,
+        model_configs: list[ModelConfig],
+    ) -> None:
+        query = np.random.default_rng(32).standard_normal(EMBED_DIM)
+        recs = fitted_predictor.recommend(query, model_configs, top_k=3)
+        means = {
+            cfg.model_id: fitted_predictor.predict_with_confidence(query, cfg)[0]
+            for cfg in model_configs
+        }
+        returned = [means[r.model_id] for r in recs]
+        assert returned == sorted(returned, reverse=True)
 
 
 class TestBestModelSelection:
@@ -145,7 +161,12 @@ class TestConfidenceInRecommendations:
     ) -> None:
         emb = np.random.default_rng(61).standard_normal(EMBED_DIM)
         recs = fitted_predictor.recommend(emb, model_configs, top_k=1)
-        assert recs[0].reasoning is not None and "bootstrap_std=" in recs[0].reasoning
+        assert recs[0].reasoning is not None
+        match = re.search(
+            r"bootstrap_std=([0-9]*\.?[0-9]+(?:[eE][+-]?[0-9]+)?)", recs[0].reasoning
+        )
+        assert match is not None
+        assert float(match.group(1)) >= 0.0
 
 
 class TestFitValidation:
