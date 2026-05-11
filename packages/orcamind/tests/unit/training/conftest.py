@@ -5,6 +5,8 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 import pytest
+
+pytest.importorskip("pytorch_lightning")
 import torch
 import torch.nn as nn
 
