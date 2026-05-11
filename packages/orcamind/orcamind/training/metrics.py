@@ -76,7 +76,7 @@ def adaptation_efficiency(losses_by_step: list[list[float]]) -> float:
     if n_steps == 1:
         return 1.0 - normed[0]
 
-    auc = float(np.trapz(normed)) / (n_steps - 1)
+    auc = float(np.trapezoid(normed)) / (n_steps - 1)
     return 1.0 - float(np.clip(auc, 0.0, 1.0))
 
 

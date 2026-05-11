@@ -36,9 +36,10 @@ class TestUniformTaskSampler:
         assert len(result) == 4
 
     def test_result_is_subset_of_pool(self, uniform_sampler, task_pool):
-        """Every returned task is from the original pool."""
+        """Every returned task is from the original pool (identity check)."""
+        pool_ids = {id(t) for t in task_pool}
         result = uniform_sampler.sample(task_pool, 6)
-        assert all(t in task_pool for t in result)
+        assert all(id(t) in pool_ids for t in result)
 
     @pytest.mark.parametrize("n", [1, 3, 5, 10])
     def test_no_duplicate_tasks(self, uniform_sampler, task_pool, n):
@@ -71,20 +72,30 @@ class TestCurriculumTaskSampler:
         assert all(d <= max_eligible_difficulty for d in result_difficulties)
 
     def test_late_epoch_includes_harder_tasks(self):
-        """After warmup, harder tasks become eligible."""
+        """Hard tasks never appear at epoch 0 but do appear after warmup."""
+        # 10 tasks with strictly increasing difficulty (query_y[0] = 0..9)
         tasks = _make_tasks(10)
         difficulty_fn = lambda t: float(t.query_y[0].item())  # noqa: E731
         sampler = CurriculumTaskSampler(difficulty_fn=difficulty_fn, warmup_epochs=5)
 
-        early_pool = set(
-            id(t) for t in sampler.sample(tasks, len(tasks), epoch=0)
-        )
-        # At epoch=warmup_epochs, all tasks are eligible
-        late_pool = set(
-            id(t) for t in sampler.sample(tasks, len(tasks), epoch=5)
-        )
-        assert late_pool == {id(t) for t in tasks}
-        assert len(late_pool) > len(early_pool)
+        sorted_tasks = sorted(tasks, key=difficulty_fn)
+        # At epoch=0, fraction=0.2 → eligible = max(2, ceil(10*0.2)) = 2 easiest tasks
+        easy_ids = {id(t) for t in sorted_tasks[:2]}
+        hard_ids = {id(t) for t in sorted_tasks[2:]}
+
+        # Repeat sampling to get a stable view of what's reachable at epoch=0
+        seen_at_epoch0: set[int] = set()
+        for _ in range(40):
+            for t in sampler.sample(tasks, 2, epoch=0):
+                seen_at_epoch0.add(id(t))
+        assert not (seen_at_epoch0 & hard_ids), "Hard tasks should not appear at epoch 0"
+
+        # At epoch=4 (= warmup_epochs-1, fraction=1.0), all tasks are eligible
+        seen_at_late: set[int] = set()
+        for _ in range(40):
+            for t in sampler.sample(tasks, 8, epoch=4):
+                seen_at_late.add(id(t))
+        assert seen_at_late & hard_ids, "Hard tasks should appear after warmup"
 
     @pytest.mark.parametrize("epoch", [0, 1, 2, 4])
     def test_eligible_pool_grows_with_epoch(self, epoch):

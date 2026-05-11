@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import pytest
+
+pytest.importorskip("pytorch_lightning")
+
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 

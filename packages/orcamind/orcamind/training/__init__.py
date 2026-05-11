@@ -1,11 +1,5 @@
 """Training loops, Lightning modules, and experiment orchestration."""
 
-from orcamind.training.callbacks import (
-    CheckpointCallback,
-    EarlyStoppingCallback,
-    MetaValidationCallback,
-)
-from orcamind.training.meta_trainer import MetaTrainer
 from orcamind.training.metrics import (
     adaptation_efficiency,
     catastrophic_forgetting,
@@ -24,8 +18,22 @@ __all__ = [
     "k_shot_accuracy",
     "adaptation_efficiency",
     "catastrophic_forgetting",
-    "MetaValidationCallback",
-    "EarlyStoppingCallback",
-    "CheckpointCallback",
-    "MetaTrainer",
 ]
+
+# pytorch-lightning is an optional dependency; guard against missing install
+try:
+    from orcamind.training.callbacks import (
+        CheckpointCallback,
+        EarlyStoppingCallback,
+        MetaValidationCallback,
+    )
+    from orcamind.training.meta_trainer import MetaTrainer
+
+    __all__ += [
+        "MetaValidationCallback",
+        "EarlyStoppingCallback",
+        "CheckpointCallback",
+        "MetaTrainer",
+    ]
+except ImportError:
+    pass

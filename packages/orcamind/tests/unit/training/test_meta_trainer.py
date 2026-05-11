@@ -2,6 +2,10 @@
 
 from __future__ import annotations
 
+import pytest
+
+pytest.importorskip("pytorch_lightning")
+
 from unittest.mock import MagicMock, patch
 
 import pytest
