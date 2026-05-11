@@ -157,3 +157,9 @@ class TestDomainBalancedSampler:
         """Requesting 0 tasks returns an empty list."""
         result = domain_sampler.sample(task_pool, 0)
         assert result == []
+
+    def test_raises_for_empty_pool(self):
+        """ValueError when task_pool is empty."""
+        sampler = DomainBalancedSampler(domain_labels=[])
+        with pytest.raises(ValueError, match="empty task pool"):
+            sampler.sample([], 2)

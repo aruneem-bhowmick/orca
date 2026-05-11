@@ -64,6 +64,8 @@ class DomainBalancedSampler:
                 f"task_pool length ({len(task_pool)}) must match "
                 f"domain_labels length ({len(self._domain_labels)})"
             )
+        if not task_pool:
+            raise ValueError("Cannot sample tasks from an empty task pool")
         if n == 0:
             return []
 
