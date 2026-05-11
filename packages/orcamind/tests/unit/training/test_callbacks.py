@@ -48,6 +48,13 @@ def _mock_pl_module(meta_learner: MagicMock | None = None) -> MagicMock:
 
 
 class TestMetaValidationCallback:
+    def test_raises_for_non_positive_val_frequency(self):
+        """ValueError when val_frequency is zero or negative."""
+        with pytest.raises(ValueError, match="val_frequency must be >= 1"):
+            MetaValidationCallback(val_tasks=[_make_task()], val_frequency=0)
+        with pytest.raises(ValueError, match="val_frequency must be >= 1"):
+            MetaValidationCallback(val_tasks=[_make_task()], val_frequency=-3)
+
     def test_logs_metrics_without_error(self):
         """on_validation_epoch_end runs without raising and calls pl_module.log."""
         learner = MagicMock()

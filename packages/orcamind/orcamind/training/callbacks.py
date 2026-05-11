@@ -26,6 +26,8 @@ class MetaValidationCallback(pl.Callback):
         k_shot: int = 5,
         n_query: int = 15,
     ) -> None:
+        if val_frequency <= 0:
+            raise ValueError(f"val_frequency must be >= 1, got {val_frequency}")
         self._val_tasks = val_tasks
         self._val_frequency = val_frequency
         self._k_shot = k_shot
