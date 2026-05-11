@@ -86,17 +86,18 @@ class MetaTrainer(pl.LightningModule):
         return loss_tensor
 
     def validation_step(self, batch: list[Task], batch_idx: int) -> None:
-        for task in batch:
-            adapted = self.meta_learner.adapt(task.support_x, task.support_y)
-            result = self.meta_learner.evaluate_task(
-                adapted, task.query_x, task.query_y
-            )
-            val_loss = result.get("loss", 0.0)
-            val_acc = result.get("accuracy", 0.0)
-            if math.isnan(val_acc):
-                val_acc = 0.0
-            self.log("val_loss", val_loss, on_epoch=True, prog_bar=True)
-            self.log("val_accuracy", val_acc, on_epoch=True, prog_bar=False)
+        with torch.no_grad():
+            for task in batch:
+                adapted = self.meta_learner.adapt(task.support_x, task.support_y)
+                result = self.meta_learner.evaluate_task(
+                    adapted, task.query_x, task.query_y
+                )
+                val_loss = result.get("loss", 0.0)
+                val_acc = result.get("accuracy", 0.0)
+                if math.isnan(val_acc):
+                    val_acc = 0.0
+                self.log("val_loss", val_loss, on_epoch=True, prog_bar=True)
+                self.log("val_accuracy", val_acc, on_epoch=True, prog_bar=False)
 
     def configure_optimizers(self) -> Any:
         opt = getattr(self.meta_learner, "_outer_opt", None)
