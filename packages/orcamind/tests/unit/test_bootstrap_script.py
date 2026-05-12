@@ -105,6 +105,11 @@ class TestParseArgsCustom:
             args = bmd.parse_args()
         assert args.suites == ["cc18", "ctr23"]
 
+    def test_max_tasks_negative_raises(self, bmd) -> None:
+        with patch("sys.argv", ["prog", "--max-tasks", "-1"]):
+            with pytest.raises(SystemExit):
+                bmd.parse_args()
+
 
 # ── TestParseArgsOldArgsRemoved ───────────────────────────────────────────────
 
@@ -243,6 +248,17 @@ class TestDownloadSuite:
             sys.modules["openml"].tasks.get_task.side_effect = RuntimeError("fail")
             result = bmd.download_suite("cc18")
         assert result == []
+
+    def test_max_tasks_limits_fetch_calls_not_just_output(self, bmd) -> None:
+        """Limit applied to task_ids before fetching so only max_tasks network calls are made."""
+        suite = self._make_suite(100)
+        task_mock = self._make_task(0)
+        with patch.dict("sys.modules", {"openml": MagicMock(), "openml.study": MagicMock(), "openml.tasks": MagicMock()}):
+            import sys
+            sys.modules["openml"].study.get_suite.return_value = suite
+            sys.modules["openml"].tasks.get_task.return_value = task_mock
+            bmd.download_suite("cc18", max_tasks=2)
+            assert sys.modules["openml"].tasks.get_task.call_count == 2
 
     def test_unknown_suite_key_raises(self, bmd) -> None:
         with pytest.raises(KeyError):

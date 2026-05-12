@@ -98,6 +98,13 @@ _LARGE_SAMPLE_THRESHOLD = 10_000
 # ---------------------------------------------------------------------------
 
 
+def _non_negative_int(value: str) -> int:
+    ivalue = int(value)
+    if ivalue < 0:
+        raise argparse.ArgumentTypeError(f"--max-tasks must be >= 0, got {ivalue}")
+    return ivalue
+
+
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser = argparse.ArgumentParser(
         description="Seed the OrcaMind registry with OpenML benchmark tasks.",
@@ -106,7 +113,7 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--max-tasks",
-        type=int,
+        type=_non_negative_int,
         default=None,
         help="Max tasks per suite to ingest (default: all)",
     )
@@ -156,6 +163,8 @@ def download_suite(suite_name: str, max_tasks: int | None = None) -> list[Any]:
     import openml  # deferred: not needed when the script is imported for testing
     suite = openml.study.get_suite(suite_key)
     task_ids: list[int] = list(suite.tasks or [])
+    if max_tasks is not None:
+        task_ids = task_ids[:max_tasks]
 
     tasks: list[Any] = []
     for tid in task_ids:
@@ -164,8 +173,6 @@ def download_suite(suite_name: str, max_tasks: int | None = None) -> list[Any]:
         except Exception as exc:
             log.warning("Skipping OpenML task %s: %s", tid, exc)
 
-    if max_tasks is not None:
-        tasks = tasks[:max_tasks]
     return tasks
 
 
