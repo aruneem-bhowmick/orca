@@ -41,6 +41,19 @@ class TestParseArgsDefaults:
             args = bmd.parse_args()
         assert "localhost" in args.db_url
 
+    def test_db_url_default_no_plaintext_password(self, bmd, monkeypatch) -> None:
+        monkeypatch.delenv("ORCA_DB_URL", raising=False)
+        with patch("sys.argv", ["prog"]):
+            args = bmd.parse_args()
+        assert "orca_dev_secret" not in args.db_url
+
+    def test_db_url_respects_orca_db_url_env(self, bmd, monkeypatch) -> None:
+        custom = "postgresql+asyncpg://custom:5432/mydb"
+        monkeypatch.setenv("ORCA_DB_URL", custom)
+        with patch("sys.argv", ["prog"]):
+            args = bmd.parse_args()
+        assert args.db_url == custom
+
     def test_dry_run_default_is_false(self, bmd) -> None:
         with patch("sys.argv", ["prog"]):
             args = bmd.parse_args()

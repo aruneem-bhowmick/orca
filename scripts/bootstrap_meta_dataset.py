@@ -27,6 +27,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import logging
+import os
 import sys
 import uuid
 from pathlib import Path
@@ -118,8 +119,11 @@ def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--db-url",
         type=str,
-        default="postgresql+asyncpg://orca:orca_dev_secret@localhost:5432/orca_registry",
-        help="Async PostgreSQL connection URL",
+        default=os.getenv(
+            "ORCA_DB_URL",
+            "postgresql+asyncpg://localhost:5432/orca_registry",
+        ),
+        help="Async PostgreSQL connection URL (overridden by $ORCA_DB_URL)",
     )
     parser.add_argument(
         "--suites",
