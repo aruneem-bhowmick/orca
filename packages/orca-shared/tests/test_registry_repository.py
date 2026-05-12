@@ -13,12 +13,20 @@ from unittest.mock import AsyncMock, MagicMock, call
 
 import pytest
 
-from tests.conftest import make_execute_result, make_experiment_row, make_performance_row, make_task_row
+from tests.conftest import (
+    make_embedding_row,
+    make_execute_result,
+    make_experiment_row,
+    make_performance_row,
+    make_task_row,
+)
 from orca_shared.registry.repository import (
+    EmbeddingRepository,
     ExperimentRepository,
     PerformanceRepository,
     TaskRepository,
 )
+from orca_shared.schemas.embedding import Embedding
 from orca_shared.schemas.metrics import MetricPoint, PerformanceMetrics
 from orca_shared.schemas.task import Task, TaskCreate, TaskSummary
 from orca_shared.schemas.training import ExperimentResult
@@ -410,3 +418,83 @@ class TestPerformanceRepositoryGetHistory:
         mock_session.execute.return_value = make_execute_result([])
         results = await PerformanceRepository(mock_session).get_history(experiment_id, "acc")
         assert results == []
+
+
+# ---------------------------------------------------------------------------
+# EmbeddingRepository
+# ---------------------------------------------------------------------------
+
+
+class TestEmbeddingRepositoryCreate:
+    async def test_add_and_flush_called(self, mock_session, task_id) -> None:
+        await EmbeddingRepository(mock_session).create(task_id, [0.1] * 25)
+        mock_session.add.assert_called_once()
+        mock_session.flush.assert_awaited_once()
+
+    async def test_returns_embedding_schema(self, mock_session, task_id) -> None:
+        result = await EmbeddingRepository(mock_session).create(task_id, [0.1] * 25)
+        assert isinstance(result, Embedding)
+
+    async def test_embedding_id_is_uuid(self, mock_session, task_id) -> None:
+        result = await EmbeddingRepository(mock_session).create(task_id, [0.0] * 25)
+        assert isinstance(result.embedding_id, uuid.UUID)
+
+    async def test_dimension_equals_vector_length(self, mock_session, task_id) -> None:
+        vec = [0.5] * 25
+        result = await EmbeddingRepository(mock_session).create(task_id, vec)
+        assert result.dimension == 25
+
+    async def test_embedding_type_stored(self, mock_session, task_id) -> None:
+        await EmbeddingRepository(mock_session).create(
+            task_id, [0.0] * 25, embedding_type="statistical"
+        )
+        row = mock_session.add.call_args.args[0]
+        assert row.embedding_type == "statistical"
+
+    async def test_model_version_stored(self, mock_session, task_id) -> None:
+        await EmbeddingRepository(mock_session).create(
+            task_id, [0.0] * 25, model_version="v1"
+        )
+        row = mock_session.add.call_args.args[0]
+        assert row.model_version == "v1"
+
+    async def test_task_id_stored(self, mock_session, task_id) -> None:
+        await EmbeddingRepository(mock_session).create(task_id, [0.0] * 25)
+        row = mock_session.add.call_args.args[0]
+        assert row.task_id == task_id
+
+    async def test_vector_stored_on_row(self, mock_session, task_id) -> None:
+        vec = [float(i) for i in range(25)]
+        await EmbeddingRepository(mock_session).create(task_id, vec)
+        row = mock_session.add.call_args.args[0]
+        assert row.embedding_vector == vec
+
+    async def test_dimension_matches_vector_on_row(self, mock_session, task_id) -> None:
+        vec = [0.0] * 25
+        await EmbeddingRepository(mock_session).create(task_id, vec)
+        row = mock_session.add.call_args.args[0]
+        assert row.dimension == len(vec)
+
+
+class TestEmbeddingRepositoryGetById:
+    async def test_returns_embedding_when_found(
+        self, mock_session, embedding_id, task_id
+    ) -> None:
+        row = make_embedding_row(embedding_id=embedding_id, task_id=task_id)
+        mock_session.execute.return_value = make_execute_result([row])
+
+        result = await EmbeddingRepository(mock_session).get_by_id(embedding_id)
+
+        assert result is not None
+        assert isinstance(result, Embedding)
+        assert result.embedding_id == embedding_id
+
+    async def test_returns_none_when_not_found(self, mock_session) -> None:
+        mock_session.execute.return_value = make_execute_result([])
+        result = await EmbeddingRepository(mock_session).get_by_id(uuid.uuid4())
+        assert result is None
+
+    async def test_execute_called_once(self, mock_session, embedding_id) -> None:
+        mock_session.execute.return_value = make_execute_result([])
+        await EmbeddingRepository(mock_session).get_by_id(embedding_id)
+        mock_session.execute.assert_awaited_once()
