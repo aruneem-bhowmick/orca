@@ -133,6 +133,21 @@ def make_performance_row(**kwargs) -> SimpleNamespace:
     return SimpleNamespace(**defaults)
 
 
+def make_embedding_row(**kwargs) -> SimpleNamespace:
+    """Minimal EmbeddingORM-shaped namespace for repository tests."""
+    defaults = dict(
+        embedding_id=uuid4(),
+        task_id=uuid4(),
+        embedding_type="statistical",
+        embedding_vector=[0.0] * 25,
+        dimension=25,
+        model_version="v1",
+        created_at=datetime.now(timezone.utc),
+    )
+    defaults.update(kwargs)
+    return SimpleNamespace(**defaults)
+
+
 # ---------------------------------------------------------------------------
 # MLflow / torch sys.modules mocks
 # ---------------------------------------------------------------------------
