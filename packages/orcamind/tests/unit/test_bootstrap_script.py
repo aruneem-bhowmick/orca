@@ -1,4 +1,4 @@
-"""Tests for scripts/bootstrap_meta_dataset.py (stub stage)."""
+"""Tests for scripts/bootstrap_meta_dataset.py."""
 
 from __future__ import annotations
 
@@ -6,136 +6,161 @@ from pathlib import Path
 from unittest.mock import patch
 
 
-# ── parse_args defaults ───────────────────────────────────────────────────────
-
-def test_parse_args_suite_id_default(bmd) -> None:
-    with patch("sys.argv", ["prog"]):
-        args = bmd.parse_args()
-    assert args.suite_id == 271
+# ── TestParseArgsDefaults ─────────────────────────────────────────────────────
 
 
-def test_parse_args_max_tasks_default_is_none(bmd) -> None:
-    with patch("sys.argv", ["prog"]):
-        args = bmd.parse_args()
-    assert args.max_tasks is None
+class TestParseArgsDefaults:
+    def test_max_tasks_default_is_none(self, bmd) -> None:
+        with patch("sys.argv", ["prog"]):
+            args = bmd.parse_args()
+        assert args.max_tasks is None
+
+    def test_output_dir_default(self, bmd) -> None:
+        with patch("sys.argv", ["prog"]):
+            args = bmd.parse_args()
+        assert args.output_dir == "data/"
+
+    def test_db_url_default_contains_asyncpg(self, bmd) -> None:
+        with patch("sys.argv", ["prog"]):
+            args = bmd.parse_args()
+        assert "asyncpg" in args.db_url
+
+    def test_db_url_default_contains_orca_registry(self, bmd) -> None:
+        with patch("sys.argv", ["prog"]):
+            args = bmd.parse_args()
+        assert "orca_registry" in args.db_url
+
+    def test_db_url_default_contains_localhost(self, bmd) -> None:
+        with patch("sys.argv", ["prog"]):
+            args = bmd.parse_args()
+        assert "localhost" in args.db_url
+
+    def test_dry_run_default_is_false(self, bmd) -> None:
+        with patch("sys.argv", ["prog"]):
+            args = bmd.parse_args()
+        assert args.dry_run is False
+
+    def test_suites_default_contains_cc18(self, bmd) -> None:
+        with patch("sys.argv", ["prog"]):
+            args = bmd.parse_args()
+        assert "cc18" in args.suites
+
+    def test_suites_default_contains_ctr23(self, bmd) -> None:
+        with patch("sys.argv", ["prog"]):
+            args = bmd.parse_args()
+        assert "ctr23" in args.suites
 
 
-def test_parse_args_data_dir_default(bmd) -> None:
-    with patch("sys.argv", ["prog"]):
-        args = bmd.parse_args()
-    assert args.data_dir == "./data/openml"
+# ── TestParseArgsCustom ───────────────────────────────────────────────────────
 
 
-def test_parse_args_registry_url_default(bmd) -> None:
-    with patch("sys.argv", ["prog"]):
-        args = bmd.parse_args()
-    assert "localhost:5432" in args.registry_url
-    assert "orca_registry" in args.registry_url
+class TestParseArgsCustom:
+    def test_max_tasks_custom_value(self, bmd) -> None:
+        with patch("sys.argv", ["prog", "--max-tasks", "10"]):
+            args = bmd.parse_args()
+        assert args.max_tasks == 10
+
+    def test_output_dir_custom(self, bmd) -> None:
+        with patch("sys.argv", ["prog", "--output-dir", "/tmp/out"]):
+            args = bmd.parse_args()
+        assert args.output_dir == "/tmp/out"
+
+    def test_db_url_custom(self, bmd) -> None:
+        url = "postgresql+asyncpg://user:pass@host:5432/db"
+        with patch("sys.argv", ["prog", "--db-url", url]):
+            args = bmd.parse_args()
+        assert args.db_url == url
+
+    def test_dry_run_flag_set(self, bmd) -> None:
+        with patch("sys.argv", ["prog", "--dry-run"]):
+            args = bmd.parse_args()
+        assert args.dry_run is True
+
+    def test_suites_custom_single(self, bmd) -> None:
+        with patch("sys.argv", ["prog", "--suites", "cc18"]):
+            args = bmd.parse_args()
+        assert args.suites == ["cc18"]
+
+    def test_suites_custom_multiple(self, bmd) -> None:
+        with patch("sys.argv", ["prog", "--suites", "cc18", "ctr23"]):
+            args = bmd.parse_args()
+        assert args.suites == ["cc18", "ctr23"]
 
 
-def test_parse_args_dry_run_default_is_false(bmd) -> None:
-    with patch("sys.argv", ["prog"]):
-        args = bmd.parse_args()
-    assert args.dry_run is False
+# ── TestParseArgsOldArgsRemoved ───────────────────────────────────────────────
 
 
-# ── parse_args custom values ──────────────────────────────────────────────────
+class TestParseArgsOldArgsRemoved:
+    def test_suite_id_not_an_attribute(self, bmd) -> None:
+        with patch("sys.argv", ["prog"]):
+            args = bmd.parse_args()
+        assert not hasattr(args, "suite_id")
 
-def test_parse_args_custom_suite_id(bmd) -> None:
-    with patch("sys.argv", ["prog", "--suite-id", "99"]):
-        args = bmd.parse_args()
-    assert args.suite_id == 99
+    def test_data_dir_not_an_attribute(self, bmd) -> None:
+        with patch("sys.argv", ["prog"]):
+            args = bmd.parse_args()
+        assert not hasattr(args, "data_dir")
 
-
-def test_parse_args_custom_max_tasks(bmd) -> None:
-    with patch("sys.argv", ["prog", "--max-tasks", "10"]):
-        args = bmd.parse_args()
-    assert args.max_tasks == 10
-
-
-def test_parse_args_custom_data_dir(bmd) -> None:
-    with patch("sys.argv", ["prog", "--data-dir", "/tmp/data"]):
-        args = bmd.parse_args()
-    assert args.data_dir == "/tmp/data"
+    def test_registry_url_not_an_attribute(self, bmd) -> None:
+        with patch("sys.argv", ["prog"]):
+            args = bmd.parse_args()
+        assert not hasattr(args, "registry_url")
 
 
-def test_parse_args_dry_run_flag(bmd) -> None:
-    with patch("sys.argv", ["prog", "--dry-run"]):
-        args = bmd.parse_args()
-    assert args.dry_run is True
+# ── TestModuleStructure ───────────────────────────────────────────────────────
 
 
-def test_parse_args_custom_registry_url(bmd) -> None:
-    url = "postgresql://user:pass@remotehost:5432/mydb"
-    with patch("sys.argv", ["prog", "--registry-url", url]):
-        args = bmd.parse_args()
-    assert args.registry_url == url
+class TestModuleStructure:
+    def test_suite_names_constant_exists(self, bmd) -> None:
+        assert hasattr(bmd, "SUITE_NAMES")
 
+    def test_suite_names_has_cc18(self, bmd) -> None:
+        assert "cc18" in bmd.SUITE_NAMES
 
-# ── main() behaviour ──────────────────────────────────────────────────────────
+    def test_suite_names_has_ctr23(self, bmd) -> None:
+        assert "ctr23" in bmd.SUITE_NAMES
 
-def test_main_returns_zero(bmd) -> None:
-    with patch("sys.argv", ["prog"]):
-        code = bmd.main()
-    assert code == 0
+    def test_classification_models_constant_exists(self, bmd) -> None:
+        assert hasattr(bmd, "CLASSIFICATION_MODELS")
 
+    def test_classification_models_has_five_entries(self, bmd) -> None:
+        assert len(bmd.CLASSIFICATION_MODELS) == 5
 
-def test_main_prints_suite_id(bmd, capsys) -> None:
-    with patch("sys.argv", ["prog"]):
-        bmd.main()
-    assert "271" in capsys.readouterr().out
+    def test_regression_models_constant_exists(self, bmd) -> None:
+        assert hasattr(bmd, "REGRESSION_MODELS")
 
+    def test_regression_models_has_five_entries(self, bmd) -> None:
+        assert len(bmd.REGRESSION_MODELS) == 5
 
-def test_main_prints_stub_notice(bmd, capsys) -> None:
-    with patch("sys.argv", ["prog"]):
-        bmd.main()
-    assert "stub" in capsys.readouterr().out.lower()
+    def test_download_suite_callable(self, bmd) -> None:
+        assert callable(bmd.download_suite)
 
+    def test_fetch_dataset_callable(self, bmd) -> None:
+        assert callable(bmd.fetch_dataset)
 
-def test_main_prints_separator_line(bmd, capsys) -> None:
-    with patch("sys.argv", ["prog"]):
-        bmd.main()
-    assert "=" * 10 in capsys.readouterr().out
+    def test_run_baseline_models_callable(self, bmd) -> None:
+        assert callable(bmd.run_baseline_models)
 
+    def test_store_task_callable(self, bmd) -> None:
+        assert callable(bmd.store_task)
 
-def test_main_reflects_custom_suite_id(bmd, capsys) -> None:
-    with patch("sys.argv", ["prog", "--suite-id", "42"]):
-        bmd.main()
-    assert "42" in capsys.readouterr().out
+    def test_store_experiments_callable(self, bmd) -> None:
+        assert callable(bmd.store_experiments)
 
+    def test_store_embedding_callable(self, bmd) -> None:
+        assert callable(bmd.store_embedding)
 
-def test_main_reflects_dry_run_true(bmd, capsys) -> None:
-    with patch("sys.argv", ["prog", "--dry-run"]):
-        bmd.main()
-    assert "True" in capsys.readouterr().out
+    def test_bootstrap_async_callable(self, bmd) -> None:
+        assert callable(bmd._bootstrap_async)
 
+    def test_main_callable(self, bmd) -> None:
+        assert callable(bmd.main)
 
-def test_main_max_tasks_none_shows_all(bmd, capsys) -> None:
-    with patch("sys.argv", ["prog"]):
-        bmd.main()
-    assert "all" in capsys.readouterr().out
+    def test_module_has_docstring(self, bmd) -> None:
+        assert bmd.__doc__ is not None and bmd.__doc__.strip()
 
+    def test_module_docstring_mentions_openml(self, bmd) -> None:
+        assert "openml" in bmd.__doc__.lower()
 
-def test_main_max_tasks_int_shown(bmd, capsys) -> None:
-    with patch("sys.argv", ["prog", "--max-tasks", "50"]):
-        bmd.main()
-    assert "50" in capsys.readouterr().out
-
-
-# ── module structure ──────────────────────────────────────────────────────────
-
-def test_module_has_docstring(bmd) -> None:
-    assert bmd.__doc__ is not None and bmd.__doc__.strip()
-
-
-def test_module_docstring_mentions_openml(bmd) -> None:
-    assert "openml" in bmd.__doc__.lower()
-
-
-def test_script_file_exists(repo_root: Path) -> None:
-    assert (repo_root / "scripts" / "bootstrap_meta_dataset.py").is_file()
-
-
-def test_script_is_executable_stub(bmd) -> None:
-    assert callable(bmd.parse_args)
-    assert callable(bmd.main)
+    def test_script_file_exists(self, repo_root: Path) -> None:
+        assert (repo_root / "scripts" / "bootstrap_meta_dataset.py").is_file()
