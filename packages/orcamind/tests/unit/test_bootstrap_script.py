@@ -853,6 +853,11 @@ class TestBootstrapOrchestration:
         assert result["tasks"] == 2
 
     async def test_fetch_dataset_failure_skips_task(self, bmd, tmp_path) -> None:
+        """A fetch failure on task 2-of-3 is skipped; tasks 1 and 3 are stored."""
+        from uuid import uuid4
+        import contextlib
+        from unittest.mock import AsyncMock as AM
+
         args = self._make_args()
         args.output_dir = str(tmp_path)
         task_objs = [self._make_task_obj(i) for i in range(3)]
@@ -867,15 +872,37 @@ class TestBootstrapOrchestration:
             y = pd.Series([0])
             return X, y, "classification"
 
+        mock_store_task = AM(return_value=uuid4())
+
+        @contextlib.asynccontextmanager
+        async def fake_session(engine):
+            mock_s = MagicMock()
+            mock_s.add = MagicMock()
+            mock_s.flush = AM(return_value=None)
+            yield mock_s
+
         with patch.object(bmd, "download_suite", return_value=task_objs), \
              patch.object(bmd, "fetch_dataset", side_effect=fetch_side_effect), \
              patch.object(bmd, "run_baseline_models", return_value={}), \
              patch.object(bmd, "get_engine"), \
-             patch.object(bmd, "get_session"), \
-             patch.object(bmd, "store_task", new=__import__("unittest.mock", fromlist=["AsyncMock"]).AsyncMock(side_effect=RuntimeError("should not reach"))):
+             patch.object(bmd, "store_task", new=mock_store_task), \
+             patch.object(bmd, "store_experiments", new=AM(return_value=0)), \
+             patch.object(bmd, "store_embedding", new=AM()), \
+             patch.object(bmd, "StatisticalEmbedder") as MockEmbedder, \
+             patch.object(bmd, "FaissIndex") as MockFaiss, \
+             patch.object(bmd, "get_session") as mock_get_session:
+
+            mock_embedder = MagicMock()
+            mock_embedder.embedding_dim = 25
+            MockEmbedder.return_value = mock_embedder
+            MockFaiss.return_value = MagicMock()
+            mock_get_session.side_effect = fake_session
+
             result = await bmd._bootstrap_async(args)
 
-        assert result["tasks"] == 0  # dry_run=False but no successful stores in this test
+        # task 2's fetch raised → store_task called exactly twice, not three times
+        assert mock_store_task.call_count == 2
+        assert result["tasks"] == 2
 
     async def test_faiss_saved_when_not_dry_run(self, bmd, tmp_path) -> None:
         from unittest.mock import AsyncMock as AM
