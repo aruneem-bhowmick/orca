@@ -148,9 +148,8 @@ def download_suite(suite_name: str, max_tasks: int | None = None) -> list[Any]:
     Failures on individual task downloads are logged and skipped so one
     unreachable task cannot abort the whole run.
     """
+    suite_key = SUITE_NAMES[suite_name]  # raises KeyError early, before the optional import
     import openml  # deferred: not needed when the script is imported for testing
-
-    suite_key = SUITE_NAMES[suite_name]
     suite = openml.study.get_suite(suite_key)
     task_ids: list[int] = list(suite.tasks or [])
 

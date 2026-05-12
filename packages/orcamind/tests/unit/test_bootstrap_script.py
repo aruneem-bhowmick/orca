@@ -5,7 +5,7 @@ from __future__ import annotations
 import math
 from pathlib import Path
 from types import SimpleNamespace
-from unittest.mock import MagicMock, call, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import numpy as np
 import pandas as pd
@@ -393,7 +393,7 @@ class TestStoreTask:
         )
 
     async def test_returns_uuid(self, bmd, mock_session) -> None:
-        import uuid
+        from uuid import UUID
         task_schema = self._make_task_schema()
         with patch.object(bmd, "TaskRepository") as MockRepo:
             mock_repo = MagicMock()
@@ -402,7 +402,7 @@ class TestStoreTask:
             X = pd.DataFrame({"a": [1.0, 2.0], "b": [3.0, 4.0]})
             y = pd.Series([0, 1])
             result = await bmd.store_task(mock_session, self._make_openml_task(), X, y, "classification")
-        assert isinstance(result, type(task_schema.task_id))
+        assert isinstance(result, UUID)
 
     async def test_n_samples_from_dataframe_len(self, bmd, mock_session) -> None:
         from unittest.mock import AsyncMock as AM
@@ -708,6 +708,7 @@ class TestBootstrapOrchestration:
     def _make_task_obj(self, task_id: int = 1) -> MagicMock:
         t = MagicMock()
         t.task_id = task_id
+        t.get_dataset.return_value.name = f"task_{task_id}"
         return t
 
     def _model_results(self) -> dict:
