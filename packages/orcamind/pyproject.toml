@@ -30,6 +30,7 @@ dependencies = [
     "plotly>=5.17.0",
     "typer>=0.9.0",
     "orca-shared",
+    "openml>=0.14.0",
 ]
 
 [project.optional-dependencies]

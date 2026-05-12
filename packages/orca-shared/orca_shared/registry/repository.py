@@ -8,10 +8,12 @@ from sqlalchemy import select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from orca_shared.registry.models import (
+    Embedding as EmbeddingORM,
     Experiment as ExperimentORM,
     Performance as PerformanceORM,
     Task as TaskORM,
 )
+from orca_shared.schemas.embedding import Embedding
 from orca_shared.schemas.metrics import MetricPoint, PerformanceMetrics
 from orca_shared.schemas.task import Task, TaskCreate, TaskSummary
 from orca_shared.schemas.training import ExperimentResult
@@ -192,3 +194,35 @@ class PerformanceRepository:
             )
             for r in result.scalars()
         ]
+
+
+class EmbeddingRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def create(
+        self,
+        task_id: uuid.UUID,
+        embedding_vector: list[float],
+        embedding_type: str = "statistical",
+        model_version: str = "v1",
+    ) -> Embedding:
+        row = EmbeddingORM(
+            embedding_id=uuid.uuid4(),
+            task_id=task_id,
+            embedding_type=embedding_type,
+            embedding_vector=embedding_vector,
+            dimension=len(embedding_vector),
+            model_version=model_version,
+            created_at=datetime.now(timezone.utc),
+        )
+        self._session.add(row)
+        await self._session.flush()
+        return Embedding.model_validate(row)
+
+    async def get_by_id(self, embedding_id: uuid.UUID) -> Optional[Embedding]:
+        result = await self._session.execute(
+            select(EmbeddingORM).where(EmbeddingORM.embedding_id == embedding_id)
+        )
+        row = result.scalar_one_or_none()
+        return Embedding.model_validate(row) if row is not None else None

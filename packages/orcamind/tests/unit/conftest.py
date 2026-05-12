@@ -30,6 +30,20 @@ def repo_root() -> Path:
     return _REPO_ROOT
 
 
+@pytest.fixture
+def mock_session():
+    """AsyncSession mock with add (sync) and flush/execute (async) pre-wired."""
+    from unittest.mock import AsyncMock, MagicMock
+
+    from sqlalchemy.ext.asyncio import AsyncSession
+
+    session = AsyncMock(spec=AsyncSession)
+    session.add = MagicMock()
+    session.flush = AsyncMock()
+    session.execute = AsyncMock()
+    return session
+
+
 @pytest.fixture(scope="session")
 def orcamind_pkg_dir() -> Path:
     return _REPO_ROOT / "packages" / "orcamind"
