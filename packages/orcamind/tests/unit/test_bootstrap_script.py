@@ -421,7 +421,7 @@ class TestStoreTask:
             n_samples=100,
             n_features=4,
             n_classes=3,
-            dataset_uri=f"openml://task/123",
+            dataset_uri="openml://task/123",
             metadata={"openml_task_id": 123},
             embedding_id=None,
             created_at=datetime.now(timezone.utc),
