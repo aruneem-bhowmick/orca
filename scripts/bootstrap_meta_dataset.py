@@ -40,8 +40,19 @@ from sklearn.linear_model import LogisticRegression, Ridge
 from sklearn.model_selection import cross_val_score
 from sklearn.neighbors import KNeighborsClassifier, KNeighborsRegressor
 from sklearn.svm import SVC, SVR
-from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession
 from xgboost import XGBClassifier, XGBRegressor
+
+from orca_shared.registry.models import Model as ModelORM, get_engine, get_session
+from orca_shared.registry.repository import (
+    EmbeddingRepository,
+    ExperimentRepository,
+    PerformanceRepository,
+    TaskRepository,
+)
+from orca_shared.schemas.task import TaskCreate
+from orcamind.embedders.similarity import FaissIndex
+from orcamind.embedders.statistical import StatisticalEmbedder
 
 log = logging.getLogger(__name__)
 
@@ -231,12 +242,161 @@ def run_baseline_models(
 
 
 # ---------------------------------------------------------------------------
-# Stub async entry point (filled in later commits)
+# Registry storage helpers
+# ---------------------------------------------------------------------------
+
+
+async def store_task(
+    session: AsyncSession,
+    task_obj: Any,
+    X: pd.DataFrame,
+    y: pd.Series,
+    task_type: str,
+) -> uuid.UUID:
+    """Persist one OpenML task to the registry and return its task_id."""
+    try:
+        dataset_name: str = task_obj.get_dataset().name
+    except Exception:
+        dataset_name = f"openml_{task_obj.task_id}"
+
+    n_classes = int(y.nunique()) if task_type == "classification" else None
+    task_create = TaskCreate(
+        name=dataset_name,
+        domain="tabular",
+        task_type=task_type,
+        n_samples=len(X),
+        n_features=len(X.columns),
+        n_classes=n_classes,
+        dataset_uri=f"openml://task/{task_obj.task_id}",
+        metadata={"openml_task_id": task_obj.task_id, "dataset_name": dataset_name},
+    )
+    task = await TaskRepository(session).create(task_create)
+    return task.task_id
+
+
+async def store_experiments(
+    session: AsyncSession,
+    task_id: uuid.UUID,
+    model_results: dict[str, dict[str, float]],
+    task_type: str,
+) -> int:
+    """Create Experiment + Performance rows for each non-NaN model result."""
+    exp_repo = ExperimentRepository(session)
+    perf_repo = PerformanceRepository(session)
+    stored = 0
+    for model_name, stats in model_results.items():
+        if np.isnan(stats["mean"]):
+            continue
+
+        model_row = ModelORM(
+            model_id=uuid.uuid4(),
+            name=model_name,
+            architecture="sklearn",
+            config={"model": model_name, "task_type": task_type, "cv_folds": 5},
+        )
+        session.add(model_row)
+        await session.flush()
+
+        experiment = await exp_repo.create(
+            task_id=task_id,
+            model_id=model_row.model_id,
+            training_config={"model": model_name, "cv_folds": 5},
+            created_by="bootstrap",
+        )
+        await perf_repo.log_metric(experiment.experiment_id, "cv_mean", stats["mean"], is_final=True)
+        await perf_repo.log_metric(experiment.experiment_id, "cv_std", stats["std"], is_final=True)
+        await exp_repo.mark_complete(experiment.experiment_id, mlflow_run_id="")
+        stored += 1
+    return stored
+
+
+async def store_embedding(
+    session: AsyncSession,
+    embedder: StatisticalEmbedder,
+    faiss_index: FaissIndex,
+    task_id: uuid.UUID,
+    X: pd.DataFrame,
+    y: pd.Series,
+) -> np.ndarray:
+    """Embed task, persist Embedding row, link to Task, and add to FAISS index."""
+    vec = embedder.embed(X, y)
+    emb = await EmbeddingRepository(session).create(
+        task_id=task_id,
+        embedding_vector=vec.tolist(),
+        embedding_type="statistical",
+        model_version="v1",
+    )
+    await TaskRepository(session).update_embedding(task_id, emb.embedding_id)
+    faiss_index.add(str(task_id), vec)
+    return vec
+
+
+# ---------------------------------------------------------------------------
+# Full async bootstrap orchestration
 # ---------------------------------------------------------------------------
 
 
 async def _bootstrap_async(args: argparse.Namespace) -> dict[str, int]:
-    return {"tasks": 0, "experiments": 0}
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+
+    engine = get_engine(args.db_url)
+    embedder = StatisticalEmbedder()
+    faiss_index = FaissIndex(dim=embedder.embedding_dim, metric="cosine")
+
+    task_count = 0
+    experiment_count = 0
+
+    for suite_name in args.suites:
+        log.info("Downloading suite: %s", suite_name)
+        tasks = download_suite(suite_name, args.max_tasks)
+        log.info("  %d tasks fetched", len(tasks))
+
+        for task_obj in tasks:
+            try:
+                X, y, task_type = fetch_dataset(task_obj)
+            except Exception as exc:
+                log.warning("Skipping task %s (fetch failed): %s", task_obj.task_id, exc)
+                continue
+
+            model_results = run_baseline_models(X, y, task_type, len(X))
+
+            if args.dry_run:
+                valid = sum(
+                    1 for s in model_results.values() if not np.isnan(s["mean"])
+                )
+                log.info(
+                    "[dry-run] task %s: %d samples, %d features, %d valid models",
+                    task_obj.task_id,
+                    len(X),
+                    len(X.columns),
+                    valid,
+                )
+                continue
+
+            try:
+                async with get_session(engine) as session:
+                    tid = await store_task(session, task_obj, X, y, task_type)
+                    n_exp = await store_experiments(session, tid, model_results, task_type)
+                    await store_embedding(session, embedder, faiss_index, tid, X, y)
+                task_count += 1
+                experiment_count += n_exp
+            except Exception as exc:
+                log.warning("Failed to persist task %s: %s", task_obj.task_id, exc)
+
+    if not args.dry_run:
+        index_path = str(output_dir / "orca_task_index")
+        faiss_index.save(index_path)
+        log.info("FAISS index saved to %s.index", index_path)
+
+    print("=" * 60)
+    print(f"  Tasks ingested  : {task_count}")
+    print(f"  Experiments     : {experiment_count}")
+    if not args.dry_run:
+        print(f"  FAISS index     : {output_dir / 'orca_task_index.faiss'}")
+    print("=" * 60)
+
+    return {"tasks": task_count, "experiments": experiment_count}
 
 
 def main() -> int:
