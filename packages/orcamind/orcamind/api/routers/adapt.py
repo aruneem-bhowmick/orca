@@ -6,15 +6,15 @@ import logging
 from typing import Any
 from uuid import UUID
 
-from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException
+from fastapi import APIRouter, BackgroundTasks, Depends, HTTPException, Request
 from pydantic import BaseModel
-from sqlalchemy.ext.asyncio import AsyncEngine, async_sessionmaker
-
-from orca_shared.registry.repository import ExperimentRepository, TaskRepository
-from orca_shared.registry.models import Model as ModelORM
 from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker
 
-from ..deps import get_experiment_repo, get_task_repo
+from orca_shared.registry.models import Model as ModelORM
+from orca_shared.registry.repository import ExperimentRepository, TaskRepository
+
+from ..deps import get_db, get_experiment_repo, get_task_repo
 
 router = APIRouter(prefix="/adapt", tags=["adapt"])
 logger = logging.getLogger("orcamind.api.adapt")
@@ -28,40 +28,39 @@ class AdaptRequest(BaseModel):
 
 async def _run_adaptation(engine: AsyncEngine, experiment_id: UUID) -> None:
     factory = async_sessionmaker(engine, expire_on_commit=False)
-    async with factory() as session:
-        async with session.begin():
-            repo = ExperimentRepository(session)
-            await repo.update_status(experiment_id, "running")
-
     try:
-        # Placeholder: real meta-adaptation would invoke WarmStartTransfer here
-        logger.info("Adaptation job %s started", experiment_id)
         async with factory() as session:
             async with session.begin():
-                repo = ExperimentRepository(session)
-                await repo.update_status(experiment_id, "completed")
+                await ExperimentRepository(session).update_status(experiment_id, "running")
+        logger.info("Adaptation job %s started", experiment_id)
+        # Placeholder: real meta-adaptation invokes WarmStartTransfer here
+        async with factory() as session:
+            async with session.begin():
+                await ExperimentRepository(session).update_status(experiment_id, "completed")
         logger.info("Adaptation job %s completed", experiment_id)
     except Exception as exc:
         logger.exception("Adaptation job %s failed: %s", experiment_id, exc)
-        async with factory() as session:
-            async with session.begin():
-                repo = ExperimentRepository(session)
-                await repo.update_status(experiment_id, "failed")
+        try:
+            async with factory() as session:
+                async with session.begin():
+                    await ExperimentRepository(session).update_status(experiment_id, "failed")
+        except Exception:
+            pass
 
 
 @router.post("", response_model=dict)
 async def start_adaptation(
     body: AdaptRequest,
+    request: Request,
     background_tasks: BackgroundTasks,
     task_repo: TaskRepository = Depends(get_task_repo),
     exp_repo: ExperimentRepository = Depends(get_experiment_repo),
+    session: AsyncSession = Depends(get_db),
 ) -> dict:
     task = await task_repo.get_by_id(body.task_id)
     if task is None:
         raise HTTPException(status_code=404, detail="Task not found")
 
-    # Verify model exists via the session already open in exp_repo
-    session = exp_repo._session
     result = await session.execute(
         select(ModelORM).where(ModelORM.model_id == body.model_id)
     )
@@ -74,8 +73,7 @@ async def start_adaptation(
         training_config=body.training_config,
     )
 
-    # Pass engine reference so the background task can create its own sessions
-    engine = session.get_bind()
-    background_tasks.add_task(_run_adaptation, engine, experiment.experiment_id)
-
+    background_tasks.add_task(
+        _run_adaptation, request.app.state.db_engine, experiment.experiment_id
+    )
     return {"job_id": str(experiment.experiment_id)}
