@@ -64,6 +64,14 @@ class TaskRepository:
         )
         return [TaskSummary.model_validate(r) for r in result.scalars()]
 
+    async def list_all(
+        self, *, limit: int = 500, offset: int = 0
+    ) -> list[TaskSummary]:
+        result = await self._session.execute(
+            select(TaskORM).limit(limit).offset(offset)
+        )
+        return [TaskSummary.model_validate(r) for r in result.scalars()]
+
     async def update_embedding(self, task_id: uuid.UUID, embedding_id: uuid.UUID) -> None:
         await self._session.execute(
             update(TaskORM)
