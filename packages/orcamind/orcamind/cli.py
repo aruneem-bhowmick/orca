@@ -102,13 +102,21 @@ def train(
         typer.echo(f"[orcamind] Failed to load config: {exc}", err=True)
         raise typer.Exit(code=1)
 
-    import torch
-    import torch.nn as nn
+    try:
+        import torch
+        import torch.nn as nn
 
-    from orcamind.core.base import Task
-    from orcamind.core.maml import MAML
-    from orcamind.training.meta_trainer import MetaTrainer
-    from orcamind.training.task_sampler import UniformTaskSampler
+        from orcamind.core.base import Task
+        from orcamind.core.maml import MAML
+        from orcamind.training.meta_trainer import MetaTrainer
+        from orcamind.training.task_sampler import UniformTaskSampler
+    except ImportError as exc:
+        typer.echo(
+            f"[orcamind] Training dependencies not available: {exc}\n"
+            "Install them with: pip install orcamind[train]",
+            err=True,
+        )
+        raise typer.Exit(code=1)
 
     typer.echo(f"[orcamind] Device: {device} | Epochs: {epochs}")
 

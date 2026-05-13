@@ -423,6 +423,16 @@ def _write_config(tmp_path: Path) -> Path:
     return config_file
 
 
+@pytest.mark.skipif(_PL_AVAILABLE, reason="tests ImportError guard when training deps are absent")
+def test_train_exits_nonzero_when_deps_missing(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.chdir(tmp_path)
+    cfg_file = _write_config(tmp_path)
+    result = runner.invoke(app, ["train", "--config", str(cfg_file)])
+    assert result.exit_code != 0
+
+
 @pytest.mark.skipif(not _PL_AVAILABLE, reason="pytorch_lightning not installed")
 class TestTrain:
     def test_missing_config_exits_nonzero(self) -> None:
