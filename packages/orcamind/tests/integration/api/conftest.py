@@ -2,10 +2,16 @@
 
 All external dependencies (DB, FAISS, selectors) are mocked so no Docker
 stack is required to run these tests.
+
+Note on ASGITransport + lifespan: httpx's ASGITransport does not trigger
+ASGI lifespan events, so app.state is not populated by the lifespan function.
+We pre-populate app.state manually in the `client` fixture to replicate what
+the lifespan would have set.
 """
 
 from __future__ import annotations
 
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
@@ -22,8 +28,7 @@ from orca_shared.registry.repository import (
     TaskRepository,
 )
 from orca_shared.schemas.embedding import Embedding
-from orca_shared.schemas.recommendation import ModelRecommendation
-from orca_shared.schemas.task import Task, TaskSummary
+from orca_shared.schemas.task import Task
 from orca_shared.schemas.training import ExperimentResult
 from orcamind.api.deps import (
     get_db,
@@ -74,12 +79,21 @@ def now() -> datetime:
 # ---------------------------------------------------------------------------
 
 
+def _make_execute_result(rows=(), scalar_one_or_none=None) -> MagicMock:
+    """Build a sync mock that mimics SQLAlchemy's CursorResult for common call patterns."""
+    result = MagicMock()
+    result.scalars.return_value = iter(rows)
+    result.scalar_one_or_none.return_value = scalar_one_or_none
+    return result
+
+
 @pytest.fixture
 def mock_session() -> AsyncMock:
     session = AsyncMock(spec=AsyncSession)
     session.add = MagicMock()
     session.flush = AsyncMock()
-    session.execute = AsyncMock()
+    # Return a MagicMock (not AsyncMock) so that .scalars() is synchronously iterable
+    session.execute = AsyncMock(return_value=_make_execute_result())
     return session
 
 
@@ -185,7 +199,7 @@ def mock_stat_embedder() -> MagicMock:
 
 
 # ---------------------------------------------------------------------------
-# Test client with all dependencies overridden
+# Test client with all dependencies overridden and app.state pre-populated
 # ---------------------------------------------------------------------------
 
 
@@ -203,6 +217,25 @@ async def client(
 ) -> AsyncClient:
     app = create_app()
 
+    # Pre-populate app.state (ASGITransport does not trigger the ASGI lifespan)
+    mock_engine = MagicMock()
+    mock_engine.dispose = AsyncMock()
+    app.state.db_engine = mock_engine
+
+    # db_sessionmaker must return an async context manager yielding a session
+    @asynccontextmanager
+    async def _fake_sessionmaker():
+        m = AsyncMock()
+        m.execute.side_effect = Exception("No real DB in tests")
+        yield m
+
+    app.state.db_sessionmaker = _fake_sessionmaker
+    app.state.faiss_index = None  # health endpoint reports faiss=False
+    app.state.stat_embedder = mock_stat_embedder
+    app.state.nn_selector = mock_nn_selector
+    app.state.predictor = mock_predictor
+
+    # Override FastAPI dependencies with test mocks
     app.dependency_overrides[get_db] = lambda: mock_session
     app.dependency_overrides[get_task_repo] = lambda: mock_task_repo
     app.dependency_overrides[get_experiment_repo] = lambda: mock_experiment_repo
