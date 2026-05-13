@@ -1,20 +1,8 @@
-<p align="center">
-  <strong>🐋 Orca</strong>
-</p>
+**🐋 Orca**
 
-<p align="center">
-  <strong>A unified meta-learning platform. Teach machines how to learn, not just what to learn.</strong>
-</p>
+**A unified meta-learning platform. Teach machines how to learn, not just what to learn.**
 
-<p align="center">
-  <img src="https://img.shields.io/badge/Python-3.11+-3776AB?style=flat-square&logo=python&logoColor=white" alt="Python">
-  <img src="https://img.shields.io/badge/PyTorch-2.0+-EE4C2C?style=flat-square&logo=pytorch&logoColor=white" alt="PyTorch">
-  <img src="https://img.shields.io/badge/Lightning-2.0+-792EE5?style=flat-square&logo=lightning&logoColor=white" alt="PyTorch Lightning">
-  <img src="https://img.shields.io/badge/MLflow-2.10+-0194E2?style=flat-square&logo=mlflow&logoColor=white" alt="MLflow">
-  <img src="https://img.shields.io/badge/FAISS-1.7+-00599C?style=flat-square" alt="FAISS">
-  <img src="https://img.shields.io/badge/OpenML-0.14+-F7931E?style=flat-square" alt="OpenML">
-  <img src="https://img.shields.io/badge/uv-workspace-DE5FE9?style=flat-square" alt="uv">
-</p>
+
 
 ---
 
@@ -24,12 +12,14 @@ The ecosystem is composed of three interconnected services — **OrcaMind**, **O
 
 ## 🧩 Components
 
-| Component | Codename | Role |
-|-----------|----------|------|
-| **OrcaMind** | The Brain | Meta-learning engine: task embedding, model selection, MAML/Reptile/Meta-SGD, warm-start transfer |
-| **OrcaLab** | The Lab | Experiment management hub: adaptive hyperparameter search, Prefect orchestration, live dashboards |
-| **OrcaNet** | The Connector | Cross-domain knowledge transfer: domain-invariant embeddings, LLM-powered reasoning, transfer scoring |
-| **orca-shared** | The Foundation | Shared schemas, SQLAlchemy ORM, storage backends, MLflow wrappers, HTTP client library |
+
+| Component       | Codename       | Role                                                                                                  |
+| --------------- | -------------- | ----------------------------------------------------------------------------------------------------- |
+| **OrcaMind**    | The Brain      | Meta-learning engine: task embedding, model selection, MAML/Reptile/Meta-SGD, warm-start transfer     |
+| **OrcaLab**     | The Lab        | Experiment management hub: adaptive hyperparameter search, Prefect orchestration, live dashboards     |
+| **OrcaNet**     | The Connector  | Cross-domain knowledge transfer: domain-invariant embeddings, LLM-powered reasoning, transfer scoring |
+| **orca-shared** | The Foundation | Shared schemas, SQLAlchemy ORM, storage backends, MLflow wrappers, HTTP client library                |
+
 
 ---
 
@@ -48,53 +38,58 @@ The ecosystem is composed of three interconnected services — **OrcaMind**, **O
 
 #### Core Algorithms (`orcamind.core`)
 
-| Module | Algorithm | Reference |
-|--------|-----------|-----------|
-| `maml.py` | MAML — Model-Agnostic Meta-Learning (first- and second-order) | Finn et al. 2017 |
-| `reptile.py` | Reptile — first-order meta-learning via interpolation | Nichol et al. 2018 |
-| `meta_sgd.py` | Meta-SGD — per-parameter learnable inner learning rates | Li et al. 2017 |
-| `warmstart.py` | Warm-Start Transfer — selective layer transfer and fine-tuning schedules | — |
-| `base.py` | `MetaLearner` abstract base with `inner_loop`, `meta_update`, `adapt` | — |
+
+| Module         | Algorithm                                                                | Reference          |
+| -------------- | ------------------------------------------------------------------------ | ------------------ |
+| `maml.py`      | MAML — Model-Agnostic Meta-Learning (first- and second-order)            | Finn et al. 2017   |
+| `reptile.py`   | Reptile — first-order meta-learning via interpolation                    | Nichol et al. 2018 |
+| `meta_sgd.py`  | Meta-SGD — per-parameter learnable inner learning rates                  | Li et al. 2017     |
+| `warmstart.py` | Warm-Start Transfer — selective layer transfer and fine-tuning schedules | —                  |
+| `base.py`      | `MetaLearner` abstract base with `inner_loop`, `meta_update`, `adapt`    | —                  |
+
 
 #### Task Embedders (`orcamind.embedders`)
 
-- **`StatisticalEmbedder`**: extracts a 25-dimensional meta-feature vector from any tabular dataset (log-sample count, dimensionality, class balance, entropy, skewness, kurtosis, feature correlation, mutual information)
-- **`NeuralEmbedder`**: MLP that maps statistical features to a learned compact embedding
-- **`FaissIndex`**: cosine-similarity search over task embeddings — add, search, save, load
+- `**StatisticalEmbedder`**: extracts a 25-dimensional meta-feature vector from any tabular dataset (log-sample count, dimensionality, class balance, entropy, skewness, kurtosis, feature correlation, mutual information)
+- `**NeuralEmbedder**`: MLP that maps statistical features to a learned compact embedding
+- `**FaissIndex**`: cosine-similarity search over task embeddings — add, search, save, load
 
 #### Model Selectors (`orcamind.selectors`)
 
-- **`NearestNeighborSelector`**: finds *k* most similar tasks in the registry and votes on the best-performing model
-- **`LearningToRankSelector`**: learns a ranker over `(task_embedding, model_config) → performance`
-- **`PerformancePredictor`**: predicts final metric given a task and model config — used for selection and confidence estimation
+- `**NearestNeighborSelector**`: finds *k* most similar tasks in the registry and votes on the best-performing model
+- `**LearningToRankSelector*`*: learns a ranker over `(task_embedding, model_config) → performance`
+- `**PerformancePredictor**`: predicts final metric given a task and model config — used for selection and confidence estimation
 
 #### Meta-Training (`orcamind.training`)
 
-- **`MetaTrainer`**: PyTorch Lightning module that wraps the meta-training loop, logs metrics to MLflow, and supports distributed data-parallel training
-- **`TaskSampler`**: three strategies — uniform random, difficulty-aware curriculum, domain-balanced
-- **`MetaValidationCallback`** / early-stopping callback
-- **`MetaMetrics`**: k-shot accuracy, adaptation efficiency, forgetting metrics
+- `**MetaTrainer**`: PyTorch Lightning module that wraps the meta-training loop, logs metrics to MLflow, and supports distributed data-parallel training
+- `**TaskSampler**`: three strategies — uniform random, difficulty-aware curriculum, domain-balanced
+- `**MetaValidationCallback**` / early-stopping callback
+- `**MetaMetrics**`: k-shot accuracy, adaptation efficiency, forgetting metrics
 
 #### REST API (`orcamind.api`)
 
 OrcaMind exposes a production-ready **FastAPI** service documented at `GET /docs`.
 
-| Method | Path | Description |
-|--------|------|-------------|
-| `GET` | `/` | Service info (name, version, status) |
-| `GET` | `/health` | Liveness probe — returns `healthy` or `degraded` with per-component booleans (`db`, `faiss`, `mlflow`) |
-| `GET` | `/api/v1/tasks` | Paginated task list; filterable by `domain` or `task_type` |
-| `GET` | `/api/v1/tasks/{task_id}` | Task detail — 404 if not found |
-| `POST` | `/api/v1/tasks/embed` | Store a pre-computed embedding for a task |
-| `POST` | `/api/v1/recommend-model` | Top-*k* model recommendations via `NearestNeighborSelector` |
-| `POST` | `/api/v1/predict-performance` | Point estimate + confidence from `PerformancePredictor` |
-| `POST` | `/api/v1/similar-tasks` | FAISS k-NN lookup → ranked `SimilarityResult` list |
-| `POST` | `/api/v1/feedback` | Log final experiment metric; closes the meta-learning loop |
-| `GET` | `/api/v1/models` | Available model architectures |
-| `POST` | `/api/v1/adapt` | Dispatch an async meta-adaptation job; returns `job_id` |
+
+| Method | Path                          | Description                                                                                            |
+| ------ | ----------------------------- | ------------------------------------------------------------------------------------------------------ |
+| `GET`  | `/`                           | Service info (name, version, status)                                                                   |
+| `GET`  | `/health`                     | Liveness probe — returns `healthy` or `degraded` with per-component booleans (`db`, `faiss`, `mlflow`) |
+| `GET`  | `/api/v1/tasks`               | Paginated task list; filterable by `domain` or `task_type`                                             |
+| `GET`  | `/api/v1/tasks/{task_id}`     | Task detail — 404 if not found                                                                         |
+| `POST` | `/api/v1/tasks/embed`         | Store a pre-computed embedding for a task                                                              |
+| `POST` | `/api/v1/recommend-model`     | Top-*k* model recommendations via `NearestNeighborSelector`                                            |
+| `POST` | `/api/v1/predict-performance` | Point estimate + confidence from `PerformancePredictor`                                                |
+| `POST` | `/api/v1/similar-tasks`       | FAISS k-NN lookup → ranked `SimilarityResult` list                                                     |
+| `POST` | `/api/v1/feedback`            | Log final experiment metric; closes the meta-learning loop                                             |
+| `GET`  | `/api/v1/models`              | Available model architectures                                                                          |
+| `POST` | `/api/v1/adapt`               | Dispatch an async meta-adaptation job; returns `job_id`                                                |
+
 
 **Architecture highlights:**
-- **`create_app()` factory** — instantiates FastAPI with ASGI lifespan; all singletons (DB engine, embedder, selectors, FAISS index) are initialised once at startup and read per-request via `Depends()`
+
+- `**create_app()` factory** — instantiates FastAPI with ASGI lifespan; all singletons (DB engine, embedder, selectors, FAISS index) are initialised once at startup and read per-request via `Depends()`
 - **Graceful degradation** — if the FAISS index file is absent at boot, `faiss_index = None` and `/health` reports `faiss: false`; the service stays up for endpoints that don't require it
 - **CORS** — allowed origins read from `CORS_ORIGINS` env var (comma-separated); wildcards use `allow_credentials=False` to comply with the CORS spec
 - **Background adaptation** — `POST /api/v1/adapt` creates an experiment record, fires `_run_adaptation` as a Starlette `BackgroundTask`, and immediately returns `{"job_id": "..."}` so callers are not blocked
@@ -140,45 +135,47 @@ python scripts/bootstrap_meta_dataset.py \
 
 ### OrcaMind — In Progress
 
-- [ ] Hydra config wiring for full `orcamind train` pipeline
-- [ ] Dataset2Vec neural embedder (end-to-end from raw data)
-- [ ] Streamlit dashboard for task similarity exploration
-- [ ] Docker image + `orcamind serve` wired to the new API factory
+- Hydra config wiring for full `orcamind train` pipeline
+- Dataset2Vec neural embedder (end-to-end from raw data)
+- Streamlit dashboard for task similarity exploration
+- Docker image + `orcamind serve` wired to the new API factory
 
 ### OrcaLab — Planned
 
-- [ ] Adaptive hyperparameter search (Optuna with meta-priors from OrcaMind)
-- [ ] Prefect 2.x orchestration flows: single experiment, sweep, meta-informed sweep, continuous learning
-- [ ] ASHA pruning to cut compute by ≥40% vs no pruning
-- [ ] Live Streamlit dashboard with WebSocket updates
-- [ ] Bidirectional OrcaMind ↔ OrcaLab integration (priors in, results out)
+- Adaptive hyperparameter search (Optuna with meta-priors from OrcaMind)
+- Prefect 2.x orchestration flows: single experiment, sweep, meta-informed sweep, continuous learning
+- ASHA pruning to cut compute by ≥40% vs no pruning
+- Live Streamlit dashboard with WebSocket updates
+- Bidirectional OrcaMind ↔ OrcaLab integration (priors in, results out)
 
 ### OrcaNet — Planned
 
-- [ ] Domain-adversarial cross-domain embedder (DANN)
-- [ ] Transfer scoring via Centered Kernel Alignment (CKA)
-- [ ] Hybrid retrieval (FAISS + PostgreSQL metadata filtering + LLM re-ranking)
-- [ ] LangChain-based reasoning agent for transfer explanations
-- [ ] Three-way integration: OrcaNet → OrcaMind → OrcaLab pipeline
+- Domain-adversarial cross-domain embedder (DANN)
+- Transfer scoring via Centered Kernel Alignment (CKA)
+- Hybrid retrieval (FAISS + PostgreSQL metadata filtering + LLM re-ranking)
+- LangChain-based reasoning agent for transfer explanations
+- Three-way integration: OrcaNet → OrcaMind → OrcaLab pipeline
 
 ### Platform
 
-- [ ] Docker Compose full-stack deployment
-- [ ] Kubernetes + Helm charts
-- [ ] GitHub Actions CI/CD (lint, type-check, test, build, deploy)
-- [ ] Prometheus + Grafana monitoring
+- Docker Compose full-stack deployment
+- Kubernetes + Helm charts
+- GitHub Actions CI/CD (lint, type-check, test, build, deploy)
+- Prometheus + Grafana monitoring
 
 ---
 
 ## 🛠 Tech Stack
 
 ### ML & Meta-Learning
+
 - **PyTorch 2.0+** + **PyTorch Lightning** for training
 - **learn2learn** + **higher** for MAML differentiable optimization
 - **FAISS** for approximate nearest-neighbor search over task embeddings
 - **scikit-learn**, **XGBoost**, **SciPy** for selectors and statistical embedders
 
 ### Data & Infrastructure
+
 - **PostgreSQL** + **SQLAlchemy 2.0** (async) for the meta-registry
 - **MinIO / S3** for artifact storage
 - **MLflow** for experiment tracking and model versioning
@@ -186,12 +183,14 @@ python scripts/bootstrap_meta_dataset.py \
 - **Redis** (planned) for caching and event bus
 
 ### Configuration & API
+
 - **Hydra** for hierarchical, composable configuration
 - **Pydantic v2** for schema validation across component boundaries
 - **FastAPI** + **Uvicorn** for REST APIs (OrcaMind service live with 11 endpoints)
 - **Typer** for the CLI
 
 ### Developer Tooling
+
 - **uv** workspace for monorepo package management
 - **ruff** for linting and formatting
 - **mypy** (strict on `orca-shared`) for type checking
@@ -293,25 +292,25 @@ orca/
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
-│                        Orca Ecosystem                            │
+│                        Orca Ecosystem                           │
 ├─────────────────────────────────────────────────────────────────┤
-│                                                                   │
-│  ┌─────────────┐     ┌─────────────┐     ┌─────────────┐        │
-│  │  OrcaMind   │ ←→  │   OrcaLab   │ ←→  │   OrcaNet   │        │
-│  │  (Brain) ✅ │     │  (Lab) 🔜   │     │ (Net)  🔜   │        │
-│  └──────┬──────┘     └──────┬──────┘     └──────┬──────┘        │
-│         └───────────────────┼───────────────────┘                │
-│                             │                                     │
-│         ┌───────────────────▼───────────────────┐                │
-│         │     orca-shared (Foundation) ✅        │                │
-│         ├───────────────────────────────────────┤                │
-│         │  Registry (PostgreSQL + SQLAlchemy)   │                │
-│         │  Artifact Storage (MinIO / Local)     │                │
-│         │  Experiment Tracking (MLflow)         │                │
-│         │  Vector Search (FAISS)                │                │
-│         │  Shared Schemas (Pydantic v2)         │                │
-│         └───────────────────────────────────────┘                │
-│                                                                   │
+│                                                                 │
+│    ┌─────────────┐     ┌─────────────┐     ┌─────────────┐      │
+│    │  OrcaMind   │ ←→  │   OrcaLab   │ ←→  │   OrcaNet   │      │
+│    │  (Brain)    │     │    (Lab)    │     │    (Net)    │      │
+│    └──────┬──────┘     └──────┬──────┘     └──────┬──────┘      │
+│           └───────────────────┼───────────────────┘             │
+│                               │                                 │
+│           ┌───────────────────▼───────────────────┐             │
+│           │     orca-shared (Foundation)          │             │
+│           ├───────────────────────────────────────┤             │
+│           │  Registry (PostgreSQL + SQLAlchemy)   │             │
+│           │  Artifact Storage (MinIO / Local)     │             │
+│           │  Experiment Tracking (MLflow)         │             │
+│           │  Vector Search (FAISS)                │             │
+│           │  Shared Schemas (Pydantic v2)         │             │
+│           └───────────────────────────────────────┘             │
+│                                                                 │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -319,18 +318,18 @@ orca/
 
 ## 📚 Reference Papers
 
-| Algorithm | Paper |
-|-----------|-------|
-| MAML | Finn et al., *Model-Agnostic Meta-Learning for Fast Adaptation of Deep Networks* (2017) |
-| Reptile | Nichol et al., *On First-Order Meta-Learning Algorithms* (2018) |
-| Meta-SGD | Li et al., *Meta-SGD: Learning to Learn Quickly for Few-Shot Learning* (2017) |
-| Dataset2Vec | Jomaa et al., *Dataset2Vec: Learning Dataset Meta-Features* (2021) |
-| CKA | Kornblith et al., *Similarity of Neural Network Representations Revisited* (2019) |
-| DANN | Ganin et al., *Domain-Adversarial Training of Neural Networks* (2016) |
-| ASHA | Li et al., *Massively Parallel Hyperparameter Tuning* (2018) |
+
+| Algorithm   | Paper                                                                                   |
+| ----------- | --------------------------------------------------------------------------------------- |
+| MAML        | Finn et al., *Model-Agnostic Meta-Learning for Fast Adaptation of Deep Networks* (2017) |
+| Reptile     | Nichol et al., *On First-Order Meta-Learning Algorithms* (2018)                         |
+| Meta-SGD    | Li et al., *Meta-SGD: Learning to Learn Quickly for Few-Shot Learning* (2017)           |
+| Dataset2Vec | Jomaa et al., *Dataset2Vec: Learning Dataset Meta-Features* (2021)                      |
+| CKA         | Kornblith et al., *Similarity of Neural Network Representations Revisited* (2019)       |
+| DANN        | Ganin et al., *Domain-Adversarial Training of Neural Networks* (2016)                   |
+| ASHA        | Li et al., *Massively Parallel Hyperparameter Tuning* (2018)                            |
+
 
 ---
 
-<p align="center">
-  <i>Build the pod. Make it intelligent. Make it work together.</i>
-</p>
+*Build the pod. Make it intelligent. Make it work together.*
