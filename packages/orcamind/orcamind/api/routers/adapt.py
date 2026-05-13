@@ -44,8 +44,10 @@ async def _run_adaptation(engine: AsyncEngine, experiment_id: UUID) -> None:
             async with factory() as session:
                 async with session.begin():
                     await ExperimentRepository(session).update_status(experiment_id, "failed")
-        except Exception:
-            pass
+        except Exception as nested_exc:
+            logger.exception(
+                "Failed to mark experiment %s as failed: %s", experiment_id, nested_exc
+            )
 
 
 @router.post("", response_model=dict)
