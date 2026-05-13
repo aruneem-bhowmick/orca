@@ -58,6 +58,12 @@ class TestListTasks:
         assert kwargs["limit"] == 10
         assert kwargs["offset"] == 20
 
+    async def test_returns_422_when_both_domain_and_task_type_provided(
+        self, client: AsyncClient
+    ) -> None:
+        resp = await client.get("/api/v1/tasks?domain=tabular&task_type=classification")
+        assert resp.status_code == 422
+
 
 class TestGetTask:
     async def test_returns_200_when_found(

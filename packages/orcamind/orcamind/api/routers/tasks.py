@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from uuid import UUID
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, status
 from pydantic import BaseModel
 
 from orca_shared.registry.repository import EmbeddingRepository, TaskRepository
@@ -31,6 +31,11 @@ async def list_tasks(
     offset: int = Query(default=0, ge=0),
     repo: TaskRepository = Depends(get_task_repo),
 ) -> list[TaskSummary]:
+    if domain is not None and task_type is not None:
+        raise HTTPException(
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            detail="Cannot filter by both domain and task_type simultaneously",
+        )
     if domain is not None:
         return await repo.list_by_domain(domain, limit=limit, offset=offset)
     if task_type is not None:
