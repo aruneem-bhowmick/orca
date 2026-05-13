@@ -291,3 +291,115 @@ class TestDashboard:
         with patch("subprocess.run") as mock_run:
             runner.invoke(app, ["dashboard"])
         assert mock_run.call_args.kwargs.get("check") is True
+
+
+# ── embed ─────────────────────────────────────────────────────────────────────
+
+
+_STAT_VEC = np.zeros(25, dtype=np.float64)
+_NEURAL_VEC = np.zeros(64, dtype=np.float32)
+
+
+class TestEmbed:
+    def test_missing_file_exits_nonzero(self) -> None:
+        result = runner.invoke(app, ["embed", "nonexistent.csv"])
+        assert result.exit_code != 0
+
+    def test_no_args_exits_nonzero(self) -> None:
+        result = runner.invoke(app, ["embed"])
+        assert result.exit_code != 0
+
+    def test_exits_zero_on_success(self, tmp_path: Path) -> None:
+        csv_file = _make_csv(tmp_path / "data.csv")
+        with patch("orcamind.embedders.statistical.StatisticalEmbedder.embed", return_value=_STAT_VEC), \
+             patch("orcamind.embedders.neural.NeuralEmbedder.embed", return_value=_NEURAL_VEC):
+            result = runner.invoke(app, ["embed", str(csv_file)])
+        assert result.exit_code == 0
+
+    def test_output_is_valid_json(self, tmp_path: Path) -> None:
+        csv_file = _make_csv(tmp_path / "data.csv")
+        with patch("orcamind.embedders.statistical.StatisticalEmbedder.embed", return_value=_STAT_VEC), \
+             patch("orcamind.embedders.neural.NeuralEmbedder.embed", return_value=_NEURAL_VEC):
+            result = runner.invoke(app, ["embed", str(csv_file)])
+        parsed = json.loads(result.output)
+        assert isinstance(parsed, dict)
+
+    def test_output_contains_statistical_key(self, tmp_path: Path) -> None:
+        csv_file = _make_csv(tmp_path / "data.csv")
+        with patch("orcamind.embedders.statistical.StatisticalEmbedder.embed", return_value=_STAT_VEC), \
+             patch("orcamind.embedders.neural.NeuralEmbedder.embed", return_value=_NEURAL_VEC):
+            result = runner.invoke(app, ["embed", str(csv_file)])
+        parsed = json.loads(result.output)
+        assert "statistical" in parsed
+
+    def test_output_contains_neural_key(self, tmp_path: Path) -> None:
+        csv_file = _make_csv(tmp_path / "data.csv")
+        with patch("orcamind.embedders.statistical.StatisticalEmbedder.embed", return_value=_STAT_VEC), \
+             patch("orcamind.embedders.neural.NeuralEmbedder.embed", return_value=_NEURAL_VEC):
+            result = runner.invoke(app, ["embed", str(csv_file)])
+        parsed = json.loads(result.output)
+        assert "neural" in parsed
+
+    def test_output_contains_dataset_key(self, tmp_path: Path) -> None:
+        csv_file = _make_csv(tmp_path / "data.csv")
+        with patch("orcamind.embedders.statistical.StatisticalEmbedder.embed", return_value=_STAT_VEC), \
+             patch("orcamind.embedders.neural.NeuralEmbedder.embed", return_value=_NEURAL_VEC):
+            result = runner.invoke(app, ["embed", str(csv_file)])
+        parsed = json.loads(result.output)
+        assert parsed["dataset"] == str(csv_file)
+
+    def test_statistical_vector_has_25_dimensions(self, tmp_path: Path) -> None:
+        csv_file = _make_csv(tmp_path / "data.csv")
+        stat_vec = np.ones(25, dtype=np.float64)
+        with patch("orcamind.embedders.statistical.StatisticalEmbedder.embed", return_value=stat_vec), \
+             patch("orcamind.embedders.neural.NeuralEmbedder.embed", return_value=_NEURAL_VEC):
+            result = runner.invoke(app, ["embed", str(csv_file)])
+        assert len(json.loads(result.output)["statistical"]) == 25
+
+    def test_neural_vector_has_64_dimensions(self, tmp_path: Path) -> None:
+        csv_file = _make_csv(tmp_path / "data.csv")
+        neural_vec = np.ones(64, dtype=np.float32)
+        with patch("orcamind.embedders.statistical.StatisticalEmbedder.embed", return_value=_STAT_VEC), \
+             patch("orcamind.embedders.neural.NeuralEmbedder.embed", return_value=neural_vec):
+            result = runner.invoke(app, ["embed", str(csv_file)])
+        assert len(json.loads(result.output)["neural"]) == 64
+
+    def test_saves_json_to_output_file(self, tmp_path: Path) -> None:
+        csv_file = _make_csv(tmp_path / "data.csv")
+        out_file = tmp_path / "embedding.json"
+        with patch("orcamind.embedders.statistical.StatisticalEmbedder.embed", return_value=_STAT_VEC), \
+             patch("orcamind.embedders.neural.NeuralEmbedder.embed", return_value=_NEURAL_VEC):
+            result = runner.invoke(app, ["embed", str(csv_file), "--output", str(out_file)])
+        assert result.exit_code == 0
+        assert out_file.exists()
+
+    def test_output_file_contains_both_keys(self, tmp_path: Path) -> None:
+        csv_file = _make_csv(tmp_path / "data.csv")
+        out_file = tmp_path / "embedding.json"
+        with patch("orcamind.embedders.statistical.StatisticalEmbedder.embed", return_value=_STAT_VEC), \
+             patch("orcamind.embedders.neural.NeuralEmbedder.embed", return_value=_NEURAL_VEC):
+            runner.invoke(app, ["embed", str(csv_file), "--output", str(out_file)])
+        content = json.loads(out_file.read_text())
+        assert "statistical" in content and "neural" in content
+
+    def test_short_output_flag(self, tmp_path: Path) -> None:
+        csv_file = _make_csv(tmp_path / "data.csv")
+        out_file = tmp_path / "out.json"
+        with patch("orcamind.embedders.statistical.StatisticalEmbedder.embed", return_value=_STAT_VEC), \
+             patch("orcamind.embedders.neural.NeuralEmbedder.embed", return_value=_NEURAL_VEC):
+            runner.invoke(app, ["embed", str(csv_file), "-o", str(out_file)])
+        assert out_file.exists()
+
+    def test_calls_statistical_embedder(self, tmp_path: Path) -> None:
+        csv_file = _make_csv(tmp_path / "data.csv")
+        with patch("orcamind.embedders.statistical.StatisticalEmbedder.embed", return_value=_STAT_VEC) as mock_stat, \
+             patch("orcamind.embedders.neural.NeuralEmbedder.embed", return_value=_NEURAL_VEC):
+            runner.invoke(app, ["embed", str(csv_file)])
+        mock_stat.assert_called_once()
+
+    def test_calls_neural_embedder(self, tmp_path: Path) -> None:
+        csv_file = _make_csv(tmp_path / "data.csv")
+        with patch("orcamind.embedders.statistical.StatisticalEmbedder.embed", return_value=_STAT_VEC), \
+             patch("orcamind.embedders.neural.NeuralEmbedder.embed", return_value=_NEURAL_VEC) as mock_neural:
+            runner.invoke(app, ["embed", str(csv_file)])
+        mock_neural.assert_called_once()
