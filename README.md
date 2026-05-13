@@ -75,6 +75,38 @@ The ecosystem is composed of three interconnected services — **OrcaMind**, **O
 - **`MetaValidationCallback`** / early-stopping callback
 - **`MetaMetrics`**: k-shot accuracy, adaptation efficiency, forgetting metrics
 
+#### REST API (`orcamind.api`)
+
+OrcaMind exposes a production-ready **FastAPI** service documented at `GET /docs`.
+
+| Method | Path | Description |
+|--------|------|-------------|
+| `GET` | `/` | Service info (name, version, status) |
+| `GET` | `/health` | Liveness probe — returns `healthy` or `degraded` with per-component booleans (`db`, `faiss`, `mlflow`) |
+| `GET` | `/api/v1/tasks` | Paginated task list; filterable by `domain` or `task_type` |
+| `GET` | `/api/v1/tasks/{task_id}` | Task detail — 404 if not found |
+| `POST` | `/api/v1/tasks/embed` | Store a pre-computed embedding for a task |
+| `POST` | `/api/v1/recommend-model` | Top-*k* model recommendations via `NearestNeighborSelector` |
+| `POST` | `/api/v1/predict-performance` | Point estimate + confidence from `PerformancePredictor` |
+| `POST` | `/api/v1/similar-tasks` | FAISS k-NN lookup → ranked `SimilarityResult` list |
+| `POST` | `/api/v1/feedback` | Log final experiment metric; closes the meta-learning loop |
+| `GET` | `/api/v1/models` | Available model architectures |
+| `POST` | `/api/v1/adapt` | Dispatch an async meta-adaptation job; returns `job_id` |
+
+**Architecture highlights:**
+- **`create_app()` factory** — instantiates FastAPI with ASGI lifespan; all singletons (DB engine, embedder, selectors, FAISS index) are initialised once at startup and read per-request via `Depends()`
+- **Graceful degradation** — if the FAISS index file is absent at boot, `faiss_index = None` and `/health` reports `faiss: false`; the service stays up for endpoints that don't require it
+- **CORS** — allowed origins read from `CORS_ORIGINS` env var (comma-separated); wildcards use `allow_credentials=False` to comply with the CORS spec
+- **Background adaptation** — `POST /api/v1/adapt` creates an experiment record, fires `_run_adaptation` as a Starlette `BackgroundTask`, and immediately returns `{"job_id": "..."}` so callers are not blocked
+
+To start the service locally:
+
+```bash
+export DATABASE_URL="postgresql+asyncpg://orca:orca@localhost:5432/orca_registry"
+export FAISS_INDEX_PATH="data/faiss_index"   # optional — omit to boot without FAISS
+uvicorn orcamind.api.main:create_app --factory --host 0.0.0.0 --port 8000
+```
+
 #### CLI (`orcamind`)
 
 ```bash
@@ -108,10 +140,10 @@ python scripts/bootstrap_meta_dataset.py \
 
 ### OrcaMind — In Progress
 
-- [ ] FastAPI service: `/recommend-model`, `/predict-performance`, `/similar-tasks`, `/adapt`
 - [ ] Hydra config wiring for full `orcamind train` pipeline
 - [ ] Dataset2Vec neural embedder (end-to-end from raw data)
 - [ ] Streamlit dashboard for task similarity exploration
+- [ ] Docker image + `orcamind serve` wired to the new API factory
 
 ### OrcaLab — Planned
 
@@ -156,7 +188,7 @@ python scripts/bootstrap_meta_dataset.py \
 ### Configuration & API
 - **Hydra** for hierarchical, composable configuration
 - **Pydantic v2** for schema validation across component boundaries
-- **FastAPI** + **Uvicorn** for REST APIs (OrcaMind service in progress)
+- **FastAPI** + **Uvicorn** for REST APIs (OrcaMind service live with 11 endpoints)
 - **Typer** for the CLI
 
 ### Developer Tooling
@@ -199,13 +231,23 @@ python scripts/bootstrap_meta_dataset.py \
   --output-dir data/
 ```
 
-### 4. Run Tests
+### 4. Run the OrcaMind API
+
+```bash
+export DATABASE_URL="postgresql+asyncpg://orca:orca@localhost:5432/orca_registry"
+export FAISS_INDEX_PATH="data/faiss_index"
+uvicorn orcamind.api.main:create_app --factory --host 0.0.0.0 --port 8000
+# Interactive docs: http://localhost:8000/docs
+# Health probe:     http://localhost:8000/health
+```
+
+### 5. Run Tests
 
 ```bash
 pytest packages/ -v --cov
 ```
 
-### 5. Lint and Type-Check
+### 6. Lint and Type-Check
 
 ```bash
 ruff check .
@@ -233,7 +275,7 @@ orca/
 │       │   ├── embedders/       # Statistical, Neural, FAISS similarity
 │       │   ├── selectors/       # KNN, ranker, performance predictor
 │       │   ├── training/        # Lightning trainer, samplers, callbacks, metrics
-│       │   ├── api/             # FastAPI service (in progress)
+│       │   ├── api/             # FastAPI service — 11 REST endpoints
 │       │   └── cli.py           # Typer CLI
 │       └── config/              # Hydra YAML configs
 │
