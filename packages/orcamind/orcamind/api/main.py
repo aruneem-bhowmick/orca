@@ -22,9 +22,7 @@ from .middleware import add_middleware
 
 logger = logging.getLogger("orcamind.api")
 
-_DEFAULT_DB_URL = (
-    "postgresql+asyncpg://orca:orca_dev_secret@localhost:5432/orca_registry"
-)
+_DEFAULT_DB_URL = "postgresql+asyncpg://localhost:5432/orca_registry"
 
 
 @asynccontextmanager
