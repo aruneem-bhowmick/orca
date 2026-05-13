@@ -108,6 +108,12 @@ def create_app() -> FastAPI:
             except Exception:
                 pass
 
-        return {"status": "healthy", "db": db_ok, "faiss": faiss_ok, "mlflow": mlflow_ok}
+        overall_ok = db_ok and faiss_ok and (not mlflow_uri or mlflow_ok)
+        return {
+            "status": "healthy" if overall_ok else "degraded",
+            "db": db_ok,
+            "faiss": faiss_ok,
+            "mlflow": mlflow_ok,
+        }
 
     return app
