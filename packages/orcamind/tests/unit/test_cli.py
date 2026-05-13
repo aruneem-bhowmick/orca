@@ -403,3 +403,135 @@ class TestEmbed:
              patch("orcamind.embedders.neural.NeuralEmbedder.embed", return_value=_NEURAL_VEC) as mock_neural:
             runner.invoke(app, ["embed", str(csv_file)])
         mock_neural.assert_called_once()
+
+
+# ── train ─────────────────────────────────────────────────────────────────────
+
+try:
+    import pytorch_lightning as _pl  # noqa: F401
+
+    _PL_AVAILABLE = True
+except ImportError:
+    _PL_AVAILABLE = False
+
+
+def _write_config(tmp_path: Path) -> Path:
+    config_dir = tmp_path / "config"
+    config_dir.mkdir(exist_ok=True)
+    config_file = config_dir / "config.yaml"
+    config_file.write_text(_SIMPLE_CONFIG)
+    return config_file
+
+
+@pytest.mark.skipif(not _PL_AVAILABLE, reason="pytorch_lightning not installed")
+class TestTrain:
+    def test_missing_config_exits_nonzero(self) -> None:
+        result = runner.invoke(app, ["train", "--config", "no_such_file.yaml"])
+        assert result.exit_code != 0
+
+    def test_exits_zero_with_valid_config(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        cfg_file = _write_config(tmp_path)
+        mock_trainer = MagicMock()
+        with patch("pytorch_lightning.Trainer", return_value=mock_trainer), \
+             patch("torch.save"):
+            result = runner.invoke(app, ["train", "--config", str(cfg_file), "--epochs", "1"])
+        assert result.exit_code == 0
+
+    def test_outputs_config_path(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        cfg_file = _write_config(tmp_path)
+        mock_trainer = MagicMock()
+        with patch("pytorch_lightning.Trainer", return_value=mock_trainer), \
+             patch("torch.save"):
+            result = runner.invoke(app, ["train", "--config", str(cfg_file)])
+        assert str(cfg_file) in result.output
+
+    def test_outputs_epoch_count(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        cfg_file = _write_config(tmp_path)
+        mock_trainer = MagicMock()
+        with patch("pytorch_lightning.Trainer", return_value=mock_trainer), \
+             patch("torch.save"):
+            result = runner.invoke(app, ["train", "--config", str(cfg_file), "--epochs", "7"])
+        assert "7" in result.output
+
+    def test_passes_epochs_to_trainer(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        cfg_file = _write_config(tmp_path)
+        mock_trainer = MagicMock()
+        with patch("pytorch_lightning.Trainer", return_value=mock_trainer) as mock_cls, \
+             patch("torch.save"):
+            runner.invoke(app, ["train", "--config", str(cfg_file), "--epochs", "5"])
+        assert mock_cls.call_args.kwargs["max_epochs"] == 5
+
+    def test_calls_trainer_fit(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        cfg_file = _write_config(tmp_path)
+        mock_trainer = MagicMock()
+        with patch("pytorch_lightning.Trainer", return_value=mock_trainer), \
+             patch("torch.save"):
+            runner.invoke(app, ["train", "--config", str(cfg_file), "--epochs", "1"])
+        mock_trainer.fit.assert_called_once()
+
+    def test_calls_torch_save(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        cfg_file = _write_config(tmp_path)
+        mock_trainer = MagicMock()
+        with patch("pytorch_lightning.Trainer", return_value=mock_trainer), \
+             patch("torch.save") as mock_save:
+            runner.invoke(app, ["train", "--config", str(cfg_file), "--epochs", "1"])
+        mock_save.assert_called_once()
+
+    def test_outputs_checkpoint_filename(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        cfg_file = _write_config(tmp_path)
+        mock_trainer = MagicMock()
+        with patch("pytorch_lightning.Trainer", return_value=mock_trainer), \
+             patch("torch.save"):
+            result = runner.invoke(app, ["train", "--config", str(cfg_file), "--epochs", "1"])
+        assert "orcamind_final.pt" in result.output
+
+    def test_short_config_flag(self) -> None:
+        result = runner.invoke(app, ["train", "--help"])
+        assert "-c" in result.output
+
+    def test_short_epochs_flag(self) -> None:
+        result = runner.invoke(app, ["train", "--help"])
+        assert "-e" in result.output
+
+    def test_accepts_device_cpu(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        cfg_file = _write_config(tmp_path)
+        mock_trainer = MagicMock()
+        with patch("pytorch_lightning.Trainer", return_value=mock_trainer), \
+             patch("torch.save"):
+            result = runner.invoke(app, ["train", "--config", str(cfg_file), "--device", "cpu"])
+        assert result.exit_code == 0
+
+    def test_device_shown_in_output(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        cfg_file = _write_config(tmp_path)
+        mock_trainer = MagicMock()
+        with patch("pytorch_lightning.Trainer", return_value=mock_trainer), \
+             patch("torch.save"):
+            result = runner.invoke(app, ["train", "--config", str(cfg_file), "--device", "cpu"])
+        assert "cpu" in result.output
