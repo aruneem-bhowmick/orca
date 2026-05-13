@@ -222,11 +222,12 @@ async def client(
     mock_engine.dispose = AsyncMock()
     app.state.db_engine = mock_engine
 
-    # db_sessionmaker must return an async context manager yielding a session
+    # db_sessionmaker must return an async context manager yielding a session.
+    # execute returns a plain AsyncMock so the health endpoint's SELECT 1 succeeds.
     @asynccontextmanager
     async def _fake_sessionmaker():
         m = AsyncMock()
-        m.execute.side_effect = Exception("No real DB in tests")
+        m.execute.return_value = AsyncMock()
         yield m
 
     app.state.db_sessionmaker = _fake_sessionmaker

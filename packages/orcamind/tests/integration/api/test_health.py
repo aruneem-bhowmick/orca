@@ -37,11 +37,16 @@ class TestHealthEndpoint:
     async def test_faiss_false_when_index_not_loaded(
         self, client: AsyncClient
     ) -> None:
-        # The fixture wires get_faiss_index to return a MagicMock (loaded),
-        # but the health check reads app.state.faiss_index directly.
-        # With the test client the lifespan sets faiss_index=None (no file on disk).
+        # The conftest pre-populates app.state.faiss_index = None, so faiss must be False.
         body = (await client.get("/health")).json()
-        assert isinstance(body["faiss"], bool)
+        assert body["faiss"] is False
+
+    async def test_db_true_when_sessionmaker_succeeds(
+        self, client: AsyncClient
+    ) -> None:
+        # The conftest fake sessionmaker returns a successful mock, so db must be True.
+        body = (await client.get("/health")).json()
+        assert body["db"] is True
 
     async def test_mlflow_false_when_uri_not_set(
         self, client: AsyncClient, monkeypatch: pytest.MonkeyPatch
