@@ -135,7 +135,7 @@ python scripts/bootstrap_meta_dataset.py \
 
 ### OrcaMind — In Progress
 
-- Hydra config wiring for full `orcamind train` pipeline
+- Hydra config enhancements for advanced `orcamind train` features
 - Dataset2Vec neural embedder (end-to-end from raw data)
 - Streamlit dashboard for task similarity exploration
 - Docker image + `orcamind serve` wired to the new API factory
