@@ -238,7 +238,7 @@ def recommend(
             resp = client.post(f"{api_url}/api/v1/recommend-model", json=payload)
             resp.raise_for_status()
         data = resp.json()
-    except httpx.HTTPError as exc:
+    except (httpx.HTTPError, ValueError) as exc:
         typer.echo(f"[orcamind] API error: {exc}", err=True)
         raise typer.Exit(code=1)
 

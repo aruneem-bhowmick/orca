@@ -636,6 +636,17 @@ class TestRecommend:
             result = runner.invoke(app, ["recommend", str(csv_file)])
         assert result.exit_code != 0
 
+    def test_json_decode_error_exits_nonzero(self, tmp_path: Path) -> None:
+        csv_file = _make_csv(tmp_path / "data.csv")
+        bad_resp = MagicMock()
+        bad_resp.raise_for_status = MagicMock()
+        bad_resp.json.side_effect = ValueError("No JSON object could be decoded")
+        client = _mock_http_client(bad_resp)
+        with patch("orcamind.embedders.statistical.StatisticalEmbedder.embed", return_value=_STAT_VEC), \
+             patch("httpx.Client", return_value=client):
+            result = runner.invoke(app, ["recommend", str(csv_file)])
+        assert result.exit_code != 0
+
     def test_short_top_k_flag(self) -> None:
         result = runner.invoke(app, ["recommend", "--help"])
         assert "-k" in result.output
