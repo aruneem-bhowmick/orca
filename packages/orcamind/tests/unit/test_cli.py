@@ -1,7 +1,13 @@
-"""Tests for the orcamind Typer CLI (scaffold-stage stub commands)."""
+"""Tests for the OrcaMind CLI — all six commands plus --version and --help."""
 
 from __future__ import annotations
 
+import json
+from pathlib import Path
+from unittest.mock import MagicMock, patch
+
+import numpy as np
+import pandas as pd
 import pytest
 from typer.testing import CliRunner
 
@@ -9,178 +15,279 @@ from orcamind.cli import app
 
 runner = CliRunner()
 
-
-# ── App object ────────────────────────────────────────────────────────────────
-
-def test_app_object_exists() -> None:
-    assert app is not None
-
-
-def test_app_name() -> None:
-    assert app.info.name == "orcamind"
-
-
-# ── Global help ───────────────────────────────────────────────────────────────
-
-def test_help_exits_cleanly() -> None:
-    result = runner.invoke(app, ["--help"])
-    assert result.exit_code == 0
+_SIMPLE_CONFIG = """\
+paths:
+  model_dir: models
+mlflow:
+  experiment_name: orcamind
+  tracking_uri: http://localhost:5000
+seed: 42
+device: cpu
+"""
 
 
-@pytest.mark.parametrize("cmd", ["train", "serve", "embed", "recommend"])
-def test_help_lists_command(cmd: str) -> None:
-    result = runner.invoke(app, ["--help"])
-    assert cmd in result.output, f"Command '{cmd}' missing from --help output"
+def _make_csv(path: Path) -> Path:
+    pd.DataFrame({"a": [1.0, 2.0, 3.0], "b": [4.0, 5.0, 6.0], "y": [0, 1, 0]}).to_csv(
+        path, index=False
+    )
+    return path
 
 
-# ── train ─────────────────────────────────────────────────────────────────────
-
-def test_train_exits_cleanly() -> None:
-    result = runner.invoke(app, ["train"])
-    assert result.exit_code == 0
+# ── --version ─────────────────────────────────────────────────────────────────
 
 
-def test_train_shows_stub_notice() -> None:
-    result = runner.invoke(app, ["train"])
-    assert "not yet implemented" in result.output
+class TestVersion:
+    def test_exits_zero(self) -> None:
+        result = runner.invoke(app, ["--version"])
+        assert result.exit_code == 0
+
+    def test_output_contains_version_number(self) -> None:
+        result = runner.invoke(app, ["--version"])
+        assert "1.0.0" in result.output
+
+    def test_output_contains_orcamind(self) -> None:
+        result = runner.invoke(app, ["--version"])
+        assert "OrcaMind" in result.output
 
 
-def test_train_shows_default_config_path() -> None:
-    result = runner.invoke(app, ["train"])
-    assert "config/config.yaml" in result.output
+# ── --help ────────────────────────────────────────────────────────────────────
 
 
-def test_train_accepts_custom_config_flag() -> None:
-    result = runner.invoke(app, ["train", "--config", "custom/path.yaml"])
-    assert result.exit_code == 0
-    assert "custom/path.yaml" in result.output
+class TestHelp:
+    def test_root_help_exits_zero(self) -> None:
+        result = runner.invoke(app, ["--help"])
+        assert result.exit_code == 0
+
+    @pytest.mark.parametrize(
+        "cmd", ["init", "train", "embed", "recommend", "serve", "dashboard"]
+    )
+    def test_root_help_lists_all_commands(self, cmd: str) -> None:
+        result = runner.invoke(app, ["--help"])
+        assert cmd in result.output
+
+    @pytest.mark.parametrize(
+        "cmd", ["init", "train", "embed", "recommend", "serve", "dashboard"]
+    )
+    def test_command_help_exits_zero(self, cmd: str) -> None:
+        result = runner.invoke(app, [cmd, "--help"])
+        assert result.exit_code == 0
+
+    def test_train_help_shows_epochs_flag(self) -> None:
+        result = runner.invoke(app, ["train", "--help"])
+        assert "--epochs" in result.output
+
+    def test_train_help_shows_device_flag(self) -> None:
+        result = runner.invoke(app, ["train", "--help"])
+        assert "--device" in result.output
+
+    def test_serve_help_shows_reload_flag(self) -> None:
+        result = runner.invoke(app, ["serve", "--help"])
+        assert "--reload" in result.output
+
+    def test_recommend_help_shows_api_url_flag(self) -> None:
+        result = runner.invoke(app, ["recommend", "--help"])
+        assert "--api-url" in result.output
 
 
-def test_train_accepts_short_config_flag() -> None:
-    result = runner.invoke(app, ["train", "-c", "alt.yaml"])
-    assert result.exit_code == 0
-    assert "alt.yaml" in result.output
+# ── init ──────────────────────────────────────────────────────────────────────
 
 
-def test_train_help_describes_command() -> None:
-    result = runner.invoke(app, ["train", "--help"])
-    assert result.exit_code == 0
-    assert "meta-training" in result.output.lower()
+class TestInit:
+    def test_exits_zero(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.chdir(tmp_path)
+        with patch("mlflow.set_tracking_uri"), patch("mlflow.set_experiment"):
+            result = runner.invoke(app, ["init"])
+        assert result.exit_code == 0
+
+    def test_creates_data_directory(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        with patch("mlflow.set_tracking_uri"), patch("mlflow.set_experiment"):
+            runner.invoke(app, ["init"])
+        assert (tmp_path / "data").is_dir()
+
+    def test_creates_models_directory(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        with patch("mlflow.set_tracking_uri"), patch("mlflow.set_experiment"):
+            runner.invoke(app, ["init"])
+        assert (tmp_path / "models").is_dir()
+
+    def test_creates_logs_directory(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        with patch("mlflow.set_tracking_uri"), patch("mlflow.set_experiment"):
+            runner.invoke(app, ["init"])
+        assert (tmp_path / "logs").is_dir()
+
+    def test_writes_default_config_yaml(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        with patch("mlflow.set_tracking_uri"), patch("mlflow.set_experiment"):
+            runner.invoke(app, ["init"])
+        assert (tmp_path / "config" / "config.yaml").exists()
+
+    def test_config_contains_mlflow_section(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        with patch("mlflow.set_tracking_uri"), patch("mlflow.set_experiment"):
+            runner.invoke(app, ["init"])
+        content = (tmp_path / "config" / "config.yaml").read_text()
+        assert "mlflow" in content
+
+    def test_skips_existing_config(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "config").mkdir()
+        (tmp_path / "config" / "config.yaml").write_text("seed: 99\n")
+        with patch("mlflow.set_tracking_uri"), patch("mlflow.set_experiment"):
+            result = runner.invoke(app, ["init"])
+        assert "already exists" in result.output
+
+    def test_outputs_workspace_initialized(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        with patch("mlflow.set_tracking_uri"), patch("mlflow.set_experiment"):
+            result = runner.invoke(app, ["init"])
+        assert "initialized" in result.output.lower()
+
+    def test_mlflow_error_does_not_crash(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        with patch("mlflow.set_experiment", side_effect=Exception("no mlflow server")):
+            result = runner.invoke(app, ["init"])
+        assert result.exit_code == 0
+
+    def test_mlflow_error_logs_skip_message(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        with patch("mlflow.set_experiment", side_effect=Exception("no mlflow server")):
+            result = runner.invoke(app, ["init"])
+        assert "skipped" in result.output.lower()
+
+    def test_outputs_created_directory_names(
+        self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.chdir(tmp_path)
+        with patch("mlflow.set_tracking_uri"), patch("mlflow.set_experiment"):
+            result = runner.invoke(app, ["init"])
+        assert "data" in result.output
+        assert "models" in result.output
+        assert "logs" in result.output
 
 
 # ── serve ─────────────────────────────────────────────────────────────────────
 
-def test_serve_exits_cleanly() -> None:
-    result = runner.invoke(app, ["serve"])
-    assert result.exit_code == 0
+
+class TestServe:
+    def test_exits_zero(self) -> None:
+        with patch("uvicorn.run"):
+            result = runner.invoke(app, ["serve"])
+        assert result.exit_code == 0
+
+    def test_calls_uvicorn_run_once(self) -> None:
+        with patch("uvicorn.run") as mock_run:
+            runner.invoke(app, ["serve"])
+        mock_run.assert_called_once()
+
+    def test_default_host_in_output(self) -> None:
+        with patch("uvicorn.run"):
+            result = runner.invoke(app, ["serve"])
+        assert "0.0.0.0" in result.output
+
+    def test_default_port_in_output(self) -> None:
+        with patch("uvicorn.run"):
+            result = runner.invoke(app, ["serve"])
+        assert "8000" in result.output
+
+    def test_passes_host_to_uvicorn(self) -> None:
+        with patch("uvicorn.run") as mock_run:
+            runner.invoke(app, ["serve", "--host", "127.0.0.1"])
+        assert mock_run.call_args.kwargs["host"] == "127.0.0.1"
+
+    def test_passes_port_to_uvicorn(self) -> None:
+        with patch("uvicorn.run") as mock_run:
+            runner.invoke(app, ["serve", "--port", "9090"])
+        assert mock_run.call_args.kwargs["port"] == 9090
+
+    def test_short_port_flag(self) -> None:
+        with patch("uvicorn.run") as mock_run:
+            runner.invoke(app, ["serve", "-p", "7777"])
+        assert mock_run.call_args.kwargs["port"] == 7777
+
+    def test_reload_true_when_flag_given(self) -> None:
+        with patch("uvicorn.run") as mock_run:
+            runner.invoke(app, ["serve", "--reload"])
+        assert mock_run.call_args.kwargs["reload"] is True
+
+    def test_reload_false_by_default(self) -> None:
+        with patch("uvicorn.run") as mock_run:
+            runner.invoke(app, ["serve"])
+        assert mock_run.call_args.kwargs["reload"] is False
+
+    def test_custom_host_and_port_in_output(self) -> None:
+        with patch("uvicorn.run"):
+            result = runner.invoke(app, ["serve", "--host", "10.0.0.1", "--port", "9999"])
+        assert "10.0.0.1" in result.output
+        assert "9999" in result.output
 
 
-def test_serve_shows_stub_notice() -> None:
-    result = runner.invoke(app, ["serve"])
-    assert "not yet implemented" in result.output
+# ── dashboard ─────────────────────────────────────────────────────────────────
 
 
-def test_serve_shows_default_host() -> None:
-    result = runner.invoke(app, ["serve"])
-    assert "0.0.0.0" in result.output
+class TestDashboard:
+    def test_exits_zero(self) -> None:
+        with patch("subprocess.run"):
+            result = runner.invoke(app, ["dashboard"])
+        assert result.exit_code == 0
 
+    def test_calls_subprocess_run_once(self) -> None:
+        with patch("subprocess.run") as mock_run:
+            runner.invoke(app, ["dashboard"])
+        mock_run.assert_called_once()
 
-def test_serve_shows_default_port() -> None:
-    result = runner.invoke(app, ["serve"])
-    assert "8000" in result.output
+    def test_command_includes_streamlit(self) -> None:
+        with patch("subprocess.run") as mock_run:
+            runner.invoke(app, ["dashboard"])
+        cmd = mock_run.call_args.args[0]
+        assert "streamlit" in cmd
 
+    def test_command_includes_run_subcommand(self) -> None:
+        with patch("subprocess.run") as mock_run:
+            runner.invoke(app, ["dashboard"])
+        cmd = mock_run.call_args.args[0]
+        assert "run" in cmd
 
-def test_serve_custom_port() -> None:
-    result = runner.invoke(app, ["serve", "--port", "9999"])
-    assert result.exit_code == 0
-    assert "9999" in result.output
+    def test_default_port_8501(self) -> None:
+        with patch("subprocess.run") as mock_run:
+            runner.invoke(app, ["dashboard"])
+        assert "8501" in str(mock_run.call_args.args[0])
 
+    def test_custom_port(self) -> None:
+        with patch("subprocess.run") as mock_run:
+            runner.invoke(app, ["dashboard", "--port", "9999"])
+        assert "9999" in str(mock_run.call_args.args[0])
 
-def test_serve_custom_port_short_flag() -> None:
-    result = runner.invoke(app, ["serve", "-p", "7777"])
-    assert result.exit_code == 0
-    assert "7777" in result.output
+    def test_short_port_flag(self) -> None:
+        with patch("subprocess.run") as mock_run:
+            runner.invoke(app, ["dashboard", "-p", "8888"])
+        assert "8888" in str(mock_run.call_args.args[0])
 
+    def test_outputs_starting_message(self) -> None:
+        with patch("subprocess.run"):
+            result = runner.invoke(app, ["dashboard"])
+        assert "dashboard" in result.output.lower()
 
-def test_serve_custom_host() -> None:
-    result = runner.invoke(app, ["serve", "--host", "127.0.0.1"])
-    assert result.exit_code == 0
-    assert "127.0.0.1" in result.output
-
-
-# ── embed ─────────────────────────────────────────────────────────────────────
-
-def test_embed_without_args_fails() -> None:
-    result = runner.invoke(app, ["embed"])
-    assert result.exit_code != 0
-
-
-def test_embed_with_dataset_exits_cleanly() -> None:
-    result = runner.invoke(app, ["embed", "data.csv"])
-    assert result.exit_code == 0
-
-
-def test_embed_shows_dataset_path() -> None:
-    result = runner.invoke(app, ["embed", "my_data.csv"])
-    assert "my_data.csv" in result.output
-
-
-def test_embed_shows_stub_notice() -> None:
-    result = runner.invoke(app, ["embed", "data.csv"])
-    assert "not yet implemented" in result.output
-
-
-def test_embed_default_output_file() -> None:
-    result = runner.invoke(app, ["embed", "data.csv"])
-    assert "embedding.npy" in result.output
-
-
-def test_embed_custom_output_flag() -> None:
-    result = runner.invoke(app, ["embed", "data.csv", "--output", "result.npy"])
-    assert result.exit_code == 0
-    assert "result.npy" in result.output
-
-
-def test_embed_custom_output_short_flag() -> None:
-    result = runner.invoke(app, ["embed", "data.csv", "-o", "out.npy"])
-    assert result.exit_code == 0
-    assert "out.npy" in result.output
-
-
-# ── recommend ─────────────────────────────────────────────────────────────────
-
-def test_recommend_without_args_fails() -> None:
-    result = runner.invoke(app, ["recommend"])
-    assert result.exit_code != 0
-
-
-def test_recommend_with_dataset_exits_cleanly() -> None:
-    result = runner.invoke(app, ["recommend", "data.csv"])
-    assert result.exit_code == 0
-
-
-def test_recommend_shows_dataset_path() -> None:
-    result = runner.invoke(app, ["recommend", "my_data.csv"])
-    assert "my_data.csv" in result.output
-
-
-def test_recommend_shows_stub_notice() -> None:
-    result = runner.invoke(app, ["recommend", "data.csv"])
-    assert "not yet implemented" in result.output
-
-
-def test_recommend_default_top_k_is_5() -> None:
-    result = runner.invoke(app, ["recommend", "data.csv"])
-    assert "5" in result.output
-
-
-def test_recommend_custom_top_k() -> None:
-    result = runner.invoke(app, ["recommend", "data.csv", "--top-k", "10"])
-    assert result.exit_code == 0
-    assert "10" in result.output
-
-
-def test_recommend_custom_top_k_short_flag() -> None:
-    result = runner.invoke(app, ["recommend", "data.csv", "-k", "3"])
-    assert result.exit_code == 0
-    assert "3" in result.output
+    def test_check_true_passed_to_subprocess(self) -> None:
+        with patch("subprocess.run") as mock_run:
+            runner.invoke(app, ["dashboard"])
+        assert mock_run.call_args.kwargs.get("check") is True
