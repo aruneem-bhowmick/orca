@@ -57,7 +57,7 @@ async def recommend_model(
     try:
         return selector.recommend(embedding, model_configs, top_k=body.top_k)
     except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
 
 @router.post("/predict-performance", response_model=PredictResponse)
@@ -78,7 +78,7 @@ async def predict_performance(
     try:
         score, confidence = predictor.predict_with_confidence(embedding, model_config)
     except RuntimeError as exc:
-        raise HTTPException(status_code=503, detail=str(exc))
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
 
     return PredictResponse(
         model_id=body.model_id,
