@@ -50,22 +50,22 @@ The ecosystem is composed of three interconnected services — **OrcaMind**, **O
 
 #### Task Embedders (`orcamind.embedders`)
 
-- `**StatisticalEmbedder`**: extracts a 25-dimensional meta-feature vector from any tabular dataset (log-sample count, dimensionality, class balance, entropy, skewness, kurtosis, feature correlation, mutual information)
-- `**NeuralEmbedder**`: MLP that maps statistical features to a learned compact embedding
-- `**FaissIndex**`: cosine-similarity search over task embeddings — add, search, save, load
+- `StatisticalEmbedder`: extracts a 25-dimensional meta-feature vector from any tabular dataset (log-sample count, dimensionality, class balance, entropy, skewness, kurtosis, feature correlation, mutual information)
+- `NeuralEmbedder`: MLP that maps statistical features to a learned compact embedding
+- `FaissIndex`: cosine-similarity search over task embeddings — add, search, save, load
 
 #### Model Selectors (`orcamind.selectors`)
 
-- `**NearestNeighborSelector**`: finds *k* most similar tasks in the registry and votes on the best-performing model
-- `**LearningToRankSelector*`*: learns a ranker over `(task_embedding, model_config) → performance`
-- `**PerformancePredictor**`: predicts final metric given a task and model config — used for selection and confidence estimation
+- `NearestNeighborSelector`: finds *k* most similar tasks in the registry and votes on the best-performing model
+- `LearningToRankSelector`: learns a ranker over `(task_embedding, model_config) → performance`
+- `PerformancePredictor`: predicts final metric given a task and model config — used for selection and confidence estimation
 
 #### Meta-Training (`orcamind.training`)
 
-- `**MetaTrainer**`: PyTorch Lightning module that wraps the meta-training loop, logs metrics to MLflow, and supports distributed data-parallel training
-- `**TaskSampler**`: three strategies — uniform random, difficulty-aware curriculum, domain-balanced
-- `**MetaValidationCallback**` / early-stopping callback
-- `**MetaMetrics**`: k-shot accuracy, adaptation efficiency, forgetting metrics
+- `MetaTrainer`: PyTorch Lightning module that wraps the meta-training loop, logs metrics to MLflow, and supports distributed data-parallel training
+- `TaskSampler`: three strategies — uniform random, difficulty-aware curriculum, domain-balanced
+- `MetaValidationCallback` / early-stopping callback
+- `MetaMetrics`: k-shot accuracy, adaptation efficiency, forgetting metrics
 
 #### REST API (`orcamind.api`)
 
@@ -89,7 +89,7 @@ OrcaMind exposes a production-ready **FastAPI** service documented at `GET /docs
 
 **Architecture highlights:**
 
-- `**create_app()` factory** — instantiates FastAPI with ASGI lifespan; all singletons (DB engine, embedder, selectors, FAISS index) are initialised once at startup and read per-request via `Depends()`
+- `create_app()` factory — instantiates FastAPI with ASGI lifespan; all singletons (DB engine, embedder, selectors, FAISS index) are initialised once at startup and read per-request via `Depends()`
 - **Graceful degradation** — if the FAISS index file is absent at boot, `faiss_index = None` and `/health` reports `faiss: false`; the service stays up for endpoints that don't require it
 - **CORS** — allowed origins read from `CORS_ORIGINS` env var (comma-separated); wildcards use `allow_credentials=False` to comply with the CORS spec
 - **Background adaptation** — `POST /api/v1/adapt` creates an experiment record, fires `_run_adaptation` as a Starlette `BackgroundTask`, and immediately returns `{"job_id": "..."}` so callers are not blocked
