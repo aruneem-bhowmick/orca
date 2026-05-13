@@ -93,8 +93,8 @@ def create_app() -> FastAPI:
             async with request.app.state.db_sessionmaker() as session:
                 await session.execute(text("SELECT 1"))
             db_ok = True
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Database health check failed: %s", exc)
 
         faiss_ok = request.app.state.faiss_index is not None
 
@@ -105,8 +105,8 @@ def create_app() -> FastAPI:
                 async with httpx.AsyncClient() as client:
                     resp = await client.get(f"{mlflow_uri}/health", timeout=2.0)
                 mlflow_ok = resp.status_code == 200
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("MLflow health check failed (%s): %s", mlflow_uri, exc)
 
         overall_ok = db_ok and faiss_ok and (not mlflow_uri or mlflow_ok)
         return {
