@@ -93,8 +93,62 @@ def train(
     device: str = typer.Option("cpu", "--device", "-d", help="Training device: cpu or cuda."),
 ) -> None:
     """Launch a meta-training run using the configured meta-learner and task sampler."""
-    typer.echo(f"[orcamind] Starting training with config: {config}")
-    typer.echo("[orcamind] train command not yet implemented — scaffold only")
+    typer.echo(f"[orcamind] Loading config: {config}")
+    try:
+        from omegaconf import OmegaConf
+
+        cfg = OmegaConf.load(config)
+    except Exception as exc:
+        typer.echo(f"[orcamind] Failed to load config: {exc}", err=True)
+        raise typer.Exit(code=1)
+
+    import torch
+    import torch.nn as nn
+
+    from orcamind.core.base import Task
+    from orcamind.core.maml import MAML
+    from orcamind.training.meta_trainer import MetaTrainer
+    from orcamind.training.task_sampler import UniformTaskSampler
+
+    typer.echo(f"[orcamind] Device: {device} | Epochs: {epochs}")
+
+    base_model = nn.Sequential(nn.Linear(10, 64), nn.ReLU(), nn.Linear(64, 1))
+    meta_learner = MAML(model=base_model, inner_lr=0.01, outer_lr=0.001, inner_steps=5)
+    sampler = UniformTaskSampler()
+    seed_task = Task(
+        support_x=torch.zeros(5, 10),
+        support_y=torch.zeros(5, dtype=torch.long),
+        query_x=torch.zeros(5, 10),
+        query_y=torch.zeros(5, dtype=torch.long),
+    )
+
+    trainer_module = MetaTrainer(
+        meta_learner=meta_learner,
+        sampler=sampler,
+        task_pool=[seed_task],
+        batch_size=1,
+    )
+
+    accelerator = "gpu" if device == "cuda" and torch.cuda.is_available() else "cpu"
+    pl_trainer = MetaTrainer.make_trainer(
+        max_epochs=epochs,
+        enable_checkpointing=False,
+        logger=False,
+        accelerator=accelerator,
+        enable_progress_bar=False,
+    )
+
+    typer.echo("[orcamind] Starting meta-training…")
+    pl_trainer.fit(trainer_module)
+
+    try:
+        model_dir = Path(str(OmegaConf.select(cfg, "paths.model_dir", default="models")))
+    except Exception:
+        model_dir = Path("models")
+    model_dir.mkdir(parents=True, exist_ok=True)
+    checkpoint_path = model_dir / "orcamind_final.pt"
+    torch.save(meta_learner.model.state_dict(), str(checkpoint_path))
+    typer.echo(f"[orcamind] Checkpoint saved: {checkpoint_path}")
 
 
 @app.command()
@@ -105,8 +159,44 @@ def embed(
     ),
 ) -> None:
     """Compute a task embedding for a dataset using StatisticalEmbedder and NeuralEmbedder."""
-    typer.echo(f"[orcamind] Embedding dataset: {dataset_path}")
-    typer.echo("[orcamind] embed command not yet implemented — scaffold only")
+    import pandas as pd
+
+    from orcamind.embedders.neural import NeuralEmbedder
+    from orcamind.embedders.statistical import StatisticalEmbedder
+
+    path = Path(dataset_path)
+    if not path.exists():
+        typer.echo(f"[orcamind] Dataset not found: {dataset_path}", err=True)
+        raise typer.Exit(code=1)
+
+    try:
+        df = (
+            pd.read_parquet(path)
+            if path.suffix.lower() in {".parquet", ".pq"}
+            else pd.read_csv(path)
+        )
+    except Exception as exc:
+        typer.echo(f"[orcamind] Failed to load dataset: {exc}", err=True)
+        raise typer.Exit(code=1)
+
+    stat_embedder = StatisticalEmbedder()
+    stat_vec = stat_embedder.embed(df)
+
+    neural_embedder = NeuralEmbedder(input_dim=stat_embedder.embedding_dim)
+    neural_vec = neural_embedder.embed(df)
+
+    result = {
+        "dataset": dataset_path,
+        "statistical": stat_vec.tolist(),
+        "neural": neural_vec.tolist(),
+    }
+
+    output_json = json.dumps(result, indent=2)
+    typer.echo(output_json)
+
+    if output:
+        Path(output).write_text(output_json)
+        typer.echo(f"[orcamind] Embedding saved: {output}", err=True)
 
 
 @app.command()
@@ -118,8 +208,61 @@ def recommend(
     ),
 ) -> None:
     """Recommend model configurations for a dataset via the OrcaMind API."""
-    typer.echo(f"[orcamind] Recommending top-{top_k} models for: {dataset_path}")
-    typer.echo("[orcamind] recommend command not yet implemented — scaffold only")
+    import httpx
+    import pandas as pd
+    from rich.console import Console
+    from rich.table import Table
+
+    from orcamind.embedders.statistical import StatisticalEmbedder
+
+    path = Path(dataset_path)
+    if not path.exists():
+        typer.echo(f"[orcamind] Dataset not found: {dataset_path}", err=True)
+        raise typer.Exit(code=1)
+
+    try:
+        df = (
+            pd.read_parquet(path)
+            if path.suffix.lower() in {".parquet", ".pq"}
+            else pd.read_csv(path)
+        )
+    except Exception as exc:
+        typer.echo(f"[orcamind] Failed to load dataset: {exc}", err=True)
+        raise typer.Exit(code=1)
+
+    embedding = StatisticalEmbedder().embed(df).tolist()
+    payload = {"task_embedding": embedding, "top_k": top_k}
+
+    try:
+        with httpx.Client(timeout=30.0) as client:
+            resp = client.post(f"{api_url}/api/v1/recommend-model", json=payload)
+            resp.raise_for_status()
+        data = resp.json()
+    except httpx.HTTPError as exc:
+        typer.echo(f"[orcamind] API error: {exc}", err=True)
+        raise typer.Exit(code=1)
+
+    recommendations = data if isinstance(data, list) else data.get("recommendations", [])
+    console = Console()
+    table = Table(
+        title=f"Top-{top_k} Model Recommendations",
+        show_header=True,
+        header_style="bold magenta",
+    )
+    table.add_column("Rank", style="bold cyan", width=6)
+    table.add_column("Model", style="bold")
+    table.add_column("Confidence", style="green")
+    table.add_column("Algorithm", style="yellow")
+
+    for rank, rec in enumerate(recommendations[:top_k], start=1):
+        table.add_row(
+            str(rank),
+            rec.get("model_name", "—"),
+            f"{rec.get('confidence', 0.0):.3f}",
+            rec.get("algorithm", "—"),
+        )
+
+    console.print(table)
 
 
 @app.command()
