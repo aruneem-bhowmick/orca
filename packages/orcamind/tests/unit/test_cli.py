@@ -202,7 +202,7 @@ class TestServe:
     def test_default_host_in_output(self) -> None:
         with patch("uvicorn.run"):
             result = runner.invoke(app, ["serve"])
-        assert "0.0.0.0" in result.output
+        assert "127.0.0.1" in result.output
 
     def test_default_port_in_output(self) -> None:
         with patch("uvicorn.run"):
@@ -211,8 +211,8 @@ class TestServe:
 
     def test_passes_host_to_uvicorn(self) -> None:
         with patch("uvicorn.run") as mock_run:
-            runner.invoke(app, ["serve", "--host", "127.0.0.1"])
-        assert mock_run.call_args.kwargs["host"] == "127.0.0.1"
+            runner.invoke(app, ["serve", "--host", "0.0.0.0"])
+        assert mock_run.call_args.kwargs["host"] == "0.0.0.0"
 
     def test_passes_port_to_uvicorn(self) -> None:
         with patch("uvicorn.run") as mock_run:
