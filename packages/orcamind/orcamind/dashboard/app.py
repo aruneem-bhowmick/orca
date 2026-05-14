@@ -14,4 +14,5 @@ pg = st.navigation(
         st.Page("pages/performance_heatmap.py", title="Performance Heatmap"),
     ]
 )
-pg.run()
+if __name__ == "__main__":
+    pg.run()
