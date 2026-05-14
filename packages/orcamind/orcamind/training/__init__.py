@@ -1,6 +1,6 @@
 """Training loops, Lightning modules, and experiment orchestration."""
 
-import warnings as _warnings
+_import_error = None
 
 try:
     from orcamind.training.callbacks import (
@@ -20,12 +20,7 @@ try:
         UniformTaskSampler,
     )
 except ImportError as _err:
-    _warnings.warn(
-        f"orcamind.training requires optional ML dependencies ({_err}). "
-        "Install pytorch-lightning to use the training pipeline.",
-        ImportWarning,
-        stacklevel=2,
-    )
+    _import_error = _err
 
 __all__ = [
     "CheckpointCallback",
@@ -39,3 +34,14 @@ __all__ = [
     "catastrophic_forgetting",
     "k_shot_accuracy",
 ]
+
+_OPTIONAL_NAMES = frozenset(__all__)
+
+
+def __getattr__(name: str) -> object:
+    if name in _OPTIONAL_NAMES and _import_error is not None:
+        raise ImportError(
+            f"Cannot import '{name}' from 'orcamind.training': {_import_error}. "
+            "Install pytorch-lightning to use the training pipeline."
+        ) from _import_error
+    raise AttributeError(f"module 'orcamind.training' has no attribute {name!r}")

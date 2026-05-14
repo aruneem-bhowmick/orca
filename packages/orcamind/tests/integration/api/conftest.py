@@ -14,7 +14,7 @@ from __future__ import annotations
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
-from uuid import UUID, uuid4
+from uuid import NAMESPACE_DNS, UUID, uuid4, uuid5
 
 import numpy as np
 import pytest
@@ -181,13 +181,13 @@ def mock_faiss_index() -> MagicMock:
 
 @pytest.fixture
 def seeded_faiss_index() -> FaissIndex:
-    """Real FaissIndex with 10 UUID-keyed L2-normalised embeddings (dim=25, cosine)."""
+    """Real FaissIndex with 10 deterministic UUID-keyed L2-normalised embeddings (dim=25, cosine)."""
     idx = FaissIndex(dim=25, metric="cosine")
     rng = np.random.default_rng(seed=42)
-    for _ in range(10):
+    for i in range(10):
         vec = rng.random(25).astype(np.float32)
         vec /= np.linalg.norm(vec)
-        idx.add(str(uuid4()), vec)
+        idx.add(str(uuid5(NAMESPACE_DNS, str(i))), vec)
     return idx
 
 
