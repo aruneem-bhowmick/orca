@@ -18,6 +18,7 @@ def test_app_calls_set_page_config(_patch_streamlit):
     """app.py must call st.set_page_config exactly once."""
     import streamlit as st  # resolves to the mock
 
+    _patch_streamlit.reset_mock()  # clear call counts accumulated by earlier tests
     sys.modules.pop("orcamind.dashboard.app", None)
     importlib.import_module("orcamind.dashboard.app")
 
