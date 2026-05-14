@@ -85,13 +85,13 @@ def test_root_mypy_overrides_orca_shared_strict(root_toml: dict) -> None:
 
 
 def test_root_pytest_testpaths(root_toml: dict) -> None:
-    paths = root_toml["tool"]["pytest.ini_options"]["testpaths"]
+    paths = root_toml["tool"]["pytest"]["ini_options"]["testpaths"]
     assert "packages/orca-shared/tests" in paths
     assert "packages/orcamind/tests" in paths
 
 
 def test_root_pytest_asyncio_mode(root_toml: dict) -> None:
-    assert root_toml["tool"]["pytest.ini_options"]["asyncio_mode"] == "auto"
+    assert root_toml["tool"]["pytest"]["ini_options"]["asyncio_mode"] == "auto"
 
 
 # ── orcamind pyproject.toml ───────────────────────────────────────────────────
