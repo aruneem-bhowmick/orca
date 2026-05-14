@@ -55,6 +55,7 @@ def create_app() -> FastAPI:
     from .routers.adapt import router as adapt_router
     from .routers.feedback import router as feedback_router
     from .routers.models import router as models_router
+    from .routers.performances import router as performances_router
     from .routers.recommend import router as recommend_router
     from .routers.tasks import router as tasks_router
 
@@ -69,6 +70,7 @@ def create_app() -> FastAPI:
             {"name": "tasks", "description": "Task registry"},
             {"name": "recommend", "description": "Model recommendation"},
             {"name": "feedback", "description": "Experiment feedback"},
+            {"name": "performances", "description": "Performance summaries"},
             {"name": "models", "description": "Available model architectures"},
             {"name": "adapt", "description": "Meta-adaptation jobs"},
         ],
@@ -79,6 +81,7 @@ def create_app() -> FastAPI:
     app.include_router(tasks_router, prefix="/api/v1")
     app.include_router(recommend_router, prefix="/api/v1")
     app.include_router(feedback_router, prefix="/api/v1")
+    app.include_router(performances_router, prefix="/api/v1")
     app.include_router(models_router, prefix="/api/v1")
     app.include_router(adapt_router, prefix="/api/v1")
 

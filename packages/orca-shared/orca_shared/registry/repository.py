@@ -4,17 +4,18 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Optional
 
-from sqlalchemy import select, update
+from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from orca_shared.registry.models import (
     Embedding as EmbeddingORM,
     Experiment as ExperimentORM,
+    Model as ModelORM,
     Performance as PerformanceORM,
     Task as TaskORM,
 )
 from orca_shared.schemas.embedding import Embedding
-from orca_shared.schemas.metrics import MetricPoint, PerformanceMetrics
+from orca_shared.schemas.metrics import MetricPoint, PerformanceMetrics, PerformanceSummary
 from orca_shared.schemas.task import Task, TaskCreate, TaskSummary
 from orca_shared.schemas.training import ExperimentResult
 
@@ -201,6 +202,31 @@ class PerformanceRepository:
                 is_final=r.is_final,
             )
             for r in result.scalars()
+        ]
+
+    async def list_all_with_context(
+        self, metric_name: str = "accuracy"
+    ) -> list[PerformanceSummary]:
+        result = await self._session.execute(
+            select(
+                TaskORM.name.label("task_name"),
+                ModelORM.architecture.label("architecture"),
+                func.avg(PerformanceORM.metric_value).label("mean_accuracy"),
+            )
+            .join(ExperimentORM, PerformanceORM.experiment_id == ExperimentORM.experiment_id)
+            .join(TaskORM, ExperimentORM.task_id == TaskORM.task_id)
+            .outerjoin(ModelORM, ExperimentORM.model_id == ModelORM.model_id)
+            .where(PerformanceORM.metric_name == metric_name)
+            .group_by(TaskORM.name, ModelORM.architecture)
+            .order_by(TaskORM.name, ModelORM.architecture)
+        )
+        return [
+            PerformanceSummary(
+                task_name=row.task_name,
+                architecture=row.architecture or "unknown",
+                mean_accuracy=float(row.mean_accuracy) if row.mean_accuracy is not None else 0.0,
+            )
+            for row in result.all()
         ]
 
 

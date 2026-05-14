@@ -19,3 +19,9 @@ class PerformanceMetrics(BaseModel):
     experiment_id: UUID
     final_metrics: dict[str, float]
     best_epoch: int | None = None
+
+
+class PerformanceSummary(BaseModel):
+    task_name: str
+    architecture: str
+    mean_accuracy: float

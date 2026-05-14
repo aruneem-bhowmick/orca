@@ -80,6 +80,7 @@ OrcaMind exposes a production-ready **FastAPI** service documented at `GET /docs
 | `POST` | `/api/v1/feedback`            | Log final experiment metric; closes the meta-learning loop                                               |
 | `GET`  | `/api/v1/models`              | Available model architectures                                                                            |
 | `POST` | `/api/v1/adapt`               | Dispatch an async meta-adaptation job; returns `job_id`                                                  |
+| `GET`  | `/api/v1/performances`        | Mean metric values grouped by (task, architecture) — powers the Performance Heatmap                      |
 
 **Architecture highlights:**
 
@@ -173,7 +174,7 @@ orcamind serve [OPTIONS]
 
 ##### `orcamind dashboard`
 
-Launch the OrcaMind Streamlit dashboard for task similarity exploration and recommendation visualisation.
+Launch the OrcaMind Streamlit dashboard.
 
 ```bash
 orcamind dashboard [OPTIONS]
@@ -182,6 +183,19 @@ orcamind dashboard [OPTIONS]
 | Flag          | Short | Default | Description          |
 | ------------- | ----- | ------- | -------------------- |
 | `--port INT`  | `-p`  | `8501`  | Streamlit server port |
+
+#### Streamlit Dashboard (`orcamind.dashboard`)
+
+The dashboard is a four-page Streamlit application launched via `orcamind dashboard` or directly with `streamlit run orcamind/dashboard/app.py`.
+
+| Page                      | File                          | What it shows                                                                                                                                      |
+| ------------------------- | ----------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **Task Browser**          | `pages/task_browser.py`       | Filterable table of all registered tasks (filter by domain and task type); JSON detail panel for the selected task; 2-D PCA scatter of task meta-features (n_samples × n_features × n_classes) with the selected task highlighted |
+| **Training Progress**     | `pages/training_progress.py`  | Multi-run comparison against any MLflow tracking server; per-epoch line charts for `meta_train_loss` and `meta_train_accuracy`; optional 30-second auto-refresh |
+| **Recommendation Explorer** | `pages/recommendation_explorer.py` | Upload a CSV dataset → derive dataset statistics → call `/api/v1/tasks/embed` → top-3 model recommendation cards from `/api/v1/recommend-model` → similar-task similarity bar chart from `/api/v1/similar-tasks` |
+| **Performance Heatmap**   | `pages/performance_heatmap.py` | Fetches `/api/v1/performances` and pivots into a task × architecture accuracy matrix rendered as an interactive RdYlGn Plotly heatmap; missing cells shown as gray gaps; raw data table below the chart |
+
+All pages read the API base URL and any service-specific URI from sidebar inputs, so they work against local dev servers or remote deployments without code changes.
 
 ### Bootstrap Script (`scripts/bootstrap_meta_dataset.py`)
 
@@ -269,19 +283,29 @@ orcamind embed data/my_task.csv --output embeddings/my_task.json
 orcamind recommend data/my_task.csv --top-k 3
 ```
 
-### 7. Run a Meta-Training Cycle
+### 7. Open the Analytics Dashboard
+
+```bash
+orcamind dashboard
+# Opens: http://localhost:8501
+# Pages: Task Browser · Training Progress · Recommendation Explorer · Performance Heatmap
+```
+
+Configure the **API URL** sidebar input to point at your running `orcamind serve` instance and the **MLflow Tracking URI** sidebar input (Training Progress page) to your MLflow server.
+
+### 8. Run a Meta-Training Cycle
 
 ```bash
 orcamind train --config config/config.yaml --epochs 20 --device cpu
 ```
 
-### 8. Run Tests
+### 9. Run Tests
 
 ```bash
 pytest packages/ -v --cov
 ```
 
-### 9. Lint and Type-Check
+### 10. Lint and Type-Check
 
 ```bash
 ruff check .
@@ -296,7 +320,6 @@ mypy packages/
 
 - Hydra config enhancements for advanced `orcamind train` features
 - Dataset2Vec neural embedder (end-to-end from raw data)
-- Streamlit dashboard content — task similarity exploration and recommendation visualisation
 - Docker image for one-command deployment
 
 ### OrcaLab — Planned
@@ -377,8 +400,8 @@ orca/
 │       │   ├── embedders/       # Statistical, Neural, FAISS similarity
 │       │   ├── selectors/       # KNN, ranker, performance predictor
 │       │   ├── training/        # Lightning trainer, samplers, callbacks, metrics
-│       │   ├── api/             # FastAPI service — 11 REST endpoints
-│       │   ├── dashboard/       # Streamlit dashboard application
+│       │   ├── api/             # FastAPI service — 12 REST endpoints
+│       │   ├── dashboard/       # Streamlit dashboard (app.py + pages/)
 │       │   └── cli.py           # Typer CLI — init, train, embed, recommend, serve, dashboard
 │       └── config/              # Hydra YAML configs
 │
