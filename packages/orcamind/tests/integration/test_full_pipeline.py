@@ -82,7 +82,7 @@ def pipeline_components() -> (
         task_ids.append(str(uuid4()))
 
     faiss_index = FaissIndex(_EMBED_DIM, metric="cosine")
-    for tid, emb in zip(task_ids, task_embeddings):
+    for tid, emb in zip(task_ids, task_embeddings, strict=True):
         faiss_index.add(tid, emb)
 
     flat_embs: list[np.ndarray] = []
