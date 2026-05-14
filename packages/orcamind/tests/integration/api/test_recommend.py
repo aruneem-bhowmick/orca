@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
+import math
 from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
+import numpy as np
 import pytest
 from httpx import AsyncClient
 
@@ -210,3 +212,82 @@ class TestSimilarTasks:
             json={"task_embedding": _EMBEDDING, "top_k": 0},
         )
         assert resp.status_code == 422
+
+
+class TestSimilarTasksWithRealFaiss:
+    """Exercises the actual FAISS similarity search path end-to-end."""
+
+    def _query(self, seed: int = 7) -> list[float]:
+        rng = np.random.default_rng(seed)
+        vec = rng.random(25).astype(np.float64)
+        return (vec / np.linalg.norm(vec)).tolist()
+
+    async def test_returns_200(self, recommend_client: AsyncClient) -> None:
+        resp = await recommend_client.post(
+            "/api/v1/similar-tasks", json={"task_embedding": self._query()}
+        )
+        assert resp.status_code == 200
+
+    async def test_returns_up_to_top_k_results(self, recommend_client: AsyncClient) -> None:
+        body = (
+            await recommend_client.post(
+                "/api/v1/similar-tasks",
+                json={"task_embedding": self._query(), "top_k": 5},
+            )
+        ).json()
+        assert isinstance(body, list)
+        assert 1 <= len(body) <= 5
+
+    async def test_results_have_required_fields(self, recommend_client: AsyncClient) -> None:
+        body = (
+            await recommend_client.post(
+                "/api/v1/similar-tasks", json={"task_embedding": self._query()}
+            )
+        ).json()
+        assert len(body) > 0
+        first = body[0]
+        assert "task_id" in first
+        assert "score" in first
+        assert "rank" in first
+
+    async def test_task_ids_are_valid_uuids(self, recommend_client: AsyncClient) -> None:
+        body = (
+            await recommend_client.post(
+                "/api/v1/similar-tasks", json={"task_embedding": self._query()}
+            )
+        ).json()
+        for item in body:
+            UUID(item["task_id"])  # raises ValueError if invalid
+
+    async def test_scores_are_finite_and_bounded(self, recommend_client: AsyncClient) -> None:
+        body = (
+            await recommend_client.post(
+                "/api/v1/similar-tasks", json={"task_embedding": self._query()}
+            )
+        ).json()
+        for item in body:
+            score = item["score"]
+            assert math.isfinite(score), f"non-finite score: {score}"
+            assert -1.0 <= score <= 1.0, f"cosine score out of range: {score}"
+
+    async def test_ranks_start_at_one_and_are_consecutive(
+        self, recommend_client: AsyncClient
+    ) -> None:
+        body = (
+            await recommend_client.post(
+                "/api/v1/similar-tasks",
+                json={"task_embedding": self._query(), "top_k": 5},
+            )
+        ).json()
+        ranks = [item["rank"] for item in body]
+        assert ranks == list(range(1, len(ranks) + 1))
+
+    async def test_scores_sorted_descending(self, recommend_client: AsyncClient) -> None:
+        body = (
+            await recommend_client.post(
+                "/api/v1/similar-tasks",
+                json={"task_embedding": self._query(), "top_k": 5},
+            )
+        ).json()
+        scores = [item["score"] for item in body]
+        assert scores == sorted(scores, reverse=True)
