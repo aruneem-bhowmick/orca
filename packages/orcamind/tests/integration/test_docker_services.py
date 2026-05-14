@@ -47,6 +47,11 @@ requires_prefect = pytest.mark.skipif(
     reason="Prefect not reachable on localhost:4200 — run `make docker-up` first",
 )
 
+requires_orcamind = pytest.mark.skipif(
+    not _port_open("localhost", 8000),
+    reason="OrcaMind not reachable on localhost:8000 — run `make docker-up` first",
+)
+
 
 # ── PostgreSQL ────────────────────────────────────────────────────────────────
 
@@ -148,3 +153,51 @@ def test_prefect_health_endpoint() -> None:
 
     resp = httpx.get("http://localhost:4200/api/health", timeout=10)
     assert resp.status_code == 200
+
+
+# ── OrcaMind ──────────────────────────────────────────────────────────────────
+
+@requires_orcamind
+def test_orcamind_tcp_reachable() -> None:
+    assert _port_open("localhost", 8000)
+
+
+@requires_orcamind
+def test_orcamind_health_endpoint() -> None:
+    import httpx
+
+    resp = httpx.get("http://localhost:8000/health", timeout=10)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body.get("status") == "healthy"
+
+
+@requires_orcamind
+def test_orcamind_tasks_endpoint_returns_list() -> None:
+    import httpx
+
+    resp = httpx.get("http://localhost:8000/api/v1/tasks", timeout=10)
+    assert resp.status_code == 200
+    body = resp.json()
+    assert "items" in body
+    assert "total" in body
+    assert isinstance(body["items"], list)
+
+
+@requires_orcamind
+def test_orcamind_recommend_endpoint_accepts_post() -> None:
+    import httpx
+
+    payload = {
+        "n_samples": 100,
+        "n_features": 10,
+        "task_type": "classification",
+    }
+    resp = httpx.post(
+        "http://localhost:8000/api/v1/recommend-model",
+        json=payload,
+        timeout=10,
+    )
+    # 200 (recommendation returned) or 422 (validation) are both acceptable;
+    # a 5xx would indicate a server-side crash.
+    assert resp.status_code < 500
