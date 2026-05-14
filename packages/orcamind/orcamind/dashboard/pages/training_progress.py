@@ -2,12 +2,15 @@
 
 from __future__ import annotations
 
+import logging
 import time
 
 import mlflow
 import pandas as pd
 import plotly.express as px
 import streamlit as st
+
+logger = logging.getLogger(__name__)
 
 
 def fetch_mlflow_runs(tracking_uri: str) -> pd.DataFrame:
@@ -32,8 +35,8 @@ def build_metric_df(
                 records.append(
                     {"run_id": run_id, "epoch": point.step, "value": point.value}
                 )
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.debug("Could not fetch %s for run %s: %s", metric, run_id, exc)
     if not records:
         return pd.DataFrame(columns=["run_id", "epoch", "value"])
     return pd.DataFrame(records)
