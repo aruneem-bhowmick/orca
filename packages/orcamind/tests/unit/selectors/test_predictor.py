@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from uuid import uuid4
 
 import numpy as np
 import pytest
@@ -181,3 +182,74 @@ class TestFitValidation:
         pred = PerformancePredictor()
         with pytest.raises(RuntimeError, match="fitted"):
             pred.recommend(np.zeros(EMBED_DIM), model_configs, top_k=1)
+
+
+class TestSpearmanRankCorrelation:
+    """200 synthetic tasks → fit on 160 → evaluate on 40 → mean Spearman > 0.7."""
+
+    _N_TRAIN_TASKS = 160
+    _N_TEST_TASKS = 40
+    _N_MODELS = 5
+    _EMBED_DIM = EMBED_DIM  # 32, module-level constant
+    _SEED = 99              # distinct from conftest SEED=42
+    _BASE_PERFS = [0.80, 0.60, 0.45, 0.30, 0.15]
+    _NOISE_SCALE = 0.05
+    _THRESHOLD = 0.7
+
+    @pytest.fixture(scope="class")
+    def _configs(self) -> list[ModelConfig]:
+        return [
+            ModelConfig(
+                model_id=uuid4(),
+                name=f"s_model_{i}",
+                architecture=f"s_arch_{i}",
+                config={"hidden_size": 64, "num_layers": 2, "lr": 1e-3, "batch_size": 32},
+                parameter_count=100_000 * (i + 1),
+                flops=1_000_000 * (i + 1),
+            )
+            for i in range(self._N_MODELS)
+        ]
+
+    @pytest.fixture(scope="class")
+    def _fitted(
+        self, _configs: list[ModelConfig]
+    ) -> tuple[PerformancePredictor, np.ndarray]:
+        rng = np.random.default_rng(self._SEED)
+        all_embs = rng.standard_normal((200, self._EMBED_DIM))
+
+        train_embs: list[np.ndarray] = []
+        train_cfgs: list[ModelConfig] = []
+        train_perfs: list[float] = []
+        for emb in all_embs[: self._N_TRAIN_TASKS]:
+            for idx, cfg in enumerate(_configs):
+                noise = float(rng.normal(0, self._NOISE_SCALE))
+                train_embs.append(emb.copy())
+                train_cfgs.append(cfg)
+                train_perfs.append(float(np.clip(self._BASE_PERFS[idx] + noise, 0.0, 1.0)))
+
+        pred = PerformancePredictor(n_estimators=10, xgb_trees=50)
+        pred.fit(np.array(train_embs), train_cfgs, np.array(train_perfs))
+
+        test_embs = all_embs[self._N_TRAIN_TASKS :]  # shape (40, 32)
+        return pred, test_embs
+
+    def test_mean_spearman_exceeds_threshold(
+        self,
+        _configs: list[ModelConfig],
+        _fitted: tuple[PerformancePredictor, np.ndarray],
+    ) -> None:
+        from scipy.stats import spearmanr
+
+        pred, test_embs = _fitted
+        gt = self._BASE_PERFS  # deterministic ground-truth ranking per model
+
+        correlations: list[float] = []
+        for emb in test_embs:
+            predicted = [pred.predict_performance(emb, cfg) for cfg in _configs]
+            corr = spearmanr(predicted, gt).statistic
+            correlations.append(float(corr))
+
+        mean_corr = float(np.mean(correlations))
+        assert mean_corr > self._THRESHOLD, (
+            f"Mean Spearman {mean_corr:.4f} did not exceed threshold {self._THRESHOLD}"
+        )
