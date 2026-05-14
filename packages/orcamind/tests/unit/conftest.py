@@ -62,3 +62,13 @@ def bmd(repo_root: Path):
     module = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
     spec.loader.exec_module(module)  # type: ignore[union-attr]
     return module
+
+
+@pytest.fixture(scope="session")
+def init_db_module(orcamind_pkg_dir: Path):
+    """init_db script loaded as a module (without executing __main__)."""
+    path = orcamind_pkg_dir / "scripts" / "init_db.py"
+    spec = importlib.util.spec_from_file_location("init_db", path)
+    module = importlib.util.module_from_spec(spec)  # type: ignore[arg-type]
+    spec.loader.exec_module(module)  # type: ignore[union-attr]
+    return module

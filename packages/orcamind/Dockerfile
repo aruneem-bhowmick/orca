@@ -37,6 +37,9 @@ ENV PATH="/opt/venv/bin:$PATH" \
 WORKDIR /app
 
 COPY --chown=orca:orca packages/orcamind/config /app/config
+COPY --chown=orca:orca packages/orcamind/alembic.ini /app/alembic.ini
+COPY --chown=orca:orca packages/orcamind/alembic /app/alembic
+COPY --chown=orca:orca packages/orcamind/scripts /app/scripts
 
 USER orca
 
