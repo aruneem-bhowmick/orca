@@ -163,7 +163,7 @@ def test_prefect_has_healthcheck(services: dict) -> None:
 
 def test_named_volumes_defined(compose: dict) -> None:
     volumes = compose.get("volumes", {})
-    for v in ("postgres-data", "redis-data", "minio-data"):
+    for v in ("postgres-data", "redis-data", "minio-data", "orca_data"):
         assert v in volumes, f"Named volume '{v}' not declared in top-level volumes"
 
 
@@ -173,13 +173,51 @@ def test_network_name(compose: dict) -> None:
     assert default_net.get("name") == "orca-dev-network"
 
 
-# ── Application service stubs are commented out ───────────────────────────────
+# ── OrcaMind service ──────────────────────────────────────────────────────────
 
-def test_orcamind_service_is_not_active(services: dict) -> None:
-    assert "orcamind" not in services, (
-        "orcamind service should remain commented-out until its image is buildable"
-    )
+def test_orcamind_service_exists(services: dict) -> None:
+    assert "orcamind" in services
 
+
+def test_orcamind_port(services: dict) -> None:
+    assert "8000:8000" in services["orcamind"]["ports"]
+
+
+def test_orcamind_database_url_env(services: dict) -> None:
+    db_url = services["orcamind"]["environment"]["DATABASE_URL"]
+    assert "postgres:5432" in db_url
+    assert db_url.startswith("postgresql+asyncpg://")
+
+
+def test_orcamind_mlflow_env(services: dict) -> None:
+    uri = services["orcamind"]["environment"]["MLFLOW_TRACKING_URI"]
+    assert "mlflow" in uri
+
+
+def test_orcamind_depends_on_postgres(services: dict) -> None:
+    depends = services["orcamind"]["depends_on"]
+    assert "postgres" in depends
+
+
+def test_orcamind_depends_on_mlflow(services: dict) -> None:
+    depends = services["orcamind"]["depends_on"]
+    assert "mlflow" in depends
+
+
+def test_orcamind_has_healthcheck(services: dict) -> None:
+    assert "healthcheck" in services["orcamind"]
+
+
+def test_orcamind_has_data_volume(services: dict) -> None:
+    volumes = services["orcamind"]["volumes"]
+    assert any("orca_data" in v for v in volumes)
+
+
+def test_orcamind_orca_data_volume_declared(compose: dict) -> None:
+    assert "orca_data" in compose.get("volumes", {})
+
+
+# ── Future service stubs remain commented out ─────────────────────────────────
 
 def test_orcalab_service_is_not_active(services: dict) -> None:
     assert "orcalab" not in services
