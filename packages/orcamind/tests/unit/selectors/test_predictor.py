@@ -192,7 +192,7 @@ class TestSpearmanRankCorrelation:
     _N_MODELS = 5
     _EMBED_DIM = EMBED_DIM  # 32, module-level constant
     _SEED = 99              # distinct from conftest SEED=42
-    _BASE_PERFS = [0.80, 0.60, 0.45, 0.30, 0.15]
+    _BASE_PERFS = (0.80, 0.60, 0.45, 0.30, 0.15)
     _NOISE_SCALE = 0.05
     _THRESHOLD = 0.7
 
