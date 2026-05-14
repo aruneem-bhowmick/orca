@@ -31,6 +31,7 @@ def test_app_calls_set_page_config(_patch_streamlit):
         for call in call_args_list
         for args in [call.args]
     ), "st.set_page_config was not called with page_title='OrcaMind'"
+    assert st.set_page_config.call_count == 1, "st.set_page_config should be called exactly once"
 
 
 def test_app_calls_navigation(_patch_streamlit):
@@ -41,3 +42,6 @@ def test_app_calls_navigation(_patch_streamlit):
     importlib.import_module("orcamind.dashboard.app")
 
     assert st.navigation.called, "st.navigation was not called"
+    call_args = st.navigation.call_args
+    pages_arg = call_args.args[0] if call_args.args else call_args.kwargs.get("pages", [])
+    assert len(pages_arg) == 4, f"Expected 4 pages, got {len(pages_arg)}"

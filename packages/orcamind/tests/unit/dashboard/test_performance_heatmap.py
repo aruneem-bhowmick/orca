@@ -96,8 +96,7 @@ class TestBuildHeatmapDf:
 
     def test_missing_cell_is_nan(self, ph):
         result = ph.build_heatmap_df(PERF_RECORDS)
-        import math
-        assert math.isnan(result.loc["boston", "svm"])
+        assert pd.isna(result.loc["boston", "svm"])
 
     def test_duplicate_records_are_averaged(self, ph):
         dupes = [
