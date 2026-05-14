@@ -41,48 +41,53 @@ def build_metric_df(
 
 # ── Streamlit page ────────────────────────────────────────────────────────────
 
-st.title("Training Progress")
+def _page() -> None:
+    st.title("Training Progress")
 
-tracking_uri = st.sidebar.text_input(
-    "MLflow Tracking URI", value="http://localhost:5000"
-)
-auto_refresh = st.sidebar.checkbox("Auto-refresh (30 s)", value=False)
+    tracking_uri = st.sidebar.text_input(
+        "MLflow Tracking URI", value="http://localhost:5000"
+    )
+    auto_refresh = st.sidebar.checkbox("Auto-refresh (30 s)", value=False)
 
-with st.spinner("Loading MLflow runs…"):
-    runs_df = fetch_mlflow_runs(tracking_uri)
+    with st.spinner("Loading MLflow runs…"):
+        runs_df = fetch_mlflow_runs(tracking_uri)
 
-if runs_df.empty:
-    st.info("No MLflow runs found. Check the tracking URI.")
-    st.stop()
+    if runs_df.empty:
+        st.info("No MLflow runs found. Check the tracking URI.")
+        st.stop()
 
-run_options = runs_df["run_id"].tolist() if "run_id" in runs_df.columns else []
-selected_runs: list[str] = st.multiselect(
-    "Select runs to compare", run_options, default=run_options[:1] if run_options else []
-)
+    run_options = runs_df["run_id"].tolist() if "run_id" in runs_df.columns else []
+    selected_runs: list[str] = st.multiselect(
+        "Select runs to compare", run_options, default=run_options[:1] if run_options else []
+    )
 
-placeholder = st.empty()
+    placeholder = st.empty()
 
-with placeholder.container():
-    if not selected_runs:
-        st.info("Select at least one run to display metrics.")
-    else:
-        client = mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
+    with placeholder.container():
+        if not selected_runs:
+            st.info("Select at least one run to display metrics.")
+        else:
+            client = mlflow.tracking.MlflowClient(tracking_uri=tracking_uri)
 
-        for metric_key in ("meta_train_loss", "meta_train_accuracy"):
-            metric_df = build_metric_df(client, metric_key, selected_runs)
-            if metric_df.empty:
-                st.caption(f"No history for **{metric_key}**.")
-                continue
-            fig = px.line(
-                metric_df,
-                x="epoch",
-                y="value",
-                color="run_id",
-                title=metric_key.replace("_", " ").title(),
-                labels={"value": metric_key, "epoch": "Epoch"},
-            )
-            st.plotly_chart(fig, use_container_width=True)
+            for metric_key in ("meta_train_loss", "meta_train_accuracy"):
+                metric_df = build_metric_df(client, metric_key, selected_runs)
+                if metric_df.empty:
+                    st.caption(f"No history for **{metric_key}**.")
+                    continue
+                fig = px.line(
+                    metric_df,
+                    x="epoch",
+                    y="value",
+                    color="run_id",
+                    title=metric_key.replace("_", " ").title(),
+                    labels={"value": metric_key, "epoch": "Epoch"},
+                )
+                st.plotly_chart(fig, use_container_width=True)
 
-if auto_refresh:
-    time.sleep(30)
-    st.rerun()
+    if auto_refresh:
+        time.sleep(30)
+        st.rerun()
+
+
+if __name__ == "__main__":
+    _page()

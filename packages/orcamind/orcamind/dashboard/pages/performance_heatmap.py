@@ -34,54 +34,59 @@ def build_heatmap_df(records: list[dict]) -> pd.DataFrame:
 
 # ── Streamlit page ────────────────────────────────────────────────────────────
 
-st.title("Performance Heatmap")
+def _page() -> None:
+    st.title("Performance Heatmap")
 
-api_url = st.sidebar.text_input("API URL", value="http://localhost:8000")
-metric_name = st.sidebar.text_input("Metric name", value="accuracy")
+    api_url = st.sidebar.text_input("API URL", value="http://localhost:8000")
+    metric_name = st.sidebar.text_input("Metric name", value="accuracy")
 
-with st.spinner("Loading performance data…"):
-    try:
-        records = fetch_performances(api_url, metric_name=metric_name)
-    except Exception as exc:
-        st.error(f"Failed to fetch performance data: {exc}")
+    with st.spinner("Loading performance data…"):
+        try:
+            records = fetch_performances(api_url, metric_name=metric_name)
+        except Exception as exc:
+            st.error(f"Failed to fetch performance data: {exc}")
+            st.stop()
+
+    if not records:
+        st.info(f"No performance data found for metric '{metric_name}'.")
         st.stop()
 
-if not records:
-    st.info(f"No performance data found for metric '{metric_name}'.")
-    st.stop()
+    heatmap_df = build_heatmap_df(records)
 
-heatmap_df = build_heatmap_df(records)
+    if heatmap_df.empty:
+        st.warning("Could not build heatmap from the returned data.")
+        st.stop()
 
-if heatmap_df.empty:
-    st.warning("Could not build heatmap from the returned data.")
-    st.stop()
+    z = heatmap_df.values.tolist()
+    x = heatmap_df.columns.tolist()
+    y = heatmap_df.index.tolist()
 
-z = heatmap_df.values.tolist()
-x = heatmap_df.columns.tolist()
-y = heatmap_df.index.tolist()
+    # Replace NaN with None so Plotly renders them in gray
+    z_with_none = [
+        [None if (v is not None and np.isnan(v)) else v for v in row] for row in z
+    ]
 
-# Replace NaN with None so Plotly renders them in gray
-z_with_none = [
-    [None if (v is not None and np.isnan(v)) else v for v in row] for row in z
-]
-
-fig = go.Figure(
-    data=go.Heatmap(
-        z=z_with_none,
-        x=x,
-        y=y,
-        colorscale="RdYlGn",
-        zmin=0,
-        zmax=1,
-        colorbar={"title": "Mean accuracy"},
+    fig = go.Figure(
+        data=go.Heatmap(
+            z=z_with_none,
+            x=x,
+            y=y,
+            colorscale="RdYlGn",
+            zmin=0,
+            zmax=1,
+            colorbar={"title": "Mean accuracy"},
+        )
     )
-)
-fig.update_layout(
-    title=f"Mean {metric_name} — tasks × architectures",
-    xaxis_title="Model architecture",
-    yaxis_title="Task",
-)
-st.plotly_chart(fig, use_container_width=True)
+    fig.update_layout(
+        title=f"Mean {metric_name} — tasks × architectures",
+        xaxis_title="Model architecture",
+        yaxis_title="Task",
+    )
+    st.plotly_chart(fig, use_container_width=True)
 
-st.subheader("Raw data")
-st.dataframe(heatmap_df.style.format("{:.3f}", na_rep="—"), use_container_width=True)
+    st.subheader("Raw data")
+    st.dataframe(heatmap_df.style.format("{:.3f}", na_rep="—"), use_container_width=True)
+
+
+if __name__ == "__main__":
+    _page()

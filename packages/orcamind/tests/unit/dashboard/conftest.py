@@ -1,9 +1,9 @@
-"""Patch streamlit and its sub-modules before any dashboard page is imported.
+"""Patch UI/visualisation modules before any dashboard page is imported.
 
-All page modules execute top-level Streamlit calls on import; replacing
-streamlit with a MagicMock lets tests import those modules and exercise
+All page modules execute top-level Streamlit and Plotly calls on import;
+replacing them with MagicMocks lets tests import those modules and exercise
 the pure data-processing functions without requiring a live Streamlit
-runtime context.
+runtime context or plotly to be installed.
 """
 
 from __future__ import annotations
@@ -13,31 +13,30 @@ from unittest.mock import MagicMock
 
 import pytest
 
+_MOCKED_MODULES = (
+    "streamlit",
+    "streamlit.components",
+    "streamlit.components.v1",
+    "streamlit.testing",
+    "streamlit.testing.v1",
+    "plotly",
+    "plotly.express",
+    "plotly.graph_objects",
+)
+
 
 @pytest.fixture(scope="session", autouse=True)
 def _patch_streamlit():
     mock_st = MagicMock()
-    # Make st.stop() raise a sentinel so callers can detect it if needed.
-    mock_st.stop.side_effect = SystemExit(0)
 
-    for mod in (
-        "streamlit",
-        "streamlit.components",
-        "streamlit.components.v1",
-        "streamlit.testing",
-        "streamlit.testing.v1",
-    ):
-        sys.modules[mod] = mock_st
+    for mod in _MOCKED_MODULES:
+        sys.modules[mod] = MagicMock()
+
+    # Return the streamlit mock so tests can assert on st.* calls.
+    sys.modules["streamlit"] = mock_st
 
     yield mock_st
 
-    # Cleanup: remove only the keys we set (leave real streamlit alone if it
-    # was already imported before this fixture ran).
-    for mod in (
-        "streamlit",
-        "streamlit.components",
-        "streamlit.components.v1",
-        "streamlit.testing",
-        "streamlit.testing.v1",
-    ):
+    # Cleanup: remove only the keys we set.
+    for mod in _MOCKED_MODULES:
         sys.modules.pop(mod, None)
