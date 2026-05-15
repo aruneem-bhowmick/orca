@@ -146,7 +146,7 @@ orcamind <command> --help # Per-command usage
 | Command     | Purpose                                                                              | Key Options                                          |
 | ----------- | ------------------------------------------------------------------------------------ | ---------------------------------------------------- |
 | `init`      | Create `data/`, `models/`, `logs/`, `config/config.yaml`; register MLflow experiment | —                                                    |
-| `train`     | MAML meta-training loop                                                              | `--config PATH`, `--epochs INT`, `--device cpu|cuda` |
+| `train`     | MAML meta-training loop                                                              | `--config PATH`, `--epochs INT`, `--device cpu\|cuda` |
 | `embed`     | Compute 25-dim statistical + 64-dim neural task embedding                            | `--output PATH`                                      |
 | `recommend` | Embed dataset → call API → render top-*k* recommendations table                      | `--top-k INT`, `--api-url URL`                       |
 | `serve`     | Start FastAPI via Uvicorn                                                            | `--host TEXT`, `--port INT`, `--reload`              |
@@ -172,7 +172,7 @@ All pages read the API base URL and MLflow URI from sidebar inputs.
 
 ### Hydra Configuration (`config/`)
 
-```
+```text
 config/
 ├── config.yaml       # Root: paths, mlflow_uri, seed, device
 ├── model/
