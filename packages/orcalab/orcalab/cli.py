@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import typer
 
+from orcalab import __version__
+
 app = typer.Typer(
     name="orcalab",
     help="OrcaLab — hyperparameter search and experiment orchestration CLI",
@@ -13,7 +15,7 @@ app = typer.Typer(
 
 def _version_callback(value: bool) -> None:
     if value:
-        typer.echo("OrcaLab v0.1.0")
+        typer.echo(f"OrcaLab v{__version__}")
         raise typer.Exit()
 
 
