@@ -285,7 +285,7 @@ deep = SearchSpaceComposer.inherit(base, child)
 
 ### Search Strategies (`search/`)
 
-All search algorithms implement the `SearchStrategy` abstract base class. The module exports `SearchStrategy`, `RandomSearch`, and `GridSearch` from `orcalab.search`.
+All search algorithms implement the `SearchStrategy` abstract base class. The module exports `SearchStrategy`, `RandomSearch`, `GridSearch`, and `BayesianSearch` from `orcalab.search`.
 
 #### `SearchStrategy` (`base.py`)
 
@@ -343,6 +343,69 @@ except StopIteration:
 | `FloatParameter` / `LogUniformParameter` | `n_steps` linspace values; log-spaced when `param.log is True` |
 
 `suggest()` returns grid entries in Cartesian-product order; `StopIteration` is raised once the grid is exhausted. `_grid_values()` raises `TypeError` for any parameter type not covered by the table above, failing fast rather than silently falling back to incorrect defaults.
+
+#### `BayesianSearch` (`bayesian.py`)
+
+Bayesian optimisation backed by Optuna's Tree-structured Parzen Estimator (TPE) sampler. TPE models the distribution of good and bad hyperparameter configurations separately and uses that model to propose the next candidate, making it substantially more sample-efficient than random search after a short warm-up phase. All Optuna storage backends are supported, enabling study persistence and cross-process resume.
+
+```python
+searcher = BayesianSearch(
+    study_name="my_sweep",              # identifies the study in the Optuna backend
+    direction="maximize",               # or "minimize"
+    storage="sqlite:///sweep.db",       # optional — omit for in-memory
+    warm_start_trials=[                 # optional prior (params, value) pairs
+        ({"lr": 0.01, "layers": 4}, 0.91),
+    ],
+)
+params = searcher.suggest(space)        # -> dict[str, Any]
+searcher.update(params, result=0.93)
+best   = searcher.get_best(3)           # top-3 by value, direction-aware
+
+# Inject priors independently (e.g. from OrcaMind warm-start)
+searcher.inject_priors(prior_list, search_space=space)
+
+# Access the underlying Optuna study for advanced inspection
+print(searcher.study.best_trial)
+```
+
+**Constructor parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `study_name` | `str` | `"orcalab_bayesian"` | Identifies the study within the Optuna backend; reusing the same name and `storage` resumes an existing study |
+| `direction` | `str` | `"maximize"` | Optimisation direction — `"maximize"` for accuracy-style metrics, `"minimize"` for loss-style metrics |
+| `sampler` | `BaseSampler \| None` | `None` → `TPESampler()` | Optuna sampler; any `BaseSampler` subclass is accepted (e.g. `CmaEsSampler`, `NSGAIISampler`) |
+| `storage` | `str \| None` | `None` → in-memory | Any Optuna storage URL (e.g. `sqlite:///sweep.db`, `postgresql+psycopg2://...`) |
+| `warm_start_trials` | `list[tuple[dict, float]] \| None` | `None` | Historical `(params, value)` pairs stored as deferred priors and injected as completed `FrozenTrial`s at the first `suggest()` call, before any new Optuna trial is asked |
+
+**Methods and properties:**
+
+| Member | Kind | Description |
+|---|---|---|
+| `suggest(search_space)` | method | Calls `study.ask()`, samples via `search_space.sample(trial)`, enqueues the `(params, trial)` pair on an internal FIFO deque, and returns the params dict. Raises `ValueError` if the parameter schema differs from the first call. |
+| `update(params, result)` | method | Pops the oldest pending trial, validates that `params` matches it (FIFO contract), then calls `study.tell()`. NaN or ±Inf results are reported to Optuna as `TrialState.FAIL` rather than crashing; those trials do not contribute to `n_trials` or `get_best()`. Raises `ValueError` on param mismatch or when called with no pending trial. |
+| `get_best(n=1)` | method | Filters `TrialState.COMPLETE` trials and returns the top-*n* `(params, value)` tuples sorted in the study's optimisation direction (descending for `maximize`, ascending for `minimize`). Returns all completed trials when fewer than *n* exist. Raises `ValueError` when `n < 1`. |
+| `inject_priors(warm_trials, search_space=None)` | method | Seeds the Optuna study with historical `(params, value)` observations by constructing `FrozenTrial` objects via `optuna.trial.create_trial()` and calling `study.add_trial()`. The `search_space` argument is required when called before the first `suggest()`; afterwards the internally stored space is used. Raises `ValueError` for any non-finite value. |
+| `n_trials` | property | Count of `TrialState.COMPLETE` trials. FAIL trials (from NaN/Inf results) are excluded. |
+| `study` | property | Exposes the underlying `optuna.Study` directly — useful for inspecting `study.best_trial`, plotting with Optuna's visualisation module, or passing to external tooling. |
+
+**`_build_distributions(space)` helper** — module-level function that converts a `SearchSpace`'s parameter objects into the `optuna.distributions` types required by `optuna.trial.create_trial()` when constructing `FrozenTrial`s for `inject_priors()`.
+
+| Parameter type | Optuna distribution |
+|---|---|
+| `CategoricalParameter` | `CategoricalDistribution(choices)` |
+| `DiscreteUniformParameter` | `FloatDistribution(low, high, step=q)` |
+| `FloatParameter` / `LogUniformParameter` | `FloatDistribution(low, high, log=log)` |
+| `IntParameter` | `IntDistribution(low, high, step=step, log=log)` |
+
+**Persistence** — when `storage` is provided the Optuna study survives process restarts. Constructing a new `BayesianSearch` with the same `study_name` and `storage` loads the existing study via `load_if_exists=True`; all previously completed trials are immediately available through `n_trials` and `get_best()`.
+
+**Guardrails added by CodeRabbit review:**
+
+- *Schema stability in `suggest()`* — on every call after the first, the set of parameter names derived from `_build_distributions(search_space)` is compared against the set from the stored space. A schema change raises `ValueError("SearchSpace schema changed…")`, preventing mixed-distribution corruption of the TPE surrogate model. Space name changes alone (same parameter set, different `SearchSpace.name`) are permitted.
+- *NaN / ±Inf in `update()`* — non-finite results are told to Optuna as `TrialState.FAIL`; the trial is excluded from counts and rankings. Subsequent valid results record normally.
+- *Non-finite values in `inject_priors()`* — raises `ValueError("Warm-start value must be finite…")` immediately, enforcing consistency with the live `update()` contract and preventing polluted rankings.
+- *`get_best(n)` input validation* — raises `ValueError("n must be >= 1.")` for `n < 1`, preventing silent empty-slice semantics.
 
 ---
 
