@@ -163,6 +163,23 @@ def test_orcamind_tcp_reachable() -> None:
 
 
 @requires_orcamind
+def test_orcamind_root_endpoint_returns_200() -> None:
+    import httpx
+
+    resp = httpx.get("http://localhost:8000/", timeout=10)
+    assert resp.status_code == 200
+
+
+@requires_orcamind
+def test_orcamind_root_endpoint_body() -> None:
+    import httpx
+
+    body = httpx.get("http://localhost:8000/", timeout=10).json()
+    assert body.get("name") == "OrcaMind"
+    assert body.get("status") == "ok"
+
+
+@requires_orcamind
 def test_orcamind_health_endpoint() -> None:
     import httpx
 
@@ -170,6 +187,35 @@ def test_orcamind_health_endpoint() -> None:
     assert resp.status_code == 200
     body = resp.json()
     assert body.get("status") == "healthy"
+
+
+@requires_orcamind
+def test_orcamind_health_has_required_keys() -> None:
+    import httpx
+
+    body = httpx.get("http://localhost:8000/health", timeout=10).json()
+    assert "status" in body
+    assert "db" in body
+    assert "faiss" in body
+    assert "mlflow" in body
+
+
+@requires_orcamind
+def test_orcamind_health_status_is_valid() -> None:
+    import httpx
+
+    # A fresh stack with no FAISS index loaded reports "degraded"; only
+    # "healthy" after bootstrap_meta_dataset.py has been run.
+    body = httpx.get("http://localhost:8000/health", timeout=10).json()
+    assert body.get("status") in ("healthy", "degraded")
+
+
+@requires_orcamind
+def test_orcamind_health_db_is_true() -> None:
+    import httpx
+
+    body = httpx.get("http://localhost:8000/health", timeout=10).json()
+    assert body.get("db") is True
 
 
 @requires_orcamind
