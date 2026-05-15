@@ -182,3 +182,56 @@ config/
 └── optimizer/
     └── adam.yaml     # lr, weight_decay, betas
 ```
+
+---
+
+## `orcalab` — Experiment Orchestration Hub
+
+### Package Structure
+
+```text
+orcalab/
+├── experiments/       # Experiment lifecycle (status state machine, runner, batch runner)
+├── search/            # Search strategies (random, grid, Bayesian, evolutionary, meta-informed)
+├── search_spaces/     # Composable, type-safe search space definitions
+├── pruning/           # ASHA, median stopping, and meta-informed trial pruners
+├── orchestration/
+│   ├── flows/         # Prefect flows (single experiment, sweep, meta-informed sweep)
+│   └── tasks/         # Prefect tasks (prepare_data, train_model, evaluate, log_results)
+├── visualization/     # Streamlit dashboard components and pages
+├── api/               # FastAPI application and WebSocket endpoint
+└── cli.py             # Typer CLI — 4 commands
+```
+
+### CLI (`orcalab`)
+
+Four commands installed as the `orcalab` entry point.
+
+```bash
+orcalab --help           # List all commands
+orcalab <command> --help # Per-command usage
+```
+
+
+| Command     | Purpose                                              | Key Options                                           |
+| ----------- | ---------------------------------------------------- | ----------------------------------------------------- |
+| `init`      | Create workspace directories and default config      | —                                                     |
+| `sweep`     | Run a hyperparameter sweep for a given task          | `--n-trials INT`, `--strategy tpe\|cma\|random`       |
+| `serve`     | Start the FastAPI service on port 8001               | `--host TEXT`, `--port INT`, `--reload`               |
+| `dashboard` | Launch the Streamlit dashboard on port 8502          | `--port INT`                                          |
+
+
+Port defaults (8001 for the API, 8502 for the dashboard) are chosen to avoid collisions with OrcaMind (8000, 8501).
+
+### Hydra Configuration (`config/`)
+
+```text
+config/
+├── config.yaml          # Root: prefect.api_url, orcamind.api_url, resources
+├── search/
+│   └── bayesian.yaml    # TPE sampler: n_startup_trials=10, n_ei_candidates=24, multivariate=true
+└── pruner/
+    └── asha.yaml        # ASHA: min_resource=1, max_resource=100, reduction_factor=3
+```
+
+All external service URLs (Prefect API, OrcaMind API) are resolved via `${oc.env:VAR,default}` interpolation — no credentials appear in committed config files.
