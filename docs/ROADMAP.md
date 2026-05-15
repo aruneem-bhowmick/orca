@@ -9,13 +9,20 @@
 - Dataset2Vec neural embedder (end-to-end from raw tabular data)
 - Hydra config enhancements for distributed `orcamind train`
 
-## OrcaLab — Planned
+## OrcaLab — In Progress
 
-- Adaptive hyperparameter search (Optuna with meta-priors from OrcaMind)
-- Prefect 2.x orchestration flows: single experiment, sweep, meta-informed sweep, continuous learning
+**Done:**
+- Package scaffold: full module skeleton, `pyproject.toml`, multi-stage Dockerfile, Typer CLI stub, Hydra config (`config.yaml`, `search/bayesian.yaml`, `pruner/asha.yaml`), and unit test suite (78 tests)
+
+**Next:**
+- Composable search space definitions (`SearchSpace`, `Parameter` types, `SearchSpaceComposer`)
+- Search strategies: random, grid, Bayesian (Optuna TPE), evolutionary (CMA-ES), meta-informed (OrcaMind priors)
 - ASHA pruning (target ≥40% compute reduction vs no pruning)
-- Live Streamlit dashboard with WebSocket updates
+- Experiment lifecycle state machine and runner (MLflow tracking, retry logic, `BatchExperimentRunner`)
+- Prefect 2.x orchestration flows: single experiment, sweep, meta-informed sweep, continuous learning
+- Live Streamlit dashboard with WebSocket metric streaming
 - Bidirectional OrcaMind ↔ OrcaLab integration (priors in, results out)
+- FastAPI service with 11 REST endpoints and WebSocket streaming
 
 ## OrcaNet — Planned
 
