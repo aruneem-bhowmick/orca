@@ -100,6 +100,24 @@ class TestConditionalParameters:
 
 
 class TestSearchSpaceSerialization:
+    def test_to_dict_excludes_conditional_parameters(self, tmp_path: Path) -> None:
+        space = SearchSpace(name="conditional_serialization")
+        space.add(IntParameter("layers", low=2, high=10))
+        space.add_condition(lambda _: True, FloatParameter("dropout", low=0.0, high=0.5))
+
+        d = space.to_dict()
+        assert [p["name"] for p in d["parameters"]] == ["layers"]
+
+        reconstructed = SearchSpace.from_dict(d)
+        assert set(reconstructed._params.keys()) == {"layers"}
+        assert len(reconstructed._conditions) == 0
+
+        path = str(tmp_path / "space.json")
+        space.save(path)
+        loaded = SearchSpace.load(path)
+        assert [p["name"] for p in loaded.to_dict()["parameters"]] == ["layers"]
+        assert len(loaded._conditions) == 0
+
     def test_to_dict_contains_name_description_and_parameters(self) -> None:
         space = SearchSpace(name="my_space", description="test desc")
         space.add(IntParameter("layers", low=2, high=10))
