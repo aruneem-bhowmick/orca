@@ -46,4 +46,4 @@
 | Dataset2Vec | Jomaa et al., *Dataset2Vec: Learning Dataset Meta-Features* (2021)                      |
 | CKA         | Kornblith et al., *Similarity of Neural Network Representations Revisited* (2019)       |
 | DANN        | Ganin et al., *Domain-Adversarial Training of Neural Networks* (2016)                   |
-| ASHA        | Li et al., *Massively Parallel Hyperparameter Tuning* (2018)                            |
+| ASHA        | Li et al., *A System for Massively Parallel Hyperparameter Tuning* (2018)               |
