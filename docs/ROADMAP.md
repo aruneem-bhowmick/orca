@@ -12,10 +12,10 @@
 ## OrcaLab — In Progress
 
 **Done:**
-- Package scaffold: full module skeleton, `pyproject.toml`, multi-stage Dockerfile, Typer CLI stub, Hydra config (`config.yaml`, `search/bayesian.yaml`, `pruner/asha.yaml`), and unit test suite (78 tests)
+- Package scaffold: full module skeleton, `pyproject.toml`, multi-stage Dockerfile, Typer CLI stub, Hydra config (`config.yaml`, `search/bayesian.yaml`, `pruner/asha.yaml`), and unit test suite
+- Composable search space definitions: `Parameter` ABC and five concrete types (`IntParameter`, `FloatParameter`, `LogUniformParameter`, `DiscreteUniformParameter`, `CategoricalParameter`), `SearchSpace` with conditional parameter sampling and JSON persistence, `SearchSpaceComposer` with `merge`, `inherit`, and `restrict` — 44 unit tests, 100% line coverage on `search_spaces/`
 
 **Next:**
-- Composable search space definitions (`SearchSpace`, `Parameter` types, `SearchSpaceComposer`)
 - Search strategies: random, grid, Bayesian (Optuna TPE), evolutionary (CMA-ES), meta-informed (OrcaMind priors)
 - ASHA pruning (target ≥40% compute reduction vs no pruning)
 - Experiment lifecycle state machine and runner (MLflow tracking, retry logic, `BatchExperimentRunner`)
