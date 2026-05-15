@@ -2,16 +2,32 @@
 
 from __future__ import annotations
 
+from typing import Any
+
+import optuna
 import pytest
 
-from orcalab.search.grid_search import GridSearch
+from orcalab.search.grid_search import GridSearch, _grid_values
 from orcalab.search_spaces.parameters import (
     CategoricalParameter,
     DiscreteUniformParameter,
     FloatParameter,
     IntParameter,
+    Parameter,
 )
 from orcalab.search_spaces.space import SearchSpace
+
+
+class _UnknownParam(Parameter):
+    """Stub parameter type not handled by _grid_values."""
+
+    name = "unknown"
+
+    def to_optuna(self, trial: optuna.Trial) -> Any:
+        return 0  # pragma: no cover
+
+    def to_dict(self) -> dict[str, Any]:
+        return {"type": "unknown", "name": self.name}  # pragma: no cover
 
 
 class TestGridSearchCoverage:
@@ -120,6 +136,12 @@ class TestGridSearchGetBest:
         assert len(history) == 3
         values = [v for _, v in history]
         assert values == sorted(values, reverse=True)
+
+
+class TestGridValuesUnknownType:
+    def test_unknown_param_type_raises_type_error(self) -> None:
+        with pytest.raises(TypeError, match="Unsupported parameter type"):
+            _grid_values(_UnknownParam(), n_steps=5)
 
 
 class TestGridSearchIntParameter:

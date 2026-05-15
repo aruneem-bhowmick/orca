@@ -48,7 +48,7 @@ def _grid_values(param: Parameter, n_steps: int) -> list[Any]:
             for i in range(n_steps)
         ]
 
-    return [param.low, param.high]  # type: ignore[attr-defined]
+    raise TypeError(f"Unsupported parameter type for grid search: {type(param).__name__!r}")
 
 
 class GridSearch(SearchStrategy):
