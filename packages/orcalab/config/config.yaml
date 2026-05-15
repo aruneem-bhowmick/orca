@@ -1,0 +1,17 @@
+defaults:
+  - search: bayesian
+  - pruner: asha
+  - _self_
+
+prefect:
+  api_url: ${oc.env:PREFECT_API_URL,http://localhost:4200/api}
+  work_pool: orcalab-pool
+
+orcamind:
+  api_url: ${oc.env:ORCAMIND_API_URL,http://localhost:8000}
+  enabled: true
+
+resources:
+  max_parallel_experiments: 4
+  gpu_per_experiment: 1
+  timeout_seconds: 3600
