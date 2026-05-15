@@ -10,11 +10,15 @@ import optuna
 from orcalab.search.base import SearchStrategy
 from orcalab.search_spaces.space import SearchSpace
 
-optuna.logging.set_verbosity(optuna.logging.WARNING)
-
-
 class RandomSearch(SearchStrategy):
+    """Search strategy that samples uniformly at random using Optuna's RandomSampler.
+
+    Note: constructing this class sets Optuna's global logging level to WARNING,
+    suppressing INFO-level trial output for all Optuna code in the process.
+    """
+
     def __init__(self, random_state: int = 42) -> None:
+        optuna.logging.set_verbosity(optuna.logging.WARNING)
         sampler = optuna.samplers.RandomSampler(seed=random_state)
         self._study = optuna.create_study(direction="maximize", sampler=sampler)
         self._pending: deque[tuple[dict[str, Any], optuna.Trial]] = deque()
