@@ -82,7 +82,9 @@ orca/
 │       │   └── cli.py                # Typer CLI — 4 commands
 │       ├── config/                   # Hydra YAML configs (root, search/bayesian, pruner/asha)
 │       └── tests/
-│           ├── unit/                 # Package import, metadata, CLI, and config tests
+│           ├── unit/
+│           │   ├── search_spaces/    # Parameter types, SearchSpace sampling/serialization, SearchSpaceComposer
+│           │   └── *.py              # Package import, metadata, CLI, and config tests
 │           └── integration/          # API + sweep lifecycle tests
 │
 ├── scripts/
