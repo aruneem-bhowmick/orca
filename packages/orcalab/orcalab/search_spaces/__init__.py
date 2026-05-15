@@ -1,5 +1,6 @@
 """Search space definitions for OrcaLab."""
 
+from orcalab.search_spaces.composer import SearchSpaceComposer
 from orcalab.search_spaces.parameters import (
     CategoricalParameter,
     DiscreteUniformParameter,
@@ -8,6 +9,7 @@ from orcalab.search_spaces.parameters import (
     LogUniformParameter,
     Parameter,
 )
+from orcalab.search_spaces.space import SearchSpace
 
 __all__ = [
     "Parameter",
@@ -16,4 +18,6 @@ __all__ = [
     "LogUniformParameter",
     "DiscreteUniformParameter",
     "CategoricalParameter",
+    "SearchSpace",
+    "SearchSpaceComposer",
 ]
