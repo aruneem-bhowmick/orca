@@ -1,0 +1,5 @@
+# @package _global_.pruner
+pruner: ASHA
+min_resource: 1
+max_resource: 100
+reduction_factor: 3
