@@ -283,6 +283,69 @@ deep = SearchSpaceComposer.inherit(base, child)
 # → num_layers from child (64–512), learning_rate from base
 ```
 
+### Search Strategies (`search/`)
+
+All search algorithms implement the `SearchStrategy` abstract base class. The module exports `SearchStrategy`, `RandomSearch`, and `GridSearch` from `orcalab.search`.
+
+#### `SearchStrategy` (`base.py`)
+
+Defines the four-member contract every algorithm must honour.
+
+| Member | Kind | Description |
+|---|---|---|
+| `suggest(search_space)` | abstract method | Sample the next candidate `dict[str, Any]` from the space |
+| `update(params, result)` | abstract method | Record the observed metric for a previously suggested candidate |
+| `get_best(n=1)` | abstract method | Return the top-*n* `(params, value)` pairs, sorted by result descending |
+| `n_trials` | abstract property | Number of completed (updated) trials |
+| `get_history()` | concrete method | Returns `get_best(n_trials)`, or `[]` when no trials have been recorded yet |
+
+All subclasses get `get_history()` for free; only the four abstract members need implementation.
+
+#### `RandomSearch` (`random_search.py`)
+
+Uniform random search backed by an internal Optuna study with `direction="maximize"`.
+
+```python
+searcher = RandomSearch(random_state=42)   # seed controls reproducibility
+params   = searcher.suggest(space)         # -> dict[str, Any]
+searcher.update(params, result=0.93)       # must be called in the same order as suggest()
+best     = searcher.get_best(3)            # -> [(params, value), ...]  top-3 descending
+```
+
+**Pending-trial bookkeeping** — `suggest()` enqueues the Optuna trial alongside the returned params dict on an internal `deque`; `update()` pops from the front (FIFO). `update()` validates that the supplied `params` match the head of the queue and raises `ValueError` on a mismatch, guarding against out-of-order calls. Calling `update()` with no prior `suggest()` also raises `ValueError`.
+
+`get_best(n)` sorts all `TrialState.COMPLETE` study trials by value descending and returns the top-*n*; if fewer than *n* completed trials exist it returns all of them.
+
+Constructing `RandomSearch` sets Optuna's **global** logging level to `WARNING`, suppressing per-trial INFO output across the process.
+
+#### `GridSearch` (`grid_search.py`)
+
+Exhaustive search over the full Cartesian product of discretized parameter values. The grid is built lazily on the first `suggest()` call using the public `SearchSpace.to_dict()` / `Parameter.from_dict()` API — no private attribute access.
+
+```python
+searcher = GridSearch(n_steps=5)   # n_steps controls continuous-parameter resolution
+try:
+    while True:
+        params = searcher.suggest(space)
+        searcher.update(params, result=train(params))
+except StopIteration:
+    best = searcher.get_best(1)
+```
+
+**Discretization rules:**
+
+| Parameter type | Grid values |
+|---|---|
+| `CategoricalParameter` | All `choices` values, in declaration order |
+| `DiscreteUniformParameter` | `[round(low + i·q, 10)  for i in range(round((high−low)/q) + 1)]` |
+| `IntParameter` with `step > 1` | `list(range(low, high+1, step))` |
+| `IntParameter` with `step == 1` | `n_steps` evenly-spaced integers (linspace); full range used when range < `n_steps` |
+| `FloatParameter` / `LogUniformParameter` | `n_steps` linspace values; log-spaced when `param.log is True` |
+
+`suggest()` returns grid entries in Cartesian-product order; `StopIteration` is raised once the grid is exhausted. `_grid_values()` raises `TypeError` for any parameter type not covered by the table above, failing fast rather than silently falling back to incorrect defaults.
+
+---
+
 ### CLI (`orcalab`)
 
 Four commands installed as the `orcalab` entry point.

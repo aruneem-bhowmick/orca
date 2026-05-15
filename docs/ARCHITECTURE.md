@@ -71,7 +71,7 @@ orca/
 │   └── orcalab/                      # Experiment orchestration hub
 │       ├── orcalab/
 │       │   ├── experiments/          # Experiment lifecycle (states, runner, batch runner)
-│       │   ├── search/               # Search strategies (random, grid, Bayesian, evolutionary, meta-informed)
+│       │   ├── search/               # SearchStrategy ABC, RandomSearch, GridSearch (Bayesian, CMA-ES, meta-informed planned)
 │       │   ├── search_spaces/        # Composable, type-safe search space definitions
 │       │   ├── pruning/              # ASHA, median, and meta-informed trial pruners
 │       │   ├── orchestration/
@@ -83,7 +83,8 @@ orca/
 │       ├── config/                   # Hydra YAML configs (root, search/bayesian, pruner/asha)
 │       └── tests/
 │           ├── unit/
-│           │   ├── search_spaces/    # Parameter types, SearchSpace sampling/serialization, SearchSpaceComposer
+│           │   ├── search/           # SearchStrategy, RandomSearch, GridSearch — 16 tests
+│           │   ├── search_spaces/    # Parameter types, SearchSpace sampling/serialization, SearchSpaceComposer — 44 tests
 │           │   └── *.py              # Package import, metadata, CLI, and config tests
 │           └── integration/          # API + sweep lifecycle tests
 │
