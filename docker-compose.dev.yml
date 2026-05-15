@@ -168,6 +168,8 @@ services:
         condition: service_healthy
       mlflow:
         condition: service_healthy
+      prefect:
+        condition: service_healthy
       orcamind:
         condition: service_healthy
     healthcheck:
