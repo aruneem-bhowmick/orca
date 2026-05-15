@@ -147,6 +147,10 @@ class TestParameterFromDict:
         with pytest.raises(ValueError, match="Unknown parameter type"):
             Parameter.from_dict({"type": "nonexistent", "name": "x"})
 
+    def test_raises_on_missing_type_key(self) -> None:
+        with pytest.raises(ValueError, match="missing required 'type' key"):
+            Parameter.from_dict({"name": "x", "low": 0, "high": 10})
+
     @pytest.mark.parametrize(
         "param",
         [

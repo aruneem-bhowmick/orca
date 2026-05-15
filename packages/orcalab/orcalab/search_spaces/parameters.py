@@ -31,7 +31,9 @@ class Parameter(ABC):
             "discrete_uniform": DiscreteUniformParameter,
             "categorical": CategoricalParameter,
         }
-        param_type = d["type"]
+        param_type = d.get("type")
+        if param_type is None:
+            raise ValueError("Parameter dict is missing required 'type' key")
         if param_type not in type_map:
             raise ValueError(f"Unknown parameter type: {param_type!r}")
         klass = type_map[param_type]
