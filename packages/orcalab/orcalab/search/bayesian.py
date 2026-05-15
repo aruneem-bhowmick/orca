@@ -147,6 +147,10 @@ class BayesianSearch(SearchStrategy):
             )
         distributions = _build_distributions(space)
         for params, value in warm_trials:
+            if not math.isfinite(value):
+                raise ValueError(
+                    f"Warm-start value must be finite. Got {value!r} for params {params!r}."
+                )
             trial_params = {k: v for k, v in params.items() if k in distributions}
             trial_dists = {k: distributions[k] for k in trial_params}
             frozen = optuna.trial.create_trial(

@@ -123,6 +123,30 @@ class TestBayesianInjectPriors:
         # 2 injected priors + 1 new trial
         assert searcher.n_trials == 3
 
+    def test_inject_priors_rejects_nan_value(self) -> None:
+        space = _float_space()
+        searcher = BayesianSearch()
+        with pytest.raises(ValueError, match="Warm-start value must be finite"):
+            searcher.inject_priors([({"lr": 0.01}, float("nan"))], search_space=space)
+
+    def test_inject_priors_rejects_inf_value(self) -> None:
+        space = _float_space()
+        searcher = BayesianSearch()
+        with pytest.raises(ValueError, match="Warm-start value must be finite"):
+            searcher.inject_priors([({"lr": 0.01}, float("inf"))], search_space=space)
+
+    def test_inject_priors_rejects_negative_inf_value(self) -> None:
+        space = _float_space()
+        searcher = BayesianSearch()
+        with pytest.raises(ValueError, match="Warm-start value must be finite"):
+            searcher.inject_priors([({"lr": 0.01}, float("-inf"))], search_space=space)
+
+    def test_inject_priors_finite_values_still_accepted(self) -> None:
+        space = _float_space()
+        searcher = BayesianSearch()
+        searcher.inject_priors([({"lr": 0.01}, 0.0), ({"lr": 0.05}, -1.5)], search_space=space)
+        assert searcher.n_trials == 2
+
 
 class TestBayesianPersistence:
     def test_persist_and_resume_from_sqlite(self, tmp_path: object) -> None:
