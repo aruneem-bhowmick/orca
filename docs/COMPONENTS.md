@@ -203,6 +203,86 @@ orcalab/
 └── cli.py             # Typer CLI — 4 commands
 ```
 
+### Search Spaces (`search_spaces/`)
+
+Typed, composable hyperparameter definitions that wrap the Optuna trial API. Every downstream search strategy (random, Bayesian, CMA-ES) calls `SearchSpace.sample(trial)` to obtain a parameter dict for a given trial.
+
+#### Parameter types (`parameters.py`)
+
+`Parameter` is an abstract base class. Each subclass delegates to the corresponding Optuna suggestion method and supports JSON round-trips via `to_dict()` / `Parameter.from_dict()`.
+
+
+| Class | Optuna method | Constructor arguments |
+|---|---|---|
+| `IntParameter` | `suggest_int` | `name`, `low`, `high`, `step=1`, `log=False` |
+| `FloatParameter` | `suggest_float` | `name`, `low`, `high`, `log=False` |
+| `LogUniformParameter` | `suggest_float(log=True)` | `name`, `low`, `high` — convenience subclass of `FloatParameter` |
+| `DiscreteUniformParameter` | `suggest_float(step=q)` | `name`, `low`, `high`, `q` |
+| `CategoricalParameter` | `suggest_categorical` | `name`, `choices: list[Any]` |
+
+
+`Parameter.from_dict` dispatches on a `"type"` key in the serialized dict. Passing a dict without this key, or with an unrecognised value, raises a descriptive `ValueError`.
+
+#### `SearchSpace` (`space.py`)
+
+A named container of parameters with fluent construction, conditional sampling, and JSON persistence.
+
+```python
+space = SearchSpace(name="resnet_search")
+space.add(IntParameter("num_layers", low=8, high=50))
+space.add(LogUniformParameter("learning_rate", low=1e-5, high=1e-1))
+space.add(CategoricalParameter("optimizer", choices=["adam", "sgd"]))
+space.add(IntParameter("batch_size", low=16, high=256, step=16))
+
+# Conditional parameter — only sampled when the predicate is True
+space.add_condition(
+    lambda sampled: sampled["optimizer"] == "sgd",
+    FloatParameter("momentum", low=0.8, high=0.99),
+)
+
+params = space.sample(trial)   # dict[str, Any] — all unconditional params +
+                                # any conditional params whose predicate fired
+```
+
+
+| Method | Returns | Notes |
+|---|---|---|
+| `add(param)` | `SearchSpace` | Registers an unconditional parameter; fluent |
+| `add_condition(pred, param)` | `SearchSpace` | Registers a conditional parameter; fluent |
+| `sample(trial)` | `dict[str, Any]` | Evaluates unconditional params then conditionals in registration order |
+| `to_dict()` | `dict` | Serializes name, description, and unconditional params; conditions are excluded |
+| `from_dict(d)` | `SearchSpace` | Reconstructs from a `to_dict()` payload |
+| `save(path)` | `None` | Writes `to_dict()` as indented JSON |
+| `load(path)` | `SearchSpace` | Reads and reconstructs from a JSON file |
+
+
+Conditions (callable closures) are intentionally excluded from serialization — `save()`/`load()` round-trips unconditional parameters only.
+
+#### `SearchSpaceComposer` (`composer.py`)
+
+Static utilities for combining and projecting search spaces.
+
+
+| Method | Signature | Behaviour |
+|---|---|---|
+| `merge` | `merge(*spaces, name)` | Union of all parameter dicts; later spaces override on name conflict; conditions from all spaces concatenated in argument order |
+| `inherit` | `inherit(parent, child)` | Starts from parent's parameters, overlays child's (child wins on conflict); name and description taken from child; parent conditions registered before child conditions |
+| `restrict` | `restrict(space, allowed_params)` | Returns a new space containing only the named parameters; conditions whose associated parameter is not in `allowed_params` are dropped |
+
+
+```python
+# Build a specialised child from a shared base
+base = SearchSpace(name="base")
+base.add(IntParameter("num_layers", low=4, high=32))
+base.add(LogUniformParameter("learning_rate", low=1e-5, high=1e-1))
+
+child = SearchSpace(name="deep_variant")
+child.add(IntParameter("num_layers", low=64, high=512))  # overrides base
+
+deep = SearchSpaceComposer.inherit(base, child)
+# → num_layers from child (64–512), learning_rate from base
+```
+
 ### CLI (`orcalab`)
 
 Four commands installed as the `orcalab` entry point.
