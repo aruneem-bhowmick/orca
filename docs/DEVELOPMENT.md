@@ -20,7 +20,7 @@ pytest packages/orcalab/tests/unit/ -v
 pytest packages/orcamind/tests/integration/ -v
 ```
 
-The test suite has 55+ test files across unit and integration categories. Integration tests auto-skip when their target service port is unreachable — run `make docker-up` first to exercise them.
+The test suite has 56+ test files across unit and integration categories. Integration tests auto-skip when their target service port is unreachable — run `make docker-up` first to exercise them.
 
 ---
 

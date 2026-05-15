@@ -14,10 +14,10 @@
 **Done:**
 - Package scaffold: full module skeleton, `pyproject.toml`, multi-stage Dockerfile, Typer CLI stub, Hydra config (`config.yaml`, `search/bayesian.yaml`, `pruner/asha.yaml`), and unit test suite
 - Composable search space definitions: `Parameter` ABC and five concrete types (`IntParameter`, `FloatParameter`, `LogUniformParameter`, `DiscreteUniformParameter`, `CategoricalParameter`), `SearchSpace` with conditional parameter sampling and JSON persistence, `SearchSpaceComposer` with `merge`, `inherit`, and `restrict` — 44 unit tests, 100% line coverage on `search_spaces/`
-- Search strategies: `SearchStrategy` ABC (`suggest` / `update` / `get_best` / `n_trials` contract, concrete `get_history()`); `RandomSearch` (seeded Optuna `RandomSampler`, FIFO pending-trial bookkeeping, `update()` validates param order); `GridSearch` (lazy Cartesian-product grid, per-type discretization rules, `StopIteration` on exhaustion, `TypeError` on unsupported parameter types) — 16 unit tests; **140 unit tests total** across the package
+- Search strategies: `SearchStrategy` ABC (`suggest` / `update` / `get_best` / `n_trials` contract, concrete `get_history()`); `RandomSearch` (seeded Optuna `RandomSampler`, FIFO pending-trial bookkeeping, `update()` validates param order); `GridSearch` (lazy Cartesian-product grid, per-type discretization rules, `StopIteration` on exhaustion, `TypeError` on unsupported parameter types); `BayesianSearch` (Optuna TPE sampler, `inject_priors()` warm-start via `optuna.trial.create_trial`, NaN/Inf-safe `update()`, direction-aware `get_best()`, SQLite/PostgreSQL persistence via `load_if_exists=True`, schema-stability guard on `suggest()`, finite-value guard in `inject_priors()`, `n >= 1` guard in `get_best()`) — 41 unit tests; **167 unit tests total** across the package
 
 **Next:**
-- Remaining search strategies: Bayesian (Optuna TPE), evolutionary (CMA-ES), meta-informed (OrcaMind priors)
+- Remaining search strategies: evolutionary (CMA-ES), meta-informed (OrcaMind priors)
 - ASHA pruning (target ≥40% compute reduction vs no pruning)
 - Experiment lifecycle state machine and runner (MLflow tracking, retry logic, `BatchExperimentRunner`)
 - Prefect 2.x orchestration flows: single experiment, sweep, meta-informed sweep, continuous learning
