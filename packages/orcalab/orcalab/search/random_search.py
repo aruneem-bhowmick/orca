@@ -30,7 +30,21 @@ class RandomSearch(SearchStrategy):
         return params
 
     def update(self, params: dict[str, Any], result: float) -> None:
-        _, trial = self._pending.popleft()
+        """Record the result for the next pending trial.
+
+        Must be called in the same FIFO order as suggest(). Raises ValueError
+        if params do not match the oldest pending trial, guarding against
+        accidentally recording a result against the wrong trial.
+        """
+        if not self._pending:
+            raise ValueError("No pending trials; call suggest() before update().")
+        pending_params, trial = self._pending[0]
+        if params != pending_params:
+            raise ValueError(
+                f"params do not match the next pending trial. "
+                f"Expected {pending_params!r}, got {params!r}."
+            )
+        self._pending.popleft()
         self._study.tell(trial, result)
 
     def get_best(self, n: int = 1) -> list[tuple[dict, float]]:

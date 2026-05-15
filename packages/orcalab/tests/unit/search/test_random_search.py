@@ -62,6 +62,20 @@ class TestRandomSearchGetBest:
         assert len(searcher.get_best(5)) == 1
 
 
+class TestRandomSearchUpdateValidation:
+    def test_update_with_mismatched_params_raises_value_error(self) -> None:
+        space = SearchSpace("test").add(CategoricalParameter("x", choices=["a", "b"]))
+        searcher = RandomSearch(random_state=42)
+        searcher.suggest(space)
+        with pytest.raises(ValueError, match="params do not match"):
+            searcher.update({"x": "z"}, result=1.0)
+
+    def test_update_without_pending_trial_raises_value_error(self) -> None:
+        searcher = RandomSearch(random_state=42)
+        with pytest.raises(ValueError, match="No pending trials"):
+            searcher.update({"x": "a"}, result=1.0)
+
+
 class TestRandomSearchDeterminism:
     def test_seeded_runs_are_deterministic(self) -> None:
         space = (
