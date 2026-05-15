@@ -96,11 +96,15 @@ class TestInherit:
         assert "lr" in result._params
         assert result._params["lr"].low == pytest.approx(1e-4)
 
-    def test_result_takes_name_from_child(self) -> None:
-        parent = _make_space("parent_name", IntParameter("x", low=1, high=5))
-        child = _make_space("child_name", FloatParameter("y", low=0.0, high=1.0))
+    def test_result_takes_name_and_description_from_child(self) -> None:
+        parent = SearchSpace(name="parent_name", description="parent desc")
+        parent.add(IntParameter("x", low=1, high=5))
+        child = SearchSpace(name="child_name", description="child desc")
+        child.add(FloatParameter("y", low=0.0, high=1.0))
         result = SearchSpaceComposer.inherit(parent, child)
         assert result.name == "child_name"
+        assert result.description == "child desc"
+        assert result.description != parent.description
 
     def test_conditions_from_both_parent_and_child_are_included_in_order(self) -> None:
         # parent's condition always fires; child's condition requires cond_p to
