@@ -196,3 +196,22 @@ class TestBayesianStudyProperty:
         searcher = BayesianSearch()
         with pytest.raises(ValueError, match="No pending trials"):
             searcher.update({"lr": 0.01}, result=0.5)
+
+    def test_suggest_with_different_space_schema_raises(self) -> None:
+        s1 = SearchSpace("s1").add(FloatParameter("lr", low=1e-5, high=1e-1))
+        s2 = SearchSpace("s2").add(IntParameter("layers", low=2, high=10))
+        searcher = BayesianSearch()
+        params = searcher.suggest(s1)
+        searcher.update(params, result=0.5)
+        with pytest.raises(ValueError, match="SearchSpace schema changed"):
+            searcher.suggest(s2)
+
+    def test_suggest_with_same_schema_different_name_is_allowed(self) -> None:
+        s1 = SearchSpace("s1").add(FloatParameter("lr", low=1e-5, high=1e-1))
+        s2 = SearchSpace("s2").add(FloatParameter("lr", low=1e-5, high=1e-1))
+        searcher = BayesianSearch()
+        params = searcher.suggest(s1)
+        searcher.update(params, result=0.5)
+        params2 = searcher.suggest(s2)
+        searcher.update(params2, result=0.6)
+        assert searcher.n_trials == 2

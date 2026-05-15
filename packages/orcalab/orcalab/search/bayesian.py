@@ -78,6 +78,11 @@ class BayesianSearch(SearchStrategy):
             if self._deferred_priors:
                 self.inject_priors(self._deferred_priors, search_space)
                 self._deferred_priors = []
+        elif set(_build_distributions(search_space)) != set(_build_distributions(self._search_space)):
+            raise ValueError(
+                "SearchSpace schema changed across suggest() calls for the same "
+                "BayesianSearch instance."
+            )
         trial = self._study.ask()
         params = search_space.sample(trial)
         self._pending.append((params, trial))
