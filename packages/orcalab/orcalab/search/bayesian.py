@@ -109,6 +109,8 @@ class BayesianSearch(SearchStrategy):
             self._study.tell(trial, result)
 
     def get_best(self, n: int = 1) -> list[tuple[dict, float]]:
+        if n < 1:
+            raise ValueError("n must be >= 1.")
         completed = [
             t for t in self._study.trials
             if t.state == optuna.trial.TrialState.COMPLETE

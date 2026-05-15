@@ -61,6 +61,16 @@ class TestBayesianSearchCycle:
         searcher.update(params, result=0.5)
         assert len(searcher.get_best(10)) == 1
 
+    def test_get_best_zero_raises_value_error(self) -> None:
+        searcher = BayesianSearch()
+        with pytest.raises(ValueError, match="n must be >= 1"):
+            searcher.get_best(0)
+
+    def test_get_best_negative_raises_value_error(self) -> None:
+        searcher = BayesianSearch()
+        with pytest.raises(ValueError, match="n must be >= 1"):
+            searcher.get_best(-1)
+
 
 class TestBayesianInjectPriors:
     def test_inject_priors_seeds_study(self) -> None:
