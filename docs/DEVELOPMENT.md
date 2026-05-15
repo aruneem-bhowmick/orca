@@ -7,17 +7,20 @@
 ## Running Tests
 
 ```bash
-# All tests
+# All tests (all packages)
 pytest packages/ -v --cov
 
-# Unit tests only (fast, no services required)
+# OrcaMind unit tests (no services required)
 pytest packages/orcamind/tests/unit/ -v
+
+# OrcaLab unit tests (no services required)
+pytest packages/orcalab/tests/unit/ -v
 
 # Integration tests (requires docker-compose stack)
 pytest packages/orcamind/tests/integration/ -v
 ```
 
-The test suite has 51 test files across unit and integration categories. Integration tests auto-skip when their target service port is unreachable — run `make docker-up` first to exercise them.
+The test suite has 55+ test files across unit and integration categories. Integration tests auto-skip when their target service port is unreachable — run `make docker-up` first to exercise them.
 
 ---
 
