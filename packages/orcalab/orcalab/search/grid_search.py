@@ -63,7 +63,7 @@ class GridSearch(SearchStrategy):
         names = [p.name for p in params]
         value_lists = [_grid_values(p, self._n_steps) for p in params]
         self._grid = [
-            dict(zip(names, combo)) for combo in itertools.product(*value_lists)
+            dict(zip(names, combo, strict=True)) for combo in itertools.product(*value_lists)
         ]
 
     def suggest(self, search_space: SearchSpace) -> dict[str, Any]:
