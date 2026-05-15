@@ -15,7 +15,7 @@
 
 ## Quick Start with Docker Compose
 
-The fastest path to a running stack. OrcaMind, PostgreSQL, Redis, MinIO, and MLflow all start together.
+The fastest path to a running stack. OrcaMind, OrcaLab, PostgreSQL, Redis, MinIO, MLflow, and Prefect all start together.
 
 ```bash
 git clone https://github.com/AruneemB/orca.git
@@ -25,22 +25,26 @@ cd orca
 uv venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 uv pip install -e packages/orca-shared
 uv pip install -e "packages/orcamind[dev]"
+uv pip install -e "packages/orcalab[dev]"
 
-# Start backing services
-docker compose -f docker-compose.dev.yml up -d postgres redis minio mlflow
+# Start backing services (Prefect required by OrcaLab)
+docker compose -f docker-compose.dev.yml up -d postgres redis minio mlflow prefect
 
 # Apply database migrations (creates all 7 registry tables)
 docker compose -f docker-compose.dev.yml run --rm orcamind python scripts/init_db.py
 
-# Start OrcaMind
+# Start OrcaMind, then OrcaLab (OrcaLab waits for OrcaMind to be healthy)
 docker compose -f docker-compose.dev.yml up -d orcamind
+docker compose -f docker-compose.dev.yml up -d orcalab
 
 # Verify
 curl http://localhost:8000/health
 # → {"status":"healthy","db":true,"faiss":false,"mlflow":true}
+curl http://localhost:8001/health
+# → {"status":"healthy"}
 ```
 
-Or with Make:
+Or with Make (starts the full stack including OrcaLab):
 
 ```bash
 make install
@@ -73,7 +77,7 @@ python scripts/bootstrap_meta_dataset.py --max-tasks 10 --output-dir data/
 > See [Database](DATABASE.md#bootstrap-the-meta-dataset) for all seeding CLI flags.
 
 ```bash
-# 5. Start the API
+# 5. Start the OrcaMind API
 export DATABASE_URL="postgresql+asyncpg://orca:orca_dev_secret@localhost:5432/orca_registry"
 export FAISS_INDEX_PATH="data/orca_task_index.faiss"
 orcamind serve --reload
@@ -82,7 +86,15 @@ orcamind serve --reload
 # 6. Get model recommendations
 orcamind recommend path/to/dataset.csv --top-k 3
 
-# 7. Open the analytics dashboard
+# 7. Open the OrcaMind analytics dashboard
 orcamind dashboard
 # http://localhost:8501
+
+# 8. (Optional) Start the OrcaLab API and dashboard
+export PREFECT_API_URL="http://localhost:4200/api"
+export ORCAMIND_API_URL="http://localhost:8000"
+orcalab serve --reload
+# http://localhost:8001
+orcalab dashboard
+# http://localhost:8502
 ```
