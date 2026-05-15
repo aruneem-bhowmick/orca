@@ -31,7 +31,7 @@ The ecosystem is composed of three interconnected services — **OrcaMind**, **O
 git clone https://github.com/AruneemB/orca.git
 cd orca
 
-# Start backing services + OrcaMind
+# Start backing services
 docker compose -f docker-compose.dev.yml up -d postgres redis minio mlflow
 docker compose -f docker-compose.dev.yml run --rm orcamind python scripts/init_db.py
 docker compose -f docker-compose.dev.yml up -d orcamind
