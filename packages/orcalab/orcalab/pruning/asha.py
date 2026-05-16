@@ -69,6 +69,8 @@ class ASHAPruner(Pruner):
         rung_idx = self._rung_for_step(step)
         if rung_idx is None:
             return False
+        if trial_id in self._promoted.get(rung_idx, []):
+            return False
 
         trials_at_rung: dict[str, float] = {trial_id: current_value}
         for tid, values in all_trial_values.items():

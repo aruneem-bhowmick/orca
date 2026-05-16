@@ -252,6 +252,17 @@ class TestASHAPrunerBoundaryConditions:
         with pytest.raises(ValueError, match="min_resource"):
             ASHAPruner(min_resource=-5)
 
+    def test_promoted_trial_not_re_pruned_when_stronger_peer_arrives(self) -> None:
+        """A trial promoted at a rung must not be pruned on re-evaluation even if a
+        stronger peer has since arrived and would push it out of the top-k."""
+        pruner = ASHAPruner(min_resource=1, max_resource=9, reduction_factor=3)
+        # t0 is the only trial at rung 0 → keep=max(1,1//3)=1 → promoted
+        assert pruner.should_prune("t0", 1, 0.5, {}) is False
+        assert "t0" in pruner._promoted.get(0, [])
+        # A strictly better peer now appears in all_trial_values
+        # Without the sticky-promotion guard, fresh re-ranking would prune t0
+        assert pruner.should_prune("t0", 1, 0.5, {"t1": [1.0]}) is False
+
     def test_tied_values_at_rung_keep_at_least_one(self) -> None:
         """When all trials share the same value at a rung, at least one must survive."""
         pruner = ASHAPruner(min_resource=1, max_resource=9, reduction_factor=3)
