@@ -1,0 +1,27 @@
+name: orcalab
+prefect-version: "2.14.0"
+
+build: null
+push: null
+pull: null
+
+deployments:
+  - name: single-experiment
+    entrypoint: orcalab/orchestration/flows/single_experiment.py:run_single_experiment
+    work_pool:
+      name: orcalab-pool
+
+  - name: hyperparameter-sweep
+    entrypoint: orcalab/orchestration/flows/sweep.py:run_sweep
+    work_pool:
+      name: orcalab-pool
+
+  - name: meta-informed-sweep
+    entrypoint: orcalab/orchestration/flows/meta_sweep.py:meta_informed_sweep
+    work_pool:
+      name: orcalab-pool
+
+  - name: continuous-learning
+    entrypoint: orcalab/orchestration/flows/continuous_learning.py:continuous_learning_loop
+    work_pool:
+      name: orcalab-pool

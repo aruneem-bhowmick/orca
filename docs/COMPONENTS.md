@@ -200,7 +200,7 @@ orcalab/
 ├── search_spaces/     # Composable, type-safe search space definitions
 ├── pruning/           # ASHA, median stopping, and meta-informed trial pruners
 ├── orchestration/
-│   ├── flows/         # Prefect flows (single experiment, sweep, meta-informed sweep)
+│   ├── flows/         # Prefect flows (single experiment, sweep, meta-informed sweep, continuous learning loop)
 │   └── tasks/         # Prefect tasks (prepare_data, train_model, evaluate, log_results)
 ├── visualization/     # Streamlit dashboard components and pages
 ├── api/               # FastAPI application and WebSocket endpoint
@@ -777,6 +777,180 @@ All four names are importable directly from `orcalab.pruning`:
 
 ```python
 from orcalab.pruning import Pruner, MedianStoppingPruner, ASHAPruner, MetaPruner
+```
+
+---
+
+### Prefect Orchestration (`orchestration/`)
+
+The orchestration layer composes the runner, search strategies, pruners, storage backends, and OrcaMind into schedulable Prefect 2.x flows. Each flow is a self-contained unit of work that can be deployed to a Prefect work pool and triggered on demand or on a schedule; each task is a fine-grained, retriable step inside those flows.
+
+```python
+from orcalab.orchestration.tasks import prepare_data, train_model, evaluate, log_results
+from orcalab.orchestration.flows import (
+    run_single_experiment,
+    run_sweep,
+    meta_informed_sweep,
+    continuous_learning_loop,
+)
+```
+
+#### Tasks (`orchestration/tasks/`)
+
+| Task | Decorator attributes | Signature (simplified) | Behaviour |
+|---|---|---|---|
+| `prepare_data` | `retries=2`, `retry_delay_seconds=30` | `(task_id: str, storage: StorageBackend) -> pd.DataFrame` | Downloads `datasets/{task_id}/data.parquet` from the storage backend and returns it as a DataFrame. Retried up to twice on transient failures. |
+| `train_model` | `timeout_seconds=3600` | `(experiment: Experiment, pruner: Pruner \| None, runner: ExperimentRunner) -> ExperimentResult` | Delegates to `runner.run(experiment, pruner=pruner)`. The `pruner` parameter is wired through from the enclosing flow so ASHA/median/meta pruning applies inside the runner's epoch loop. |
+| `evaluate` | — | `(result: ExperimentResult, metrics: list[str] \| None = None) -> dict[str, float \| None]` | Extracts the requested metrics from `result.metrics`. Defaults to `["accuracy", "loss"]` when `metrics` is `None`. Returns `None` for any metric not present in the result. |
+| `log_results` | — | `(result: ExperimentResult, orcamind_client: OrcaMindClient) -> None` | Submits a `FeedbackRequest` to OrcaMind using `max(result.metrics.values())` as the scalar signal under the key `"objective"`. Silently swallows `NotImplementedError` so the stub OrcaMind implementation does not block flows. |
+
+**Task notes:**
+
+- `train_model` does not accept a `data` parameter — data is loaded once by `prepare_data` and passed directly to the `Experiment` constructor in the enclosing flow. The runner's `run()` method only takes `experiment` and `pruner`.
+- `log_results` uses `max(metrics.values())` when `result.metrics` is non-empty; falls back to `0.0` for an empty metrics dict.
+
+#### Flows (`orchestration/flows/`)
+
+**`run_single_experiment` (`single_experiment.py`)**
+
+End-to-end single-trial flow.
+
+```python
+@flow(name="single_experiment")
+async def run_single_experiment(
+    task_id: str,
+    model_config: dict,
+    training_config: dict,
+    *,
+    storage: StorageBackend | None = None,
+    pruner: Pruner | None = None,
+    runner: ExperimentRunner,
+    orcamind_client: OrcaMindClient | None = None,
+) -> ExperimentResult:
+```
+
+| Parameter | Default | Notes |
+|---|---|---|
+| `storage` | `None` | When `None`, skips `prepare_data` and passes an empty `DataFrame` to the experiment. |
+| `pruner` | `None` | When `None`, no early stopping is applied; wired through to `train_model`. |
+| `orcamind_client` | `None` | When `None`, skips `log_results`. |
+
+Execution steps:
+1. If `storage` is provided: call `prepare_data(task_id, storage)` to fetch the dataset.
+2. Parse `task_id` as a UUID for `Experiment.task_id`; fall back to `None` if the format is invalid.
+3. Construct an `Experiment` from `model_config` and `training_config`.
+4. Call `train_model(experiment, pruner, runner)` → `ExperimentResult`.
+5. Call `evaluate(result)`.
+6. If `orcamind_client` is provided: call `log_results(result, orcamind_client)`.
+7. Return the `ExperimentResult`.
+
+---
+
+**`run_sweep` (`sweep.py`)**
+
+N-trial hyperparameter sweep with configurable search strategy and pruner.
+
+```python
+@flow(name="hyperparameter_sweep")
+async def run_sweep(
+    task_id: str,
+    search_space: SearchSpace,
+    n_trials: int = 50,
+    strategy: str = "bayesian",
+    pruner_name: str = "asha",
+    *,
+    storage: StorageBackend | None = None,
+    runner: ExperimentRunner,
+    orcamind_client: OrcaMindClient | None = None,
+) -> list[ExperimentResult]:
+```
+
+Strategy and pruner selection is handled by two module-level factory helpers:
+
+**`_build_strategy(name)`** — dispatches on the `strategy` string:
+
+| `strategy` value | Object returned |
+|---|---|
+| `"bayesian"` (default) | `BayesianSearch()` |
+| `"random"` | `RandomSearch()` |
+| `"grid"` | `GridSearch()` |
+| `"evolutionary"` | `EvolutionarySearch()` |
+| any other value | `BayesianSearch()` (fallback) |
+
+**`_build_pruner(name, orcamind_client)`** — dispatches on the `pruner_name` string:
+
+| `pruner_name` value | `orcamind_client` | Object returned |
+|---|---|---|
+| `"asha"` | any | `ASHAPruner()` |
+| `"median"` | any | `MedianStoppingPruner()` |
+| `"meta"` | provided | `MetaPruner(orcamind_client=client, base_pruner=ASHAPruner())` |
+| `"meta"` | `None` | `ASHAPruner()` (fallback — no client available) |
+| anything else | any | `None` (no pruning) |
+
+Execution: data is loaded once via `prepare_data` (or empty DataFrame if `storage=None`) and reused across all `n_trials`. Per trial: `strategy.suggest(search_space)` → construct `Experiment` → `train_model` (with pruner) → `evaluate` → `log_results` (if client present) → `strategy.update(params, result)`.
+
+---
+
+**`meta_informed_sweep` (`meta_sweep.py`)**
+
+OrcaMind-warm-started sweep that initialises the search strategy from prior experiment results.
+
+```python
+@flow(name="meta_informed_sweep")
+async def meta_informed_sweep(
+    task_id: str,
+    n_trials: int = 50,
+    use_orcamind: bool = True,
+    *,
+    search_space: SearchSpace | None = None,
+    runner: ExperimentRunner,
+    orcamind_client: OrcaMindClient | None = None,
+) -> list[ExperimentResult]:
+```
+
+| Path | Condition | Strategy | Pruner | OrcaMind calls |
+|---|---|---|---|---|
+| OrcaMind-enabled | `use_orcamind=True` and `orcamind_client` provided | `MetaInformedSearch` warm-started via `initialize_from_orcamind(task_id, search_space)` | `MetaPruner` | `initialize_from_orcamind` before loop; `flush_results_to_orcamind(task_id)` after loop |
+| Fallback | `use_orcamind=False` or no client | `BayesianSearch` | `ASHAPruner` | None |
+
+Returns the top-5 results sorted by accuracy descending.
+
+---
+
+**`continuous_learning_loop` (`continuous_learning.py`)**
+
+Outer scheduling loop that calls `meta_informed_sweep` for every task in every iteration.
+
+```python
+@flow(name="continuous_learning")
+async def continuous_learning_loop(
+    task_ids: list[str],
+    iterations: int = 10,
+    trials_per_iteration: int = 20,
+    iteration_sleep_seconds: float = 60.0,
+    *,
+    runner: ExperimentRunner,
+    orcamind_client: OrcaMindClient | None = None,
+) -> None:
+```
+
+For each of `iterations` iterations, `meta_informed_sweep` is called for every `task_id` in `task_ids`. The flow sleeps `iteration_sleep_seconds` between iterations but **not** after the final iteration. Total sweep calls = `iterations × len(task_ids)`.
+
+#### Deployment Configuration (`prefect.yaml`)
+
+All four flows are declared as named deployments on the `orcalab-pool` work pool.
+
+| Deployment name | Entry point |
+|---|---|
+| `single-experiment` | `single_experiment.py:run_single_experiment` |
+| `hyperparameter-sweep` | `sweep.py:run_sweep` |
+| `meta-informed-sweep` | `meta_sweep.py:meta_informed_sweep` |
+| `continuous-learning` | `continuous_learning.py:continuous_learning_loop` |
+
+Apply all deployments with:
+
+```bash
+prefect deploy --all
 ```
 
 ---
