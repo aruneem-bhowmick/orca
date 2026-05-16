@@ -2,10 +2,14 @@
 
 from __future__ import annotations
 
+import random
+
 import numpy as np
 import pytest
 
+from orcalab.search.base import SearchStrategy
 from orcalab.search.evolutionary import (
+    EvolutionarySearch,
     _build_dim_map,
     _decode,
     _encode,
@@ -119,3 +123,178 @@ class TestEncodingDecoding:
         decoded_high = _decode(np.array([1.5]), dim_map)
         assert decoded_low["lr"] == pytest.approx(1e-4, rel=1e-6)
         assert decoded_high["lr"] == pytest.approx(1e-1, rel=1e-6)
+
+
+class TestEvolutionarySearchABCCompliance:
+    def test_isinstance_search_strategy(self) -> None:
+        assert isinstance(EvolutionarySearch(), SearchStrategy)
+
+    def test_suggest_is_callable(self) -> None:
+        assert callable(EvolutionarySearch().suggest)
+
+    def test_update_is_callable(self) -> None:
+        assert callable(EvolutionarySearch().update)
+
+    def test_get_best_is_callable(self) -> None:
+        assert callable(EvolutionarySearch().get_best)
+
+    def test_n_trials_is_int_on_fresh_instance(self) -> None:
+        evo = EvolutionarySearch()
+        assert isinstance(evo.n_trials, int)
+        assert evo.n_trials == 0
+
+    def test_get_history_returns_all_results_sorted_descending(self) -> None:
+        space = _float_space()
+        evo = EvolutionarySearch(population_size=10, seed=0)
+        for i in range(10):
+            p = evo.suggest(space)
+            evo.update(p, float(i) * 0.1)
+        history = evo.get_history()
+        assert len(history) == 10
+        values = [v for _, v in history]
+        assert values == sorted(values, reverse=True)
+
+    def test_n_trials_increments_per_valid_update(self) -> None:
+        space = _float_space()
+        evo = EvolutionarySearch(population_size=10, seed=0)
+        for i in range(5):
+            p = evo.suggest(space)
+            evo.update(p, float(i))
+        assert evo.n_trials == 5
+
+
+class TestEvolutionarySearchCycle:
+    def test_20_trial_cycle_no_error(self) -> None:
+        space = _mixed_space()
+        evo = EvolutionarySearch(population_size=10, seed=42)
+        for i in range(20):
+            p = evo.suggest(space)
+            evo.update(p, float(i) * 0.05)
+        assert evo.n_trials == 20
+
+    def test_get_best_n_returns_descending_values(self) -> None:
+        space = _float_space()
+        evo = EvolutionarySearch(population_size=10, seed=0)
+        for i in range(10):
+            p = evo.suggest(space)
+            evo.update(p, float(i))
+        best = evo.get_best(3)
+        assert len(best) == 3
+        vals = [v for _, v in best]
+        assert vals == sorted(vals, reverse=True)
+        assert vals[0] == pytest.approx(9.0)
+
+    def test_get_best_returns_fewer_when_fewer_trials_exist(self) -> None:
+        space = _float_space()
+        evo = EvolutionarySearch(population_size=10, seed=0)
+        p = evo.suggest(space)
+        evo.update(p, 0.5)
+        assert len(evo.get_best(100)) == 1
+
+    def test_direction_minimize_get_best_returns_lowest(self) -> None:
+        space = _float_space()
+        evo = EvolutionarySearch(population_size=5, direction="minimize", seed=0)
+        results = [10.0, 3.0, 7.0, 1.0, 5.0]
+        for r in results:
+            p = evo.suggest(space)
+            evo.update(p, r)
+        best = evo.get_best(1)
+        assert best[0][1] == pytest.approx(1.0)
+
+    def test_multiple_generations_run_without_error(self) -> None:
+        space = _float_space()
+        evo = EvolutionarySearch(population_size=10, seed=0)
+        for i in range(25):
+            p = evo.suggest(space)
+            evo.update(p, float(i))
+        assert evo.n_trials == 25
+
+    def test_suggest_returns_params_within_space_bounds(self) -> None:
+        space = _mixed_space()
+        evo = EvolutionarySearch(population_size=5, seed=7)
+        for _ in range(20):
+            p = evo.suggest(space)
+            assert 1e-4 <= p["lr"] <= 1e-1
+            assert 2 <= p["layers"] <= 20
+            assert p["optimizer"] in ["adam", "sgd"]
+            evo.update(p, 0.5)
+
+
+class TestEvolutionarySearchOptimization:
+    def test_50_trials_beats_random_on_quadratic(self) -> None:
+        space = (
+            SearchSpace("quad")
+            .add(FloatParameter("lr", low=1e-4, high=1e-1))
+            .add(IntParameter("layers", low=2, high=20))
+        )
+
+        def objective(params: dict) -> float:
+            return -((params["lr"] - 0.05) ** 2) - ((params["layers"] - 10) ** 2 / 100.0)
+
+        evo = EvolutionarySearch(population_size=10, sigma0=0.3, seed=42)
+        for _ in range(50):
+            p = evo.suggest(space)
+            evo.update(p, objective(p))
+
+        rng = random.Random(42)
+        random_best = max(
+            objective({"lr": rng.uniform(1e-4, 1e-1), "layers": rng.randint(2, 20)})
+            for _ in range(50)
+        )
+        assert evo.get_best(1)[0][1] > random_best
+
+
+class TestEvolutionarySearchUpdateValidation:
+    def test_update_with_partial_population_does_not_fail(self) -> None:
+        space = _float_space()
+        evo = EvolutionarySearch(population_size=10, seed=42)
+        for _ in range(5):
+            p = evo.suggest(space)
+            evo.update(p, 0.5)
+        assert evo.n_trials == 5
+
+    def test_update_without_pending_raises_value_error(self) -> None:
+        evo = EvolutionarySearch()
+        with pytest.raises(ValueError, match="No pending trials"):
+            evo.update({"lr": 0.01}, result=0.5)
+
+    def test_update_with_mismatched_params_raises_value_error(self) -> None:
+        space = _float_space()
+        evo = EvolutionarySearch(population_size=5, seed=0)
+        evo.suggest(space)
+        with pytest.raises(ValueError, match="params do not match"):
+            evo.update({"lr": 9999.0}, result=0.5)
+
+    def test_nan_result_not_recorded_in_history(self) -> None:
+        space = _float_space()
+        evo = EvolutionarySearch(population_size=5, seed=0)
+        p = evo.suggest(space)
+        evo.update(p, float("nan"))
+        assert evo.n_trials == 0
+
+    def test_inf_result_not_recorded_in_history(self) -> None:
+        space = _float_space()
+        evo = EvolutionarySearch(population_size=5, seed=0)
+        p = evo.suggest(space)
+        evo.update(p, float("inf"))
+        assert evo.n_trials == 0
+
+    def test_negative_inf_result_not_recorded_in_history(self) -> None:
+        space = _float_space()
+        evo = EvolutionarySearch(population_size=5, seed=0)
+        p = evo.suggest(space)
+        evo.update(p, float("-inf"))
+        assert evo.n_trials == 0
+
+    def test_valid_result_after_nan_is_recorded(self) -> None:
+        space = _float_space()
+        evo = EvolutionarySearch(population_size=5, seed=0)
+        bad = evo.suggest(space)
+        evo.update(bad, float("nan"))
+        good = evo.suggest(space)
+        evo.update(good, 0.8)
+        assert evo.n_trials == 1
+
+    def test_invalid_direction_raises_value_error(self) -> None:
+        with pytest.raises(ValueError, match="direction must be"):
+            EvolutionarySearch(direction="sideways")
