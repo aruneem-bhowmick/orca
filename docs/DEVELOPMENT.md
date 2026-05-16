@@ -16,11 +16,14 @@ pytest packages/orcamind/tests/unit/ -v
 # OrcaLab unit tests (no services required)
 pytest packages/orcalab/tests/unit/ -v
 
+# OrcaLab pruning unit tests only
+pytest packages/orcalab/tests/unit/pruning/ -v
+
 # Integration tests (requires docker-compose stack)
 pytest packages/orcamind/tests/integration/ -v
 ```
 
-The test suite has 56+ test files across unit and integration categories. Integration tests auto-skip when their target service port is unreachable — run `make docker-up` first to exercise them.
+The test suite has 59+ test files across unit and integration categories. Integration tests auto-skip when their target service port is unreachable — run `make docker-up` first to exercise them.
 
 ---
 

@@ -480,6 +480,164 @@ update() × population_size valid results:
 
 ---
 
+### Pruning Strategies (`pruning/`)
+
+Early-stopping strategies terminate underperforming trials before they exhaust their resource budget, recovering compute that would otherwise be wasted running trials that cannot plausibly converge to a competitive result. All three concrete strategies implement the `Pruner` ABC; the module re-exports all four public names from `orcalab.pruning`.
+
+#### `Pruner` (`base.py`)
+
+Abstract base class defining the shared contract for all pruning strategies.
+
+| Member | Kind | Description |
+|---|---|---|
+| `should_prune(trial_id, step, current_value, all_trial_values)` | abstract method | Return `True` if the trial should be stopped at this step. `all_trial_values` is `dict[str, list[float]]` — the full observed history of every active trial indexed by trial ID. |
+| `name` | abstract property | Strategy identifier string. |
+
+Passing the full `all_trial_values` dict into every call allows each strategy to compare relative progress across the live cohort without shared mutable state between trials.
+
+#### `MedianStoppingPruner` (`median.py`)
+
+Prunes a trial when its current value falls **strictly below** the median of every peer's best observed value up to the current step. Peers with shorter histories contribute their maximum available value, so mid-run trials are never artificially excluded from the comparison pool.
+
+```python
+from orcalab.pruning import MedianStoppingPruner
+
+pruner = MedianStoppingPruner(warmup_steps=5)
+should_stop = pruner.should_prune(
+    trial_id="trial_42",
+    step=10,
+    current_value=0.71,
+    all_trial_values={
+        "trial_0": [0.82, 0.85, 0.87, 0.88, 0.90, 0.91, 0.91, 0.92, 0.92, 0.93],
+        "trial_1": [0.78, 0.80, 0.83, 0.85, 0.86, 0.87, 0.88, 0.89, 0.90, 0.91],
+    },
+)
+```
+
+**Constructor parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `warmup_steps` | `int` | `5` | No pruning decision is issued for steps `< warmup_steps`. Raises `ValueError` if negative. |
+
+**Behaviour:**
+
+- Steps strictly less than `warmup_steps` always return `False`.
+- If no qualifying peers exist (empty `all_trial_values` or every peer has an empty history) returns `False`.
+- The current trial is excluded from the peer set — its own history does not influence the median.
+- Comparison is `current_value < median`; a value equal to the median is **not** pruned.
+- Each peer contributes `max(values[:step])` — its best result within the observable window, not necessarily the value at exactly step `s`.
+
+#### `ASHAPruner` (`asha.py`)
+
+Asynchronous Successive Halving Algorithm (Li et al., 2018). Evaluates each trial only at **rung levels** (`min_resource × reduction_factor^k` for k = 0, 1, 2, …); all other steps are passed through at zero cost. At each rung the top `1/reduction_factor` fraction of competing trials is promoted and the rest are pruned.
+
+```python
+from orcalab.pruning import ASHAPruner
+
+pruner = ASHAPruner(min_resource=1, max_resource=81, reduction_factor=3)
+# Rung schedule: steps 1, 3, 9, 27, 81
+# At each rung: top 1/3 promoted, bottom 2/3 pruned
+
+should_stop = pruner.should_prune(
+    trial_id="trial_0",
+    step=1,
+    current_value=0.55,
+    all_trial_values={"trial_1": [0.72], "trial_2": [0.81]},
+)
+```
+
+**Constructor parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `min_resource` | `int` | `1` | Step number of the first rung. Raises `ValueError` if < 1. |
+| `max_resource` | `int` | `81` | Rungs are only generated up to and including this step. Raises `ValueError` if < `min_resource`. |
+| `reduction_factor` | `int` | `3` | Inverse of the promoted fraction at each rung (`1/reduction_factor` kept). Raises `ValueError` if < 2. |
+
+**Rung schedule (default params):**
+
+| Rung | Step | Trials kept (of N reaching this rung) |
+|---|---|---|
+| 0 | 1 | `max(1, N // 3)` |
+| 1 | 3 | `max(1, N // 3)` |
+| 2 | 9 | `max(1, N // 3)` |
+| 3 | 27 | `max(1, N // 3)` |
+| 4 | 81 | `max(1, N // 3)` |
+
+**Internal state:** `_promoted: dict[int, list[str]]` records which trial IDs have been promoted through each rung, making promotion history inspectable without re-evaluating previously decided trials.
+
+**Key invariants:**
+- A non-rung step always returns `False` immediately — zero overhead between rungs.
+- `keep = max(1, n // reduction_factor)` — at least one trial always survives, even when only a single trial has reached the rung.
+- Steps beyond `max_resource` are not rung levels and always return `False`.
+
+**Compute savings** — in a 20-trial sweep with sequential best-first execution, ASHA executes ~100 total steps vs. 1,620 for unpruned runs (>93% savings). The test suite asserts a conservative ≥40% threshold to remain valid across concurrent-execution patterns where the best trial is not always evaluated first.
+
+#### `MetaPruner` (`meta_pruner.py`)
+
+Wraps any `Pruner` with an OrcaMind performance-prediction layer. Before delegating to the base pruner, `MetaPruner` queries `OrcaMindClient.predict_performance` using the trial's observed value history as the task embedding. If the predicted final performance is below `prediction_threshold`, the trial is pruned immediately — potentially several rungs earlier than a rung-based strategy alone would trigger.
+
+```python
+from orca_shared.clients.orcamind_client import OrcaMindClient
+from orcalab.pruning import ASHAPruner, MetaPruner
+
+client = OrcaMindClient(base_url="http://localhost:8000")
+base   = ASHAPruner(min_resource=1, max_resource=81, reduction_factor=3)
+pruner = MetaPruner(
+    orcamind_client=client,
+    base_pruner=base,
+    prediction_threshold=0.3,
+    min_steps_before_prediction=10,
+)
+should_stop = pruner.should_prune(
+    trial_id="trial_0",
+    step=15,
+    current_value=0.41,
+    all_trial_values={"trial_0": [0.31, 0.35, 0.38, ...]},
+)
+```
+
+**Constructor parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `orcamind_client` | `OrcaMindClient` | required | Async HTTP client — queries `/api/v1/predict-performance`. |
+| `base_pruner` | `Pruner` | required | Fallback strategy when OrcaMind is unavailable or the prediction is above threshold. |
+| `prediction_threshold` | `float` | `0.3` | Predicted final performance strictly below this value triggers immediate pruning. |
+| `min_steps_before_prediction` | `int` | `10` | Steps below this are never sent to OrcaMind; too-short curves carry insufficient signal. |
+
+**Decision flow:**
+
+```text
+should_prune(trial_id, step, current_value, all_trial_values)
+  │
+  ├─ step < min_steps_before_prediction  →  return False   (warmup — no query)
+  │
+  ├─ _query_orcamind(...)
+  │    ├─ task_embedding = observed_curve + [current_value]
+  │    ├─ asyncio.new_event_loop().run_until_complete(predict_performance(...))
+  │    └─ any Exception  →  log WARNING, return None
+  │
+  ├─ predicted < prediction_threshold   →  return True    (OrcaMind early stop)
+  │
+  └─ else  →  return base_pruner.should_prune(...)         (delegate to base)
+```
+
+**Graceful degradation** — any exception from OrcaMind (network error, timeout, malformed response) is caught inside `_query_orcamind`, logged at `WARNING`, and yields `None`. The decision then falls through to `base_pruner.should_prune()`. The sweep is never blocked by an unavailable prediction service.
+
+**Async/sync bridge** — `OrcaMindClient.predict_performance` is `async def` but `should_prune` must be synchronous. `MetaPruner` bridges this by creating a fresh event loop per call via `asyncio.new_event_loop()`, running the coroutine inside it, and closing the loop in a `finally` block. This is safe from synchronous callers (CLI, test suite) where no event loop is already running.
+
+#### Public API (`__init__.py`)
+
+All four names are importable directly from `orcalab.pruning`:
+
+```python
+from orcalab.pruning import Pruner, MedianStoppingPruner, ASHAPruner, MetaPruner
+```
+
+---
+
 ### CLI (`orcalab`)
 
 Four commands installed as the `orcalab` entry point.
