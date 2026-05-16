@@ -41,6 +41,7 @@ def _build_dim_map(space: SearchSpace) -> list[tuple[Any, slice]]:
 
 
 def _total_dim(dim_map: list[tuple[Any, slice]]) -> int:
+    """Return the total number of dimensions in the normalized vector."""
     if not dim_map:
         return 0
     return dim_map[-1][1].stop
@@ -131,6 +132,7 @@ class EvolutionarySearch(SearchStrategy):
         seed: int = 42,
         direction: str = "maximize",
     ) -> None:
+        """Initialize EvolutionarySearch with CMA-ES hyperparameters and direction."""
         if direction not in ("maximize", "minimize"):
             raise ValueError(f"direction must be 'maximize' or 'minimize', got {direction!r}")
         if population_size <= 0:
@@ -153,6 +155,7 @@ class EvolutionarySearch(SearchStrategy):
         self._search_space: SearchSpace | None = None
 
     def _make_es(self, x0: list[float]) -> cma.CMAEvolutionStrategy:
+        """Instantiate a new CMAEvolutionStrategy from the given starting point."""
         return cma.CMAEvolutionStrategy(
             x0,
             self._sigma0,
@@ -164,6 +167,7 @@ class EvolutionarySearch(SearchStrategy):
         )
 
     def _repopulate(self) -> None:
+        """Ask CMA-ES for the next population and fill the solution queue."""
         assert self._es is not None
         assert self._dim_map is not None
         solutions = self._es.ask()
@@ -172,6 +176,7 @@ class EvolutionarySearch(SearchStrategy):
             self._solution_queue.append((arr, _decode(arr, self._dim_map)))
 
     def suggest(self, search_space: SearchSpace) -> dict[str, Any]:
+        """Return the next parameter dict to evaluate, sampled from the CMA-ES distribution."""
         if self._search_space is None:
             self._search_space = search_space
         elif search_space is not self._search_space:
@@ -250,9 +255,11 @@ class EvolutionarySearch(SearchStrategy):
                 self._stopped = True
 
     def get_best(self, n: int = 1) -> list[tuple[dict, float]]:
+        """Return the top n (params, result) pairs sorted by result in the optimization direction."""
         reverse = self._direction == "maximize"
         return sorted(self._history, key=lambda x: x[1], reverse=reverse)[:n]
 
     @property
     def n_trials(self) -> int:
+        """Return the number of valid (non-NaN/Inf) trials recorded so far."""
         return len(self._history)
