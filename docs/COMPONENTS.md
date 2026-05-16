@@ -203,6 +203,145 @@ orcalab/
 └── cli.py             # Typer CLI — 4 commands
 ```
 
+### Experiment Lifecycle and Execution (`experiments/`)
+
+The experiments package is the execution layer that bridges search strategies and pruning with actual model training. It manages state transitions for each trial, streams metrics to MLflow, retries on failure, and runs multiple experiments concurrently.
+
+All public names are importable from `orcalab.experiments`:
+
+```python
+from orcalab.experiments import (
+    Experiment,
+    ExperimentLifecycle,
+    ExperimentRunner,
+    ExperimentStatus,
+    BatchExperimentRunner,
+    InvalidTransitionError,
+    TrainableModel,
+)
+```
+
+#### `Experiment` dataclass (`experiment.py`)
+
+Extends `orca_shared.schemas.ExperimentResult` with three additional fields needed to fully specify and execute a trial.
+
+| Field | Type | Description |
+|---|---|---|
+| `arch_config` | `dict[str, Any] \| None` | Model architecture and hyperparameter config passed to the `model_factory` |
+| `training_config` | `TrainingConfig \| None` | Epochs, learning rate, batch size, optimizer, scheduler |
+| `tags` | `dict[str, str] \| None` | Free-form key/value metadata (e.g. sweep ID, experiment notes) |
+
+> `arch_config` is named deliberately to avoid Pydantic v2's reserved `model_config` class attribute. All other `ExperimentResult` fields (`experiment_id`, `task_id`, `model_id`, `status`, `mlflow_run_id`, `started_at`, `completed_at`, `metrics`) are inherited unchanged.
+
+#### State Machine (`lifecycle.py`)
+
+`ExperimentStatus` is a `str` enum with six states. Valid transitions are enforced as a closed set — any other edge raises `InvalidTransitionError`.
+
+```text
+PENDING ──► QUEUED ──► RUNNING ──► COMPLETED
+   │                      │
+   └──► CANCELLED ◄────── ┤
+                           └──► FAILED
+```
+
+| Transition | Trigger |
+|---|---|
+| `PENDING → QUEUED` | Experiment submitted to the work queue |
+| `PENDING → CANCELLED` | Cancelled before reaching the queue |
+| `QUEUED → RUNNING` | Picked up by a worker |
+| `RUNNING → COMPLETED` | Training finished successfully |
+| `RUNNING → FAILED` | Unrecoverable error or pruner decision |
+| `RUNNING → CANCELLED` | User-initiated cancellation while running |
+
+`ExperimentLifecycle` manages transitions for a single experiment. It takes an `Experiment` and an `ExperimentRepository` at construction time.
+
+```python
+lifecycle = ExperimentLifecycle(experiment, repository)
+await lifecycle.transition(ExperimentStatus.RUNNING)
+await lifecycle.transition(ExperimentStatus.FAILED, reason="OOM on epoch 7")
+
+for entry in lifecycle.audit_log:
+    print(entry)
+# {"timestamp": "2025-…", "from": "queued", "to": "running", "reason": ""}
+# {"timestamp": "2025-…", "from": "running", "to": "failed", "reason": "OOM on epoch 7"}
+```
+
+**`transition(new_status, reason="")`** — async. Validates the edge, then calls `repository.update_status()` first; only on success does it update `experiment.status` in memory and append to the audit log. This ordering means a failed DB write leaves both in-memory state and the audit log unchanged — no split-brain.
+
+**`audit_log`** — returns a copy of the internal list. Each entry is a `dict` with keys `timestamp` (ISO-8601 UTC), `from`, `to`, and `reason`.
+
+**`InvalidTransitionError`** — raised synchronously before any I/O when the requested edge is not in the valid set.
+
+#### `ExperimentRunner` (`runner.py`)
+
+Executes a single experiment end-to-end: transitions state, trains the model epoch by epoch, streams metrics to MLflow, integrates with a pruner, retries on failure, uploads the checkpoint on success.
+
+```python
+runner = ExperimentRunner(
+    tracker=OrcaTracker("my_experiment"),
+    artifact_manager=ArtifactManager(storage),
+    max_retries=2,      # must be >= 0
+    timeout=3600,       # seconds; must be > 0
+    model_factory=lambda cfg: MyModel(**cfg),
+)
+result = await runner.run(experiment, pruner=asha_pruner)
+```
+
+**Constructor parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `tracker` | `OrcaTracker` | required | Async context manager for MLflow run lifetime |
+| `artifact_manager` | `ArtifactManager` | required | Handles model serialisation and remote storage |
+| `max_retries` | `int` | `2` | Maximum retry attempts after the first failure. Raises `ValueError` if `< 0`. |
+| `timeout` | `int` | `3600` | Per-attempt wall-clock timeout in seconds. Raises `ValueError` if `<= 0`. |
+| `model_factory` | `Callable[[dict], TrainableModel] \| None` | `None` | Called with `experiment.arch_config` to produce a `TrainableModel`. Omitting it raises `NotImplementedError` at runtime. |
+
+**`run(experiment, pruner=None)` execution flow:**
+
+1. Transition experiment to `RUNNING` (caller must leave it in `QUEUED`).
+2. For each attempt (up to `max_retries + 1` total):
+   - Open an MLflow run via `async with tracker`.
+   - Call `model_factory(experiment.arch_config)` to instantiate the model.
+   - Log `training_config` params to MLflow.
+   - Loop epochs `1 → N` (`training_config.epochs`, default 10):
+     - Call `model.train_epoch(epoch) → float` (the primary metric).
+     - Log the metric to MLflow with the epoch as `step`.
+     - If `pruner.should_prune(trial_id, epoch, metric, history)` returns `True`: transition to `FAILED(reason="pruned")` and return immediately. The checkpoint is **not** uploaded.
+   - On successful epoch loop: upload checkpoint via `artifact_manager`, transition to `COMPLETED`, return.
+   - On exception or timeout: record the error, try the next attempt.
+3. After all attempts exhausted: transition to `FAILED(reason=<last exception>)`, return.
+
+**Retry semantics** — all retry attempts occur while the experiment is in `RUNNING` state. The lifecycle records exactly one `QUEUED → RUNNING` entry and exactly one terminal transition (`RUNNING → COMPLETED` or `RUNNING → FAILED`), regardless of retry count. The audit log is never polluted with intermediate failures.
+
+**`TrainableModel` protocol** — any object with a `train_epoch(epoch: int) -> float` method satisfies this interface. The runner is framework-agnostic: PyTorch, scikit-learn, or a mock all work equally.
+
+#### `BatchExperimentRunner` (`batch_runner.py`)
+
+Runs a list of experiments concurrently, capping the number of simultaneous trials via `asyncio.Semaphore`.
+
+```python
+batch_runner = BatchExperimentRunner(runner=runner, max_parallel=4)
+results = await batch_runner.run_batch(experiments, pruner=asha_pruner)
+# results[i] corresponds to experiments[i] regardless of completion order
+```
+
+**Constructor parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `runner` | `ExperimentRunner` | required | The single-experiment runner to delegate to |
+| `max_parallel` | `int` | `4` | Maximum concurrent experiments. Raises `ValueError` if `< 1`. |
+
+**`run_batch(experiments, pruner=None)` guarantees:**
+
+- **Order preserved** — results are written into pre-allocated index slots; `results[i]` always matches `experiments[i]`.
+- **Failures isolated** — a failed experiment yields a `FAILED` `ExperimentResult`; it does not cancel sibling tasks or raise.
+- **Concurrency bounded** — at most `max_parallel` `run()` coroutines hold the semaphore simultaneously.
+- **Empty list** — returns `[]` without touching the runner.
+
+---
+
 ### Search Spaces (`search_spaces/`)
 
 Typed, composable hyperparameter definitions that wrap the Optuna trial API. Every downstream search strategy (random, Bayesian, CMA-ES) calls `SearchSpace.sample(trial)` to obtain a parameter dict for a given trial.
