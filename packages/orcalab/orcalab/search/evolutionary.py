@@ -133,6 +133,10 @@ class EvolutionarySearch(SearchStrategy):
     ) -> None:
         if direction not in ("maximize", "minimize"):
             raise ValueError(f"direction must be 'maximize' or 'minimize', got {direction!r}")
+        if population_size <= 0:
+            raise ValueError(f"population_size must be > 0, got {population_size}")
+        if sigma0 <= 0.0:
+            raise ValueError(f"sigma0 must be > 0, got {sigma0}")
         self._population_size = population_size
         self._sigma0 = sigma0
         self._seed = seed
