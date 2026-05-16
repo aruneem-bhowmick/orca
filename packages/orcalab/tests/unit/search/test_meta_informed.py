@@ -233,6 +233,22 @@ class TestSuggestUpdate:
         searcher.update(params, result=float("nan"))
         assert searcher._completed_results == []
 
+    def test_inf_result_does_not_count_as_trial(
+        self, mock_client: MagicMock, simple_space: SearchSpace
+    ) -> None:
+        searcher = MetaInformedSearch(orcamind_client=mock_client)
+        params = searcher.suggest(simple_space)
+        searcher.update(params, result=float("inf"))
+        assert searcher.n_trials == 0
+
+    def test_neg_inf_result_not_stored_in_completed_results(
+        self, mock_client: MagicMock, simple_space: SearchSpace
+    ) -> None:
+        searcher = MetaInformedSearch(orcamind_client=mock_client)
+        params = searcher.suggest(simple_space)
+        searcher.update(params, result=float("-inf"))
+        assert searcher._completed_results == []
+
     def test_get_best_returns_descending_order(
         self, mock_client: MagicMock, simple_space: SearchSpace
     ) -> None:
@@ -283,6 +299,28 @@ class TestFlushResults:
             searcher.update(p, result=0.7)
         await searcher.flush_results_to_orcamind(_TASK_ID)
         assert mock_client.submit_feedback.call_count == 2
+
+    async def test_inf_result_excluded_from_flush(
+        self, mock_client: MagicMock, simple_space: SearchSpace
+    ) -> None:
+        searcher = MetaInformedSearch(orcamind_client=mock_client)
+        bad = searcher.suggest(simple_space)
+        searcher.update(bad, result=float("inf"))
+        good = searcher.suggest(simple_space)
+        searcher.update(good, result=0.7)
+        await searcher.flush_results_to_orcamind(_TASK_ID)
+        assert mock_client.submit_feedback.call_count == 1
+
+    async def test_neg_inf_result_excluded_from_flush(
+        self, mock_client: MagicMock, simple_space: SearchSpace
+    ) -> None:
+        searcher = MetaInformedSearch(orcamind_client=mock_client)
+        bad = searcher.suggest(simple_space)
+        searcher.update(bad, result=float("-inf"))
+        good = searcher.suggest(simple_space)
+        searcher.update(good, result=0.6)
+        await searcher.flush_results_to_orcamind(_TASK_ID)
+        assert mock_client.submit_feedback.call_count == 1
 
     async def test_flush_sends_correct_metric_values(
         self, mock_client: MagicMock, simple_space: SearchSpace
