@@ -116,3 +116,63 @@ class TestMedianPrunerLogic:
         peers = {"t1": [0.6], "t2": [0.8]}
         assert pruner.should_prune("t0", 1, 0.5, peers) is True   # 0.5 < 0.7
         assert pruner.should_prune("t0", 1, 0.75, peers) is False  # 0.75 >= 0.7
+
+
+class TestMedianPrunerBoundaryConditions:
+    def test_step_zero_with_zero_warmup_no_peers(self) -> None:
+        """Step 0 with warmup_steps=0: condition `0 < 0` is False, but no peers → not pruned."""
+        pruner = MedianStoppingPruner(warmup_steps=0)
+        result = pruner.should_prune("t0", 0, 0.0, {})
+        assert result is False
+
+    def test_step_zero_with_zero_warmup_with_peers(self) -> None:
+        """Step 0 with warmup_steps=0 and peers: values[:0] is empty → no peer_bests → not pruned."""
+        pruner = MedianStoppingPruner(warmup_steps=0)
+        # values[:0] = [] regardless of peer values, so peer_bests is empty
+        result = pruner.should_prune("t0", 0, 0.0, {"t1": [0.9, 0.9]})
+        assert result is False
+
+    def test_five_peers_odd_median_is_middle_value(self) -> None:
+        """Median of 5 sorted peer bests is the 3rd value."""
+        pruner = MedianStoppingPruner(warmup_steps=1)
+        # Peer bests: 0.1, 0.3, 0.5, 0.7, 0.9 → median = 0.5
+        peers = {
+            "t1": [0.1],
+            "t2": [0.3],
+            "t3": [0.5],
+            "t4": [0.7],
+            "t5": [0.9],
+        }
+        assert pruner.should_prune("t0", 1, 0.4, peers) is True   # 0.4 < 0.5
+        assert pruner.should_prune("t0", 1, 0.5, peers) is False  # equal → not pruned
+        assert pruner.should_prune("t0", 1, 0.6, peers) is False  # 0.6 > 0.5
+
+    def test_peer_values_sliced_beyond_length_uses_all_values(self) -> None:
+        """values[:step] where step > len(values) safely returns all values."""
+        pruner = MedianStoppingPruner(warmup_steps=1)
+        # Peer has 2 values but step=10; values[:10] = [0.3, 0.9]
+        peers = {"t1": [0.3, 0.9]}
+        # best of [0.3, 0.9] = 0.9; current_value=0.5 < 0.9 → pruned
+        result = pruner.should_prune("t0", 10, 0.5, peers)
+        assert result is True
+
+    def test_only_trial_in_dict_is_current_trial_no_prune(self) -> None:
+        """If all_trial_values only contains the current trial itself, no peers → not pruned."""
+        pruner = MedianStoppingPruner(warmup_steps=0)
+        result = pruner.should_prune("t0", 5, 0.0, {"t0": [0.9, 0.9, 0.9, 0.9, 0.9]})
+        assert result is False
+
+    def test_warmup_boundary_exact_step_equals_warmup(self) -> None:
+        """step == warmup_steps is NOT blocked by the warmup guard (`step < warmup_steps` is False)."""
+        pruner = MedianStoppingPruner(warmup_steps=7)
+        peers = {"t1": [0.9] * 7}
+        # step=7 is not < 7, so median is computed; 0.01 < 0.9 → pruned
+        result = pruner.should_prune("t0", 7, 0.01, peers)
+        assert result is True
+
+    def test_all_peers_same_value_equal_is_not_pruned(self) -> None:
+        """If current_value exactly equals the peer median, trial is NOT pruned (strict < check)."""
+        pruner = MedianStoppingPruner(warmup_steps=1)
+        peers = {"t1": [0.5], "t2": [0.5], "t3": [0.5]}
+        result = pruner.should_prune("t0", 1, 0.5, peers)
+        assert result is False  # 0.5 is not < 0.5

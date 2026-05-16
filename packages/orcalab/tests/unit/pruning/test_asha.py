@@ -168,3 +168,103 @@ class TestASHAPrunerComputeSavings:
             f"Expected ≥40% compute savings, got {savings:.1%} "
             f"({total_steps} steps vs {no_pruning_steps} without pruning)"
         )
+
+
+# ---------------------------------------------------------------------------
+# TestASHAPrunerRungForStep
+# ---------------------------------------------------------------------------
+
+
+class TestASHAPrunerRungForStep:
+    """Direct unit tests for the _rung_for_step helper."""
+
+    def test_non_rung_step_returns_none(self) -> None:
+        pruner = ASHAPruner(min_resource=1, max_resource=27, reduction_factor=3)
+        # Rungs are at 1, 3, 9, 27; step 2 is not a rung
+        assert pruner._rung_for_step(2) is None
+
+    def test_rung_step_returns_correct_index(self) -> None:
+        pruner = ASHAPruner(min_resource=1, max_resource=27, reduction_factor=3)
+        # step 1 → rung_idx 0, step 3 → 1, step 9 → 2, step 27 → 3
+        assert pruner._rung_for_step(1) == 0
+        assert pruner._rung_for_step(3) == 1
+        assert pruner._rung_for_step(9) == 2
+        assert pruner._rung_for_step(27) == 3
+
+    def test_step_zero_is_not_a_rung(self) -> None:
+        pruner = ASHAPruner(min_resource=1, max_resource=27, reduction_factor=3)
+        assert pruner._rung_for_step(0) is None
+
+    def test_step_beyond_max_resource_returns_none(self) -> None:
+        pruner = ASHAPruner(min_resource=1, max_resource=9, reduction_factor=3)
+        assert pruner._rung_for_step(27) is None
+
+
+# ---------------------------------------------------------------------------
+# TestASHAPrunerBoundaryConditions
+# ---------------------------------------------------------------------------
+
+
+class TestASHAPrunerBoundaryConditions:
+    def test_min_resource_equals_max_resource_single_rung(self) -> None:
+        """When min_resource == max_resource there is exactly one rung."""
+        pruner = ASHAPruner(min_resource=5, max_resource=5, reduction_factor=3)
+        rungs = pruner._rungs()
+        assert len(rungs) == 1
+        assert rungs[0] == (0, 5)
+
+    def test_min_resource_equals_max_resource_prunes_correctly(self) -> None:
+        """With one rung and 3 trials (rf=3), only the best 1 survives."""
+        pruner = ASHAPruner(min_resource=5, max_resource=5, reduction_factor=3)
+        all_values = {"t0": [0.1] * 5, "t1": [0.5] * 5, "t2": [0.9] * 5}
+        assert pruner.should_prune("t0", 5, 0.1, all_values) is True
+        assert pruner.should_prune("t2", 5, 0.9, all_values) is False
+
+    def test_reduction_factor_2_boundary_accepted(self) -> None:
+        """reduction_factor=2 is the minimum valid value."""
+        pruner = ASHAPruner(min_resource=1, max_resource=8, reduction_factor=2)
+        rungs = pruner._rungs()
+        steps = [step for _, step in rungs]
+        assert steps == [1, 2, 4, 8]
+
+    def test_reduction_factor_2_keeps_half(self) -> None:
+        """With rf=2 and 4 trials, top 2 survive at first rung."""
+        pruner = ASHAPruner(min_resource=1, max_resource=8, reduction_factor=2)
+        all_values = {f"t{i}": [float(i)] for i in range(4)}
+        pruned = [
+            f"t{i}"
+            for i in range(4)
+            if pruner.should_prune(f"t{i}", 1, float(i), all_values)
+        ]
+        assert len(pruned) == 2  # bottom half pruned
+
+    def test_trial_with_too_few_values_excluded_from_rung(self) -> None:
+        """A peer with fewer than `step` values is not counted at that rung."""
+        pruner = ASHAPruner(min_resource=3, max_resource=27, reduction_factor=3)
+        # Rung is at step 3; t1 has only 2 values (< 3) → not included
+        all_values = {"t1": [0.9, 0.9]}
+        # Only the current trial is eligible → keep=max(1,1//3)=1 → never pruned
+        result = pruner.should_prune("t0", 3, 0.01, all_values)
+        assert result is False
+
+    def test_promoted_dict_idempotent_for_repeated_calls(self) -> None:
+        """Calling should_prune twice for the same winner at the same rung
+        must not duplicate the trial_id in _promoted."""
+        pruner = ASHAPruner(min_resource=1, max_resource=9, reduction_factor=3)
+        all_values = {"t0": [0.1], "t1": [0.5], "t2": [0.9]}
+        pruner.should_prune("t2", 1, 0.9, all_values)
+        pruner.should_prune("t2", 1, 0.9, all_values)  # same call again
+        assert pruner._promoted[0].count("t2") == 1  # must appear exactly once
+
+    def test_negative_min_resource_raises(self) -> None:
+        with pytest.raises(ValueError, match="min_resource"):
+            ASHAPruner(min_resource=-5)
+
+    def test_tied_values_at_rung_keep_at_least_one(self) -> None:
+        """When all trials share the same value at a rung, at least one must survive."""
+        pruner = ASHAPruner(min_resource=1, max_resource=9, reduction_factor=3)
+        all_values = {"t0": [0.5], "t1": [0.5], "t2": [0.5]}
+        results = [
+            pruner.should_prune(f"t{i}", 1, 0.5, all_values) for i in range(3)
+        ]
+        assert results.count(False) >= 1  # at least one trial is not pruned
