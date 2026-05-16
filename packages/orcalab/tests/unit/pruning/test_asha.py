@@ -170,11 +170,6 @@ class TestASHAPrunerComputeSavings:
         )
 
 
-# ---------------------------------------------------------------------------
-# TestASHAPrunerRungForStep
-# ---------------------------------------------------------------------------
-
-
 class TestASHAPrunerRungForStep:
     """Direct unit tests for the _rung_for_step helper."""
 
@@ -200,11 +195,6 @@ class TestASHAPrunerRungForStep:
         assert pruner._rung_for_step(27) is None
 
 
-# ---------------------------------------------------------------------------
-# TestASHAPrunerBoundaryConditions
-# ---------------------------------------------------------------------------
-
-
 class TestASHAPrunerBoundaryConditions:
     def test_min_resource_equals_max_resource_single_rung(self) -> None:
         """When min_resource == max_resource there is exactly one rung."""
@@ -217,7 +207,9 @@ class TestASHAPrunerBoundaryConditions:
         """With one rung and 3 trials (rf=3), only the best 1 survives."""
         pruner = ASHAPruner(min_resource=5, max_resource=5, reduction_factor=3)
         all_values = {"t0": [0.1] * 5, "t1": [0.5] * 5, "t2": [0.9] * 5}
+        # worst trial (t0) must be pruned
         assert pruner.should_prune("t0", 5, 0.1, all_values) is True
+        # best trial (t2) must survive
         assert pruner.should_prune("t2", 5, 0.9, all_values) is False
 
     def test_reduction_factor_2_boundary_accepted(self) -> None:
@@ -242,10 +234,10 @@ class TestASHAPrunerBoundaryConditions:
         """A peer with fewer than `step` values is not counted at that rung."""
         pruner = ASHAPruner(min_resource=3, max_resource=27, reduction_factor=3)
         # Rung is at step 3; t1 has only 2 values (< 3) → not included
-        all_values = {"t1": [0.9, 0.9]}
-        # Only the current trial is eligible → keep=max(1,1//3)=1 → never pruned
+        all_values = {"t1": [0.9, 0.9]}  # only 2 values, step=3
+        # With just the current trial in competition, keep=max(1,1//3)=1, current always kept
         result = pruner.should_prune("t0", 3, 0.01, all_values)
-        assert result is False
+        assert result is False  # t0 is the only eligible trial → never pruned
 
     def test_promoted_dict_idempotent_for_repeated_calls(self) -> None:
         """Calling should_prune twice for the same winner at the same rung
@@ -263,6 +255,7 @@ class TestASHAPrunerBoundaryConditions:
     def test_tied_values_at_rung_keep_at_least_one(self) -> None:
         """When all trials share the same value at a rung, at least one must survive."""
         pruner = ASHAPruner(min_resource=1, max_resource=9, reduction_factor=3)
+        # 3 trials with identical values
         all_values = {"t0": [0.5], "t1": [0.5], "t2": [0.5]}
         results = [
             pruner.should_prune(f"t{i}", 1, 0.5, all_values) for i in range(3)

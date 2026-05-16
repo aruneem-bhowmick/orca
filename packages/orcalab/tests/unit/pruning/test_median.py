@@ -123,7 +123,7 @@ class TestMedianPrunerBoundaryConditions:
         """Step 0 with warmup_steps=0: condition `0 < 0` is False, but no peers → not pruned."""
         pruner = MedianStoppingPruner(warmup_steps=0)
         result = pruner.should_prune("t0", 0, 0.0, {})
-        assert result is False
+        assert result is False  # no peer_bests → returns False
 
     def test_step_zero_with_zero_warmup_with_peers(self) -> None:
         """Step 0 with warmup_steps=0 and peers: values[:0] is empty → no peer_bests → not pruned."""
