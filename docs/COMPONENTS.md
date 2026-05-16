@@ -285,7 +285,7 @@ deep = SearchSpaceComposer.inherit(base, child)
 
 ### Search Strategies (`search/`)
 
-All search algorithms implement the `SearchStrategy` abstract base class. The module exports `SearchStrategy`, `RandomSearch`, `GridSearch`, and `BayesianSearch` from `orcalab.search`.
+All search algorithms implement the `SearchStrategy` abstract base class. The module exports `SearchStrategy`, `RandomSearch`, `GridSearch`, `BayesianSearch`, `EvolutionarySearch`, and `MetaInformedSearch` from `orcalab.search`.
 
 #### `SearchStrategy` (`base.py`)
 
@@ -406,6 +406,77 @@ print(searcher.study.best_trial)
 - *NaN / ±Inf in `update()`* — non-finite results are told to Optuna as `TrialState.FAIL`; the trial is excluded from counts and rankings. Subsequent valid results record normally.
 - *Non-finite values in `inject_priors()`* — raises `ValueError("Warm-start value must be finite…")` immediately, enforcing consistency with the live `update()` contract and preventing polluted rankings.
 - *`get_best(n)` input validation* — raises `ValueError("n must be >= 1.")` for `n < 1`, preventing silent empty-slice semantics.
+
+#### `EvolutionarySearch` (`evolutionary.py`)
+
+Evolution-strategy-based optimisation backed by CMA-ES (Covariance Matrix Adaptation Evolution Strategy) via the `cma` library. CMA-ES maintains a multivariate Gaussian distribution over the normalised parameter space and iteratively updates its mean and full covariance matrix toward regions of high fitness. It is particularly effective for moderate-dimensional continuous and mixed spaces with correlated parameters.
+
+Because CMA-ES operates on a continuous, unconstrained Euclidean space, `EvolutionarySearch` encodes the heterogeneous `SearchSpace` into a normalised `[0, 1]^d` vector and decodes CMA-ES solutions back to parameter dicts after each generation.
+
+```python
+from orcalab.search import EvolutionarySearch
+
+searcher = EvolutionarySearch(
+    population_size=10,   # individuals per CMA-ES generation
+    sigma0=0.3,           # initial step size in normalised space
+    direction="maximize", # or "minimize"
+    seed=42,
+)
+params = searcher.suggest(space)        # -> dict[str, Any]
+searcher.update(params, result=0.93)
+best   = searcher.get_best(3)           # top-3 by value, direction-aware
+```
+
+**Constructor parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `population_size` | `int` | `10` | Number of candidate solutions evaluated per CMA-ES generation. Must be `> 0`. |
+| `sigma0` | `float` | `0.3` | Initial standard deviation (step size) of the Gaussian in the normalised `[0, 1]^d` space. Must be `> 0`. |
+| `seed` | `int` | `42` | Master seed for the CMA-ES solver and the NumPy RNG used during convergence restarts. |
+| `direction` | `str` | `"maximize"` | Optimisation direction — `"maximize"` for accuracy-style metrics, `"minimize"` for loss-style metrics. |
+
+**Encoding scheme** — `_build_dim_map()` walks the `SearchSpace` parameters in declaration order and allocates dimensions in the normalised vector:
+
+| Parameter type | Vector dimensions | Encoding / decoding |
+|---|---|---|
+| `CategoricalParameter` (N choices) | N | One-hot: the active choice's slot is `1.0`, all others `0.0`; decoded via `argmax` |
+| `IntParameter` (linear) | 1 | `(v − low) / (high − low)`; decoded with `clip → linear → round → clip` |
+| `IntParameter` (log-scale) | 1 | `(log v − log low) / (log high − log low)`; decoded with `clip → exp → round → clip` |
+| `FloatParameter` (linear) | 1 | `(v − low) / (high − low)`; decoded with `clip → linear → clip` |
+| `FloatParameter` (log-scale) | 1 | `(log v − log low) / (log high − log low)`; decoded with `clip → exp → clip` |
+| `DiscreteUniformParameter` | 1 | Linear, treated identically to a non-log `FloatParameter` |
+
+**Methods and properties:**
+
+| Member | Kind | Description |
+|---|---|---|
+| `suggest(search_space)` | method | Returns the next parameter dict from the internal solution queue. On the first call, builds the dimension map, initialises the CMA-ES solver with `x0 = [0.5]^d`, and pre-fills the queue via `es.ask()`. Repopulates via `es.ask()` whenever the queue is empty. Raises `ValueError` if a different `SearchSpace` instance is passed after the first call, or if `_stopped` is `True` while pending trials still exist. |
+| `update(params, result)` | method | Records the result for the oldest pending trial (FIFO). NaN and ±Inf results are silently dropped and do not contribute to `n_trials`, history, or the CMA-ES update. Once `population_size` valid results accumulate, calls `es.tell()` with direction-adjusted fitnesses (negated for `"maximize"`, since CMA-ES minimises internally). After each `tell()`, inspects `es.stop()` and sets `_stopped = True` if convergence is detected. Raises `ValueError` on param mismatch or when called with no pending trial. |
+| `get_best(n=1)` | method | Sorts all recorded history entries by result in the optimisation direction and returns the top-*n* `(params, value)` tuples. Returns all recorded trials when fewer than *n* exist. |
+| `n_trials` | property | Number of valid (non-NaN/Inf) trials recorded in history. |
+
+**Population lifecycle:**
+
+```
+suggest() × population_size:
+  ├── es.ask() → fills _solution_queue with (vec, params) pairs
+  └── pops one pair per call → appends (params, vec) to _pending (FIFO)
+
+update() × population_size valid results:
+  ├── validates params against _pending head, pops
+  ├── accumulates (vec, fitness) in _gen_accumulator
+  └── when full: es.tell(vecs, direction-adjusted fitnesses)
+                 es.stop() → sets _stopped if converged
+```
+
+**Convergence and restart** — after `es.tell()`, `es.stop()` is inspected each generation. A non-empty stop dict (conditions such as `tolfun`, `tolx`, `maxiter`) sets `_stopped = True`. On the next `suggest()` call once all pending trials are drained, a new CMA-ES instance is seeded from a Gaussian-perturbed encoding of the best-known parameters (`best_vec + N(0, sigma0)`), clipped to `[0, 1]^d`. If no history exists, a uniform random starting point is used. The `_solution_queue` is cleared before repopulating to prevent stale candidates from the old solver from entering the new generation.
+
+**Guardrails added by CodeRabbit review:**
+
+- *Input validation in `__init__()`* — `population_size ≤ 0` or `sigma0 ≤ 0` raises `ValueError` immediately, preventing silent failures deep inside the CMA-ES solver.
+- *Single-space contract in `suggest()`* — stores the first `SearchSpace` instance; raises `ValueError` if a different instance is passed on a later call, preventing mixed-encoding corruption of the covariance model.
+- *Restart guard and stale-queue eviction in `suggest()`* — if `_stopped` is `True` and `_pending` is non-empty, `suggest()` raises `ValueError` rather than mixing vectors from the old and new solvers. When restart proceeds, `_solution_queue.clear()` is called before `es.ask()` so stale generation-N candidates are never served from the new solver.
 
 ---
 
