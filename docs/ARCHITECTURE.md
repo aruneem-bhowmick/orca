@@ -83,6 +83,7 @@ orca/
 │       ├── config/                   # Hydra YAML configs (root, search/bayesian, pruner/asha)
 │       └── tests/
 │           ├── unit/
+│           │   ├── experiments/      # ExperimentLifecycle, ExperimentRunner, BatchExperimentRunner — 55 tests
 │           │   ├── search/           # SearchStrategy, RandomSearch, GridSearch, BayesianSearch, EvolutionarySearch — 78+ tests
 │           │   ├── search_spaces/    # Parameter types, SearchSpace sampling/serialization, SearchSpaceComposer — 44 tests
 │           │   ├── pruning/          # Pruner ABC, MedianStoppingPruner, ASHAPruner, MetaPruner — 90 tests
@@ -139,5 +140,5 @@ orca/
 - **uv** workspace for monorepo package management
 - **ruff** for linting and formatting (line length 100, Python 3.11 target)
 - **mypy** (strict on `orca-shared`) for static type checking
-- **pytest** + **pytest-asyncio** + **pytest-cov** for testing (56+ test files across all packages)
+- **pytest** + **pytest-asyncio** + **pytest-cov** for testing (62+ test files across all packages)
 - **pre-commit** hooks for quality gates on commit and push
