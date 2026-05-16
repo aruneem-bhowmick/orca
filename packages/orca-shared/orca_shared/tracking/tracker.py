@@ -48,6 +48,10 @@ class OrcaTracker:
 
         mlflow.log_metric(name, value, step=step)
 
+    @property
+    def run_id(self) -> str | None:
+        return self._run.info.run_id if self._run is not None else None
+
     def log_artifact(self, local_path: str) -> None:
         import mlflow
 
