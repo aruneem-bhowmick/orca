@@ -98,20 +98,20 @@ class TestTrainModel:
         expected = _make_result({"accuracy": 0.95})
         runner = _make_runner(expected)
         exp = _make_experiment()
-        result = await train_model.fn(exp, pd.DataFrame(), pruner=None, runner=runner)
+        result = await train_model.fn(exp, pruner=None, runner=runner)
         assert result is expected
 
     async def test_delegates_to_runner_run(self) -> None:
         runner = _make_runner()
         exp = _make_experiment()
-        await train_model.fn(exp, pd.DataFrame(), pruner=None, runner=runner)
+        await train_model.fn(exp, pruner=None, runner=runner)
         runner.run.assert_awaited_once_with(exp, pruner=None)
 
     async def test_passes_pruner_to_runner(self) -> None:
         runner = _make_runner()
         exp = _make_experiment()
         pruner = MagicMock()
-        await train_model.fn(exp, pd.DataFrame(), pruner=pruner, runner=runner)
+        await train_model.fn(exp, pruner=pruner, runner=runner)
         runner.run.assert_awaited_once_with(exp, pruner=pruner)
 
     async def test_has_timeout_decorator(self) -> None:

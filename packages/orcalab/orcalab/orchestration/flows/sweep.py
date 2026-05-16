@@ -83,7 +83,7 @@ async def run_sweep(
             arch_config=params or None,
             training_config=TrainingConfig(),
         )
-        result = await train_model(experiment, data, pruner=pruner, runner=runner)
+        result = await train_model(experiment, pruner=pruner, runner=runner)
         await evaluate(result)
         if orcamind_client is not None:
             await log_results(result, orcamind_client)

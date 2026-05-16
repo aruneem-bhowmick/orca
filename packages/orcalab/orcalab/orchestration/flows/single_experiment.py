@@ -48,7 +48,7 @@ async def run_single_experiment(
         training_config=TrainingConfig(**training_config) if training_config else None,
     )
 
-    result = await train_model(experiment, data, pruner=None, runner=runner)
+    result = await train_model(experiment, pruner=None, runner=runner)
     await evaluate(result)
     if orcamind_client is not None:
         await log_results(result, orcamind_client)
