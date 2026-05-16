@@ -159,7 +159,7 @@ class TestResultOrdering:
         batch = BatchExperimentRunner(runner=runner_mock, max_parallel=n)
 
         results = await batch.run_batch(experiments)
-        for i, (exp, result) in enumerate(zip(experiments, results)):
+        for i, (exp, result) in enumerate(zip(experiments, results, strict=True)):
             assert result.experiment_id == exp.experiment_id, (
                 f"Result at index {i} has wrong experiment_id"
             )
