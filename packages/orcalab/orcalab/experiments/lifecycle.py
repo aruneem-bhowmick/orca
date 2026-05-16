@@ -57,18 +57,17 @@ class ExperimentLifecycle:
             raise InvalidTransitionError(
                 f"Cannot transition from {current.value!r} to {new_status.value!r}"
             )
-        self._audit_log.append(
-            {
-                "timestamp": datetime.now(timezone.utc).isoformat(),
-                "from": current.value,
-                "to": new_status.value,
-                "reason": reason,
-            }
-        )
-        self._experiment.status = new_status.value
+        entry = {
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "from": current.value,
+            "to": new_status.value,
+            "reason": reason,
+        }
         await self._repository.update_status(
             self._experiment.experiment_id, new_status.value
         )
+        self._experiment.status = new_status.value
+        self._audit_log.append(entry)
 
     @property
     def audit_log(self) -> list[dict]:
