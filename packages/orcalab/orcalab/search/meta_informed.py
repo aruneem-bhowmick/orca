@@ -132,17 +132,37 @@ class MetaInformedSearch(SearchStrategy):
         """Submit all completed trial results to OrcaMind as feedback.
 
         Each finite-result trial recorded via ``update`` is sent as a
-        ``FeedbackRequest`` so OrcaMind's meta-dataset reflects the sweep outcomes.
+        ``FeedbackRequest`` (including the trial's hyperparameter params) so
+        OrcaMind's meta-dataset reflects both the outcome and the configuration
+        that produced it.
+
+        Network and HTTP errors per submission are caught and logged so the rest
+        of the batch is still attempted. On a fully successful flush,
+        ``_completed_results`` is cleared so a second call is a no-op.
         """
-        for _params, result in self._completed_results:
+        total = len(self._completed_results)
+        failed = 0
+        for trial_params, result in self._completed_results:
             req = FeedbackRequest(
                 experiment_id=uuid4(),
                 actual_metric=result,
                 metric_name="objective",
+                params=trial_params,
             )
-            await self._client.submit_feedback(req)
+            try:
+                await self._client.submit_feedback(req)
+            except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPStatusError) as exc:
+                logger.warning(
+                    "Failed to submit feedback to OrcaMind for task %r: %s",
+                    task_id,
+                    exc,
+                )
+                failed += 1
+        if failed == 0:
+            self._completed_results.clear()
         logger.info(
-            "Flushed %d results to OrcaMind for task %r",
-            len(self._completed_results),
+            "Flushed %d/%d results to OrcaMind for task %r",
+            total - failed,
+            total,
             task_id,
         )
