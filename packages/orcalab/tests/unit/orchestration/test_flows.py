@@ -320,7 +320,7 @@ class TestMetaInformedSweepFlow:
             "orcalab.orchestration.flows.meta_sweep.run_single_experiment",
             new_callable=AsyncMock,
             return_value=_make_result(),
-        ):
+        ) as mock_exp:
             results = await meta_informed_sweep.fn(
                 task_id,
                 n_trials=3,
@@ -329,6 +329,12 @@ class TestMetaInformedSweepFlow:
                 runner=runner,
                 orcamind_client=client,
             )
+        # Verify OrcaMind initialization path was taken
+        client.embed_task.assert_awaited_once()
+        client.recommend_model.assert_awaited_once()
+        client.find_similar_tasks.assert_awaited_once()
+        # All trials ran and results flushed back to OrcaMind
+        assert mock_exp.call_count == 3
         assert len(results) <= 5
 
 
