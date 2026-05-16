@@ -222,6 +222,7 @@ class TestRetryBehaviour:
         tracker.run_id = None
         result = await runner.run(exp)
         assert result.status == "failed"
+        assert result.mlflow_run_id is None
 
     async def test_upload_not_called_when_run_fails(self) -> None:
         exp = _make_experiment(epochs=1)
