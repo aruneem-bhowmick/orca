@@ -85,7 +85,7 @@ orca/
 │           ├── unit/
 │           │   ├── search/           # SearchStrategy, RandomSearch, GridSearch, BayesianSearch, EvolutionarySearch — 78+ tests
 │           │   ├── search_spaces/    # Parameter types, SearchSpace sampling/serialization, SearchSpaceComposer — 44 tests
-│           │   ├── pruning/          # Pruner ABC, MedianStoppingPruner, ASHAPruner, MetaPruner — 51 tests
+│           │   ├── pruning/          # Pruner ABC, MedianStoppingPruner, ASHAPruner, MetaPruner — 90 tests
 │           │   └── *.py              # Package import, metadata, CLI, and config tests
 │           └── integration/          # API + sweep lifecycle tests
 │
