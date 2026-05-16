@@ -147,3 +147,60 @@ class TestInitializeFromOrcamind:
         searcher = MetaInformedSearch(orcamind_client=mock_client, top_k_priors=4)
         await searcher.initialize_from_orcamind(_TASK_ID, simple_space)
         assert searcher._base.n_trials == 4
+
+
+# ---------------------------------------------------------------------------
+# TestGracefulDegradation
+# ---------------------------------------------------------------------------
+
+
+class TestGracefulDegradation:
+    async def test_connect_error_does_not_raise(
+        self, mock_client: MagicMock, simple_space: SearchSpace
+    ) -> None:
+        mock_client.embed_task = AsyncMock(side_effect=httpx.ConnectError("refused"))
+        searcher = MetaInformedSearch(orcamind_client=mock_client)
+        await searcher.initialize_from_orcamind(_TASK_ID, simple_space)
+        assert searcher._base.n_trials == 0
+
+    async def test_connect_error_sweep_still_works(
+        self, mock_client: MagicMock, simple_space: SearchSpace
+    ) -> None:
+        mock_client.embed_task = AsyncMock(side_effect=httpx.ConnectError("refused"))
+        searcher = MetaInformedSearch(orcamind_client=mock_client)
+        await searcher.initialize_from_orcamind(_TASK_ID, simple_space)
+        params = searcher.suggest(simple_space)
+        searcher.update(params, result=0.7)
+        assert searcher.n_trials == 1
+
+    async def test_timeout_error_does_not_raise(
+        self, mock_client: MagicMock, simple_space: SearchSpace
+    ) -> None:
+        mock_client.find_similar_tasks = AsyncMock(
+            side_effect=httpx.TimeoutException("timed out")
+        )
+        searcher = MetaInformedSearch(orcamind_client=mock_client)
+        await searcher.initialize_from_orcamind(_TASK_ID, simple_space)
+        assert searcher._base.n_trials == 0
+
+    async def test_http_status_error_does_not_raise(
+        self, mock_client: MagicMock, simple_space: SearchSpace
+    ) -> None:
+        response = MagicMock()
+        response.status_code = 503
+        mock_client.recommend_model = AsyncMock(
+            side_effect=httpx.HTTPStatusError("503", request=MagicMock(), response=response)
+        )
+        searcher = MetaInformedSearch(orcamind_client=mock_client)
+        await searcher.initialize_from_orcamind(_TASK_ID, simple_space)
+        assert searcher._base.n_trials == 0
+
+    async def test_inject_priors_never_called_on_network_error(
+        self, mock_client: MagicMock, simple_space: SearchSpace
+    ) -> None:
+        mock_client.embed_task = AsyncMock(side_effect=httpx.ConnectError("refused"))
+        base = MagicMock(spec=BayesianSearch)
+        base.inject_priors = MagicMock()
+        searcher = MetaInformedSearch(orcamind_client=mock_client, base_strategy=base)
+        await searcher.initialize_from_orcamind(_TASK_ID, simple_space)
+        base.inject_priors.assert_not_called()
