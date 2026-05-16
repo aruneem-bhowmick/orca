@@ -36,7 +36,10 @@ class OrcaTracker:
         import mlflow
 
         status = "FAILED" if exc_type is not None else "FINISHED"
-        mlflow.end_run(status=status)
+        try:
+            mlflow.end_run(status=status)
+        finally:
+            self._run = None
 
     def log_params(self, params: dict[str, Any]) -> None:
         import mlflow
