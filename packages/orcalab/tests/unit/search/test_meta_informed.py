@@ -204,3 +204,127 @@ class TestGracefulDegradation:
         searcher = MetaInformedSearch(orcamind_client=mock_client, base_strategy=base)
         await searcher.initialize_from_orcamind(_TASK_ID, simple_space)
         base.inject_priors.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# TestSuggestUpdate
+# ---------------------------------------------------------------------------
+
+
+class TestSuggestUpdate:
+    def test_suggest_returns_valid_param_dict(
+        self, mock_client: MagicMock, simple_space: SearchSpace
+    ) -> None:
+        searcher = MetaInformedSearch(orcamind_client=mock_client)
+        params = searcher.suggest(simple_space)
+        assert "lr" in params
+        assert "layers" in params
+
+    def test_update_increments_n_trials(
+        self, mock_client: MagicMock, simple_space: SearchSpace
+    ) -> None:
+        searcher = MetaInformedSearch(orcamind_client=mock_client)
+        params = searcher.suggest(simple_space)
+        searcher.update(params, result=0.8)
+        assert searcher.n_trials == 1
+
+    def test_nan_result_does_not_count_as_trial(
+        self, mock_client: MagicMock, simple_space: SearchSpace
+    ) -> None:
+        searcher = MetaInformedSearch(orcamind_client=mock_client)
+        params = searcher.suggest(simple_space)
+        searcher.update(params, result=float("nan"))
+        assert searcher.n_trials == 0
+
+    def test_nan_result_not_stored_in_completed_results(
+        self, mock_client: MagicMock, simple_space: SearchSpace
+    ) -> None:
+        searcher = MetaInformedSearch(orcamind_client=mock_client)
+        params = searcher.suggest(simple_space)
+        searcher.update(params, result=float("nan"))
+        assert searcher._completed_results == []
+
+    def test_get_best_returns_descending_order(
+        self, mock_client: MagicMock, simple_space: SearchSpace
+    ) -> None:
+        searcher = MetaInformedSearch(orcamind_client=mock_client)
+        for score in [0.3, 0.9, 0.6]:
+            p = searcher.suggest(simple_space)
+            searcher.update(p, result=score)
+        best = searcher.get_best(3)
+        values = [v for _, v in best]
+        assert values == sorted(values, reverse=True)
+        assert values[0] == pytest.approx(0.9)
+
+    def test_n_trials_delegates_to_base(
+        self, mock_client: MagicMock, simple_space: SearchSpace
+    ) -> None:
+        base = BayesianSearch()
+        searcher = MetaInformedSearch(orcamind_client=mock_client, base_strategy=base)
+        for _ in range(5):
+            p = searcher.suggest(simple_space)
+            searcher.update(p, result=0.5)
+        assert searcher.n_trials == base.n_trials == 5
+
+
+# ---------------------------------------------------------------------------
+# TestFlushResults
+# ---------------------------------------------------------------------------
+
+
+class TestFlushResults:
+    async def test_submit_feedback_called_once_per_finite_result(
+        self, mock_client: MagicMock, simple_space: SearchSpace
+    ) -> None:
+        searcher = MetaInformedSearch(orcamind_client=mock_client)
+        for _ in range(3):
+            p = searcher.suggest(simple_space)
+            searcher.update(p, result=0.8)
+        await searcher.flush_results_to_orcamind(_TASK_ID)
+        assert mock_client.submit_feedback.call_count == 3
+
+    async def test_nan_result_excluded_from_flush(
+        self, mock_client: MagicMock, simple_space: SearchSpace
+    ) -> None:
+        searcher = MetaInformedSearch(orcamind_client=mock_client)
+        bad = searcher.suggest(simple_space)
+        searcher.update(bad, result=float("nan"))
+        for _ in range(2):
+            p = searcher.suggest(simple_space)
+            searcher.update(p, result=0.7)
+        await searcher.flush_results_to_orcamind(_TASK_ID)
+        assert mock_client.submit_feedback.call_count == 2
+
+    async def test_flush_sends_correct_metric_values(
+        self, mock_client: MagicMock, simple_space: SearchSpace
+    ) -> None:
+        expected_results = [0.6, 0.75, 0.9]
+        searcher = MetaInformedSearch(orcamind_client=mock_client)
+        for score in expected_results:
+            p = searcher.suggest(simple_space)
+            searcher.update(p, result=score)
+        await searcher.flush_results_to_orcamind(_TASK_ID)
+        sent_metrics = [
+            call_args.args[0].actual_metric
+            for call_args in mock_client.submit_feedback.call_args_list
+        ]
+        assert sent_metrics == pytest.approx(expected_results)
+
+    async def test_flush_with_no_completed_results_is_noop(
+        self, mock_client: MagicMock
+    ) -> None:
+        searcher = MetaInformedSearch(orcamind_client=mock_client)
+        await searcher.flush_results_to_orcamind(_TASK_ID)
+        mock_client.submit_feedback.assert_not_called()
+
+    async def test_flush_sends_feedback_request_objects(
+        self, mock_client: MagicMock, simple_space: SearchSpace
+    ) -> None:
+        searcher = MetaInformedSearch(orcamind_client=mock_client)
+        p = searcher.suggest(simple_space)
+        searcher.update(p, result=0.8)
+        await searcher.flush_results_to_orcamind(_TASK_ID)
+        call_arg = mock_client.submit_feedback.call_args.args[0]
+        assert isinstance(call_arg, FeedbackRequest)
+        assert call_arg.metric_name == "objective"
+        assert call_arg.actual_metric == pytest.approx(0.8)
