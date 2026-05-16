@@ -150,6 +150,7 @@ class EvolutionarySearch(SearchStrategy):
         self._stopped: bool = False
         self._rng = np.random.default_rng(seed)
         self._restart_count: int = 0
+        self._search_space: SearchSpace | None = None
 
     def _make_es(self, x0: list[float]) -> cma.CMAEvolutionStrategy:
         return cma.CMAEvolutionStrategy(
@@ -171,6 +172,13 @@ class EvolutionarySearch(SearchStrategy):
             self._solution_queue.append((arr, _decode(arr, self._dim_map)))
 
     def suggest(self, search_space: SearchSpace) -> dict[str, Any]:
+        if self._search_space is None:
+            self._search_space = search_space
+        elif search_space is not self._search_space:
+            raise ValueError(
+                "EvolutionarySearch must be used with the same SearchSpace instance across suggest() calls."
+            )
+
         if self._dim_map is None:
             self._dim_map = _build_dim_map(search_space)
             d = _total_dim(self._dim_map)
