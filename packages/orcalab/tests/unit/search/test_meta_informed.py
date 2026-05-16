@@ -355,3 +355,42 @@ class TestFlushResults:
         assert isinstance(call_arg, FeedbackRequest)
         assert call_arg.metric_name == "objective"
         assert call_arg.actual_metric == pytest.approx(0.8)
+        assert call_arg.params is not None
+        assert "lr" in call_arg.params
+        assert "layers" in call_arg.params
+
+    async def test_second_flush_does_not_resubmit_same_results(
+        self, mock_client: MagicMock, simple_space: SearchSpace
+    ) -> None:
+        searcher = MetaInformedSearch(orcamind_client=mock_client)
+        p = searcher.suggest(simple_space)
+        searcher.update(p, result=0.8)
+
+        await searcher.flush_results_to_orcamind(_TASK_ID)
+        first_count = mock_client.submit_feedback.call_count
+
+        await searcher.flush_results_to_orcamind(_TASK_ID)
+        assert mock_client.submit_feedback.call_count == first_count
+
+    async def test_flush_network_error_does_not_propagate(
+        self, mock_client: MagicMock, simple_space: SearchSpace
+    ) -> None:
+        mock_client.submit_feedback = AsyncMock(
+            side_effect=httpx.ConnectError("refused")
+        )
+        searcher = MetaInformedSearch(orcamind_client=mock_client)
+        p = searcher.suggest(simple_space)
+        searcher.update(p, result=0.8)
+        await searcher.flush_results_to_orcamind(_TASK_ID)  # must not raise
+
+    async def test_flush_error_preserves_results_for_retry(
+        self, mock_client: MagicMock, simple_space: SearchSpace
+    ) -> None:
+        mock_client.submit_feedback = AsyncMock(
+            side_effect=httpx.ConnectError("refused")
+        )
+        searcher = MetaInformedSearch(orcamind_client=mock_client)
+        p = searcher.suggest(simple_space)
+        searcher.update(p, result=0.8)
+        await searcher.flush_results_to_orcamind(_TASK_ID)
+        assert len(searcher._completed_results) == 1
