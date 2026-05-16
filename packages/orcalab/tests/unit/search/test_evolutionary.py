@@ -244,6 +244,33 @@ class TestEvolutionarySearchOptimization:
         assert evo.get_best(1)[0][1] > random_best
 
 
+class TestEvolutionarySearchSpaceContract:
+    def test_suggest_with_different_space_instance_raises_value_error(self) -> None:
+        space1 = _float_space()
+        space2 = _float_space()
+        evo = EvolutionarySearch(population_size=5, seed=0)
+        evo.suggest(space1)
+        with pytest.raises(ValueError, match="same SearchSpace instance"):
+            evo.suggest(space2)
+
+    def test_suggest_with_same_space_instance_does_not_raise(self) -> None:
+        space = _float_space()
+        evo = EvolutionarySearch(population_size=5, seed=0)
+        p = evo.suggest(space)
+        evo.update(p, 0.5)
+        p2 = evo.suggest(space)
+        evo.update(p2, 0.6)
+        assert evo.n_trials == 2
+
+    def test_suggest_with_stopped_and_pending_raises_value_error(self) -> None:
+        space = _float_space()
+        evo = EvolutionarySearch(population_size=5, seed=0)
+        p = evo.suggest(space)
+        evo._stopped = True  # force converged state while trial is still pending
+        with pytest.raises(ValueError, match="Cannot restart while pending"):
+            evo.suggest(space)
+
+
 class TestEvolutionarySearchUpdateValidation:
     def test_update_with_partial_population_does_not_fail(self) -> None:
         space = _float_space()
