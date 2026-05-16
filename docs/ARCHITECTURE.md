@@ -87,6 +87,7 @@ orca/
 │           │   ├── search/           # SearchStrategy, RandomSearch, GridSearch, BayesianSearch, EvolutionarySearch — 78+ tests
 │           │   ├── search_spaces/    # Parameter types, SearchSpace sampling/serialization, SearchSpaceComposer — 44 tests
 │           │   ├── pruning/          # Pruner ABC, MedianStoppingPruner, ASHAPruner, MetaPruner — 90 tests
+│           │   ├── orchestration/    # Prefect task and flow unit tests — 50 tests (Prefect stub in conftest.py)
 │           │   └── *.py              # Package import, metadata, CLI, and config tests
 │           └── integration/          # API + sweep lifecycle tests
 │
@@ -140,5 +141,5 @@ orca/
 - **uv** workspace for monorepo package management
 - **ruff** for linting and formatting (line length 100, Python 3.11 target)
 - **mypy** (strict on `orca-shared`) for static type checking
-- **pytest** + **pytest-asyncio** + **pytest-cov** for testing (62+ test files across all packages)
+- **pytest** + **pytest-asyncio** + **pytest-cov** for testing (64+ test files across all packages)
 - **pre-commit** hooks for quality gates on commit and push
