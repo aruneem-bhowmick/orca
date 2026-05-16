@@ -287,3 +287,41 @@ class TestPrunerIntegration:
 
         await runner.run(exp, pruner=pruner)
         artifact_mgr.upload_model.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# Construction validation
+# ---------------------------------------------------------------------------
+
+
+class TestRunnerConstruction:
+    def test_negative_max_retries_raises(self) -> None:
+        tracker = MagicMock()
+        artifact_mgr = AsyncMock()
+        with pytest.raises(ValueError, match="max_retries"):
+            ExperimentRunner(tracker=tracker, artifact_manager=artifact_mgr, max_retries=-1)
+
+    def test_zero_timeout_raises(self) -> None:
+        tracker = MagicMock()
+        artifact_mgr = AsyncMock()
+        with pytest.raises(ValueError, match="timeout"):
+            ExperimentRunner(tracker=tracker, artifact_manager=artifact_mgr, timeout=0)
+
+    def test_negative_timeout_raises(self) -> None:
+        tracker = MagicMock()
+        artifact_mgr = AsyncMock()
+        with pytest.raises(ValueError, match="timeout"):
+            ExperimentRunner(tracker=tracker, artifact_manager=artifact_mgr, timeout=-100)
+
+    def test_zero_max_retries_is_valid(self) -> None:
+        tracker = MagicMock()
+        artifact_mgr = AsyncMock()
+        runner = ExperimentRunner(tracker=tracker, artifact_manager=artifact_mgr, max_retries=0)
+        assert runner._max_retries == 0
+
+    def test_default_values_are_valid(self) -> None:
+        tracker = MagicMock()
+        artifact_mgr = AsyncMock()
+        runner = ExperimentRunner(tracker=tracker, artifact_manager=artifact_mgr)
+        assert runner._max_retries == 2
+        assert runner._timeout == 3600

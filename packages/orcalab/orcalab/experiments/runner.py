@@ -65,6 +65,10 @@ class ExperimentRunner:
         timeout: int = 3600,
         model_factory: Callable[[dict[str, Any]], TrainableModel] | None = None,
     ) -> None:
+        if max_retries < 0:
+            raise ValueError(f"max_retries must be >= 0, got {max_retries}")
+        if timeout <= 0:
+            raise ValueError(f"timeout must be > 0, got {timeout}")
         self._tracker = tracker
         self._artifact_manager = artifact_manager
         self._max_retries = max_retries
