@@ -185,6 +185,11 @@ class EvolutionarySearch(SearchStrategy):
             self._es = self._make_es([0.5] * d)
             self._repopulate()
 
+        if self._stopped and self._pending:
+            raise ValueError(
+                "Cannot restart while pending trials exist; call update() for all pending suggestions first."
+            )
+
         if self._stopped:
             assert self._dim_map is not None
             d = _total_dim(self._dim_map)
@@ -200,6 +205,7 @@ class EvolutionarySearch(SearchStrategy):
             self._es = self._make_es(x0)
             self._stopped = False
             self._gen_accumulator.clear()
+            self._solution_queue.clear()
             self._repopulate()
 
         if not self._solution_queue:
