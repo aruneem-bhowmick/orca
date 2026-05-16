@@ -57,7 +57,11 @@ Async repository pattern over all tables:
 
 ### Experiment Tracking (`tracking/`)
 
-- `OrcaTracker`: async context manager for MLflow run lifecycle
+- `OrcaTracker`: async context manager for MLflow run lifetime. Calls `mlflow.set_experiment()` and `mlflow.start_run()` on enter; ends the run with `"FINISHED"` or `"FAILED"` status on exit. `self._run` is cleared to `None` in a `finally` block inside `__aexit__` so that `run_id` (see below) always returns `None` outside an active run.
+  - `log_params(params)` — `mlflow.log_params()` wrapper
+  - `log_metric(name, value, step=None)` — `mlflow.log_metric()` wrapper
+  - `log_artifact(local_path)` — `mlflow.log_artifact()` wrapper
+  - `run_id: str | None` — read-only property exposing the active MLflow run ID (`self._run.info.run_id`) while inside the context; `None` before enter and after exit
 - `MetricLogger`: batch `mlflow.log_metrics()` wrapper
 - `ArtifactManager`: `upload_model()` / `download_model()` with `weights_only=True`
 - `ModelRegistry`: stage-based versioning (Staging → Production → Archived)
