@@ -609,7 +609,7 @@ should_stop = pruner.should_prune(
 
 **Decision flow:**
 
-```
+```text
 should_prune(trial_id, step, current_value, all_trial_values)
   │
   ├─ step < min_steps_before_prediction  →  return False   (warmup — no query)
