@@ -166,10 +166,27 @@ class TestLogResults:
         await log_results.fn(result, client)
         client.submit_feedback.assert_awaited_once()
 
-    async def test_not_implemented_error_is_swallowed(self) -> None:
+    async def test_http_status_error_is_swallowed(self) -> None:
+        import httpx
         result = _make_result()
         client = AsyncMock()
-        client.submit_feedback = AsyncMock(side_effect=NotImplementedError)
+        client.submit_feedback = AsyncMock(
+            side_effect=httpx.HTTPStatusError("503", request=AsyncMock(), response=AsyncMock())
+        )
+        await log_results.fn(result, client)
+
+    async def test_connect_error_is_swallowed(self) -> None:
+        import httpx
+        result = _make_result()
+        client = AsyncMock()
+        client.submit_feedback = AsyncMock(side_effect=httpx.ConnectError("refused"))
+        await log_results.fn(result, client)
+
+    async def test_timeout_error_is_swallowed(self) -> None:
+        import httpx
+        result = _make_result()
+        client = AsyncMock()
+        client.submit_feedback = AsyncMock(side_effect=httpx.TimeoutException("timed out"))
         await log_results.fn(result, client)
 
     async def test_feedback_uses_experiment_id(self) -> None:

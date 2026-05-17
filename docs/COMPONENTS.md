@@ -74,7 +74,13 @@ Async repository pattern over all tables:
 
 Async `httpx`-based clients for inter-service calls:
 
-- `OrcaMindClient`: `/api/v1/recommend-model`, `/api/v1/predict-performance`, `/api/v1/similar-tasks`
+- `OrcaMindClient`: fully-implemented async HTTP client for the OrcaMind meta-learning service. All six methods call `response.raise_for_status()` so callers receive `httpx.HTTPStatusError` on 4xx/5xx:
+  - `embed_task(task_id)` — `GET /api/v1/tasks/{task_id}/embedding` → `Embedding`
+  - `recommend_model(req)` — `POST /api/v1/recommend-model` → `ModelRecommendation` (first item from list; raises `ValueError` if the response list is empty)
+  - `predict_performance(task_embedding, model_id)` — `POST /api/v1/predict-performance` → `PerformanceMetrics`
+  - `submit_feedback(req)` — `POST /api/v1/feedback` → `None`
+  - `find_similar_tasks(embedding, top_k)` — `POST /api/v1/similar-tasks` → `list[SimilarityResult]`
+  - `get_best_model(task_id)` — composes `embed_task` + `recommend_model(top_k=1)` → `ModelSummary`
 - `OrcaLabClient`: adaptive search calls (stub, planned)
 - `OrcaNetClient`: transfer scoring calls (stub, planned)
 
@@ -115,7 +121,7 @@ Async `httpx`-based clients for inter-service calls:
 
 ### REST API (`orcamind.api`)
 
-12 endpoints served by FastAPI, documented at `GET /docs`.
+13 endpoints served by FastAPI, documented at `GET /docs`.
 
 
 | Method | Path                          | Description                                                                   |
@@ -123,6 +129,7 @@ Async `httpx`-based clients for inter-service calls:
 | `GET`  | `/`                           | Service info (name, version, status)                                          |
 | `GET`  | `/health`                     | Liveness probe — `{status, db, faiss, mlflow}` booleans                       |
 | `GET`  | `/api/v1/tasks`               | Paginated task list; filter by `domain` or `task_type`                        |
+| `GET`  | `/api/v1/tasks/{task_id}/embedding` | Task embedding vector — 404 if task has no embedding            |
 | `GET`  | `/api/v1/tasks/{task_id}`     | Task detail — 404 if not found                                                |
 | `POST` | `/api/v1/tasks/embed`         | Store a pre-computed task embedding                                           |
 | `POST` | `/api/v1/recommend-model`     | Top-*k* model recommendations via `NearestNeighborSelector`                   |
@@ -795,7 +802,7 @@ from orcalab.pruning import Pruner, MedianStoppingPruner, ASHAPruner, MetaPruner
 The orchestration layer composes the runner, search strategies, pruners, storage backends, and OrcaMind into schedulable Prefect 2.x flows. Each flow is a self-contained unit of work that can be deployed to a Prefect work pool and triggered on demand or on a schedule; each task is a fine-grained, retriable step inside those flows.
 
 ```python
-from orcalab.orchestration.tasks import prepare_data, train_model, evaluate, log_results
+from orcalab.orchestration.tasks import prepare_data, train_model, evaluate, log_results, get_orcamind_priors
 from orcalab.orchestration.flows import (
     run_single_experiment,
     run_sweep,
@@ -811,12 +818,30 @@ from orcalab.orchestration.flows import (
 | `prepare_data` | `retries=2`, `retry_delay_seconds=30` | `(task_id: str, storage: StorageBackend) -> pd.DataFrame` | Downloads `datasets/{task_id}/data.parquet` from the storage backend and returns it as a DataFrame. Retried up to twice on transient failures. |
 | `train_model` | `timeout_seconds=3600` | `(experiment: Experiment, pruner: Pruner \| None, runner: ExperimentRunner) -> ExperimentResult` | Delegates to `runner.run(experiment, pruner=pruner)`. The `pruner` parameter is wired through from the enclosing flow so ASHA/median/meta pruning applies inside the runner's epoch loop. |
 | `evaluate` | — | `(result: ExperimentResult, metrics: list[str] \| None = None) -> dict[str, float \| None]` | Extracts the requested metrics from `result.metrics`. Defaults to `["accuracy", "loss"]` when `metrics` is `None`. Returns `None` for any metric not present in the result. |
-| `log_results` | — | `(result: ExperimentResult, orcamind_client: OrcaMindClient) -> None` | Submits a `FeedbackRequest` to OrcaMind using `max(result.metrics.values())` as the scalar signal under the key `"objective"`. Silently swallows `NotImplementedError` so the stub OrcaMind implementation does not block flows. |
+| `log_results` | — | `(result: ExperimentResult, orcamind_client: OrcaMindClient) -> None` | Submits a `FeedbackRequest` to OrcaMind using `max(result.metrics.values())` as the scalar signal under the key `"objective"`. Silently swallows `httpx.ConnectError`, `httpx.TimeoutException`, and `httpx.HTTPStatusError` so transient OrcaMind failures never block flows. |
+| `get_orcamind_priors` | `retries=1` | `(task_id: str, orcamind_url: str) -> list[ModelRecommendation] \| None` | Embeds the task via `embed_task` then requests a model recommendation via `recommend_model`. Returns `[ModelRecommendation]` on success or `None` on any network or HTTP error, so sweeps always start even when OrcaMind is unreachable. |
 
 **Task notes:**
 
 - `train_model` does not accept a `data` parameter — data is loaded once by `prepare_data` and passed directly to the `Experiment` constructor in the enclosing flow. The runner's `run()` method only takes `experiment` and `pruner`.
 - `log_results` uses `max(metrics.values())` when `result.metrics` is non-empty; falls back to `0.0` for an empty metrics dict.
+- `get_orcamind_priors` returns a single-element list (not a bare `ModelRecommendation`) so callers can uniformly check for `None` (failure) vs. a non-empty list (success). The `retries=1` decorator means the task will attempt the OrcaMind calls twice before returning `None`.
+
+#### Integration Tests ( ↔ OrcaMind)
+
+ contains 20 tests that validate the complete bidirectional OrcaLab ↔ OrcaMind contract using  to intercept all httpx calls at the network layer — no running OrcaMind service is required:
+
+| Test class | Tests | Covers |
+|---|---|---|
+|  | 3 | Priors injected into base strategy; all three OrcaMind endpoints called;  works after warm-start |
+|  | 3 | 5xx on recommend-model, 503 during active sweep,  on embed — all fall back to zero priors |
+|  | 3 | One feedback request per completed trial; correct payload shape (, , ); no requests when zero trials |
+|  | 6 | Happy-path returns ; both embed and recommend called; , ,  each return ;  set |
+|  | 5 |  called once; max metric used as feedback value; , ,  each swallowed |
+
+A Prefect stub  in  installs a lightweight fake  module into  before any orchestration import, supporting both  factory and bare  decorator styles.
+
+---
 
 #### Flows (`orchestration/flows/`)
 

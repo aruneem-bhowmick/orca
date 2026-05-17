@@ -16,6 +16,23 @@ from ..deps import get_embedding_repo, get_task_repo
 router = APIRouter(prefix="/tasks", tags=["tasks"])
 
 
+@router.get("/{task_id}/embedding", response_model=Embedding)
+async def get_task_embedding(
+    task_id: UUID,
+    task_repo: TaskRepository = Depends(get_task_repo),
+    emb_repo: EmbeddingRepository = Depends(get_embedding_repo),
+) -> Embedding:
+    task = await task_repo.get_by_id(task_id)
+    if task is None:
+        raise HTTPException(status_code=404, detail="Task not found")
+    if task.embedding_id is None:
+        raise HTTPException(status_code=404, detail="Task has no embedding")
+    embedding = await emb_repo.get_by_id(task.embedding_id)
+    if embedding is None:
+        raise HTTPException(status_code=404, detail="Embedding not found")
+    return embedding
+
+
 class EmbedTaskRequest(BaseModel):
     task_id: UUID
     embedding_vector: list[float]

@@ -1,9 +1,9 @@
 """Tests for OrcaMindClient, OrcaLabClient, and OrcaNetClient.
 
-All three are stub clients backed by httpx.AsyncClient. Tests cover:
+All three are clients backed by httpx.AsyncClient. Tests cover:
   - Constructor URL normalisation
   - httpx Timeout and Limits configuration
-  - Every stub method raises NotImplementedError
+  - HTTP behaviour for each OrcaMindClient method (via respx mocking)
   - aclose() delegates to the underlying httpx client
   - Async context manager protocol
 """
@@ -15,13 +15,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
 import pytest
+import respx
 
 from orca_shared.clients.orcalab_client import OrcaLabClient
 from orca_shared.clients.orcamind_client import OrcaMindClient
 from orca_shared.clients.orcanet_client import OrcaNetClient
 from orca_shared.schemas.embedding import Embedding
 from orca_shared.schemas.metrics import PerformanceMetrics
-from orca_shared.schemas.recommendation import FeedbackRequest, RecommendationRequest
+from orca_shared.schemas.model import ModelSummary
+from orca_shared.schemas.recommendation import FeedbackRequest, ModelRecommendation, RecommendationRequest
 from orca_shared.schemas.training import TrainingConfig
 
 # Shared test UUIDs
@@ -62,44 +64,125 @@ class TestOrcaMindClientConstruction:
         assert limits.max_connections == 20
 
 
-class TestOrcaMindClientStubs:
+def _embedding_json(task_id: uuid.UUID = TASK_ID, dim: int = 4) -> dict:
+    return {
+        "embedding_id": str(uuid.uuid4()),
+        "task_id": str(task_id),
+        "embedding_type": "statistical",
+        "embedding_vector": [0.1, 0.2, 0.3, 0.4],
+        "dimension": dim,
+        "model_version": "v1",
+        "created_at": NOW.isoformat(),
+    }
+
+
+def _recommendation_json(task_id: uuid.UUID = TASK_ID, model_id: uuid.UUID = MODEL_ID) -> dict:
+    return {
+        "task_id": str(task_id),
+        "model_id": str(model_id),
+        "architecture": "resnet",
+        "predicted_score": 0.85,
+        "confidence": 0.9,
+        "reasoning": None,
+    }
+
+
+class TestOrcaMindClientHTTP:
     @pytest.mark.asyncio
-    async def test_recommend_model_raises(self):
-        c = OrcaMindClient("http://host")
-        req = RecommendationRequest(task_embedding=[0.1, 0.2])
-        with pytest.raises(NotImplementedError):
-            await c.recommend_model(req)
+    async def test_recommend_model_returns_first_item(self):
+        with respx.mock(base_url="http://host") as rm:
+            rm.post("/api/v1/recommend-model").respond(200, json=[_recommendation_json()])
+            c = OrcaMindClient("http://host")
+            req = RecommendationRequest(task_embedding=[0.1, 0.2, 0.3, 0.4])
+            result = await c.recommend_model(req)
+        assert isinstance(result, ModelRecommendation)
+        assert result.predicted_score == pytest.approx(0.85)
 
     @pytest.mark.asyncio
-    async def test_predict_performance_raises(self):
-        c = OrcaMindClient("http://host")
-        with pytest.raises(NotImplementedError):
-            await c.predict_performance([0.1], MODEL_ID)
+    async def test_predict_performance_returns_metrics(self):
+        with respx.mock(base_url="http://host") as rm:
+            rm.post("/api/v1/predict-performance").respond(
+                200,
+                json={"model_id": str(MODEL_ID), "predicted_score": 0.77, "confidence": 0.88},
+            )
+            c = OrcaMindClient("http://host")
+            result = await c.predict_performance([0.1, 0.2], MODEL_ID)
+        assert isinstance(result, PerformanceMetrics)
+        assert result.final_metrics["predicted_score"] == pytest.approx(0.77)
+        assert result.final_metrics["confidence"] == pytest.approx(0.88)
 
     @pytest.mark.asyncio
-    async def test_submit_feedback_raises(self):
-        c = OrcaMindClient("http://host")
-        req = FeedbackRequest(experiment_id=EXPERIMENT_ID, actual_metric=0.9, metric_name="f1")
-        with pytest.raises(NotImplementedError):
-            await c.submit_feedback(req)
+    async def test_submit_feedback_succeeds_on_200(self):
+        with respx.mock(base_url="http://host") as rm:
+            rm.post("/api/v1/feedback").respond(200, json={"accepted": True})
+            c = OrcaMindClient("http://host")
+            req = FeedbackRequest(experiment_id=EXPERIMENT_ID, actual_metric=0.9, metric_name="f1")
+            await c.submit_feedback(req)  # must not raise
 
     @pytest.mark.asyncio
-    async def test_get_best_model_raises(self):
-        c = OrcaMindClient("http://host")
-        with pytest.raises(NotImplementedError):
-            await c.get_best_model(TASK_ID)
+    async def test_embed_task_returns_embedding(self):
+        with respx.mock(base_url="http://host") as rm:
+            rm.get(f"/api/v1/tasks/{TASK_ID}/embedding").respond(200, json=_embedding_json())
+            c = OrcaMindClient("http://host")
+            result = await c.embed_task(TASK_ID)
+        assert isinstance(result, Embedding)
+        assert len(result.embedding_vector) == 4
 
     @pytest.mark.asyncio
-    async def test_embed_task_raises(self):
-        c = OrcaMindClient("http://host")
-        with pytest.raises(NotImplementedError):
-            await c.embed_task(TASK_ID)
+    async def test_find_similar_tasks_returns_list(self):
+        payload = [
+            {"task_id": str(uuid.uuid4()), "score": 0.9, "rank": 1},
+            {"task_id": str(uuid.uuid4()), "score": 0.8, "rank": 2},
+        ]
+        with respx.mock(base_url="http://host") as rm:
+            rm.post("/api/v1/similar-tasks").respond(200, json=payload)
+            c = OrcaMindClient("http://host")
+            results = await c.find_similar_tasks([0.1, 0.2, 0.3, 0.4], top_k=2)
+        assert len(results) == 2
+        assert results[0].score == pytest.approx(0.9)
 
     @pytest.mark.asyncio
-    async def test_find_similar_tasks_raises(self):
-        c = OrcaMindClient("http://host")
-        with pytest.raises(NotImplementedError):
-            await c.find_similar_tasks([0.1, 0.2])
+    async def test_get_best_model_returns_model_summary(self):
+        with respx.mock(base_url="http://host") as rm:
+            rm.get(f"/api/v1/tasks/{TASK_ID}/embedding").respond(200, json=_embedding_json())
+            rm.post("/api/v1/recommend-model").respond(200, json=[_recommendation_json()])
+            c = OrcaMindClient("http://host")
+            result = await c.get_best_model(TASK_ID)
+        assert isinstance(result, ModelSummary)
+        assert result.architecture == "resnet"
+
+    @pytest.mark.asyncio
+    async def test_recommend_model_raises_on_empty_list(self):
+        with respx.mock(base_url="http://host") as rm:
+            rm.post("/api/v1/recommend-model").respond(200, json=[])
+            c = OrcaMindClient("http://host")
+            with pytest.raises(ValueError, match="no model recommendations"):
+                await c.recommend_model(RecommendationRequest(task_embedding=[0.1, 0.2]))
+
+    @pytest.mark.asyncio
+    async def test_recommend_model_raises_on_5xx(self):
+        with respx.mock(base_url="http://host") as rm:
+            rm.post("/api/v1/recommend-model").respond(503)
+            c = OrcaMindClient("http://host")
+            with pytest.raises(httpx.HTTPStatusError):
+                await c.recommend_model(RecommendationRequest(task_embedding=[0.1]))
+
+    @pytest.mark.asyncio
+    async def test_submit_feedback_raises_on_4xx(self):
+        with respx.mock(base_url="http://host") as rm:
+            rm.post("/api/v1/feedback").respond(404)
+            c = OrcaMindClient("http://host")
+            req = FeedbackRequest(experiment_id=EXPERIMENT_ID, actual_metric=0.5, metric_name="f1")
+            with pytest.raises(httpx.HTTPStatusError):
+                await c.submit_feedback(req)
+
+    @pytest.mark.asyncio
+    async def test_embed_task_raises_on_404(self):
+        with respx.mock(base_url="http://host") as rm:
+            rm.get(f"/api/v1/tasks/{TASK_ID}/embedding").respond(404)
+            c = OrcaMindClient("http://host")
+            with pytest.raises(httpx.HTTPStatusError):
+                await c.embed_task(TASK_ID)
 
 
 class TestOrcaMindClientLifecycle:
