@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 from uuid import uuid4
 
 import pytest
@@ -60,8 +60,16 @@ class TestStartSweep:
         monkeypatch: pytest.MonkeyPatch,
     ) -> None:
         monkeypatch.delenv("PREFECT_API_URL", raising=False)
-        resp = await client.post("/api/v1/sweeps", json={"task_id": "task-1"})
+        mock_post = AsyncMock()
+        with patch("orcalab.api.routers.sweeps.httpx.AsyncClient") as mock_client_cls:
+            mock_client_instance = MagicMock()
+            mock_client_instance.__aenter__ = AsyncMock(return_value=mock_client_instance)
+            mock_client_instance.__aexit__ = AsyncMock(return_value=False)
+            mock_client_instance.post = mock_post
+            mock_client_cls.return_value = mock_client_instance
+            resp = await client.post("/api/v1/sweeps", json={"task_id": "task-1"})
         assert resp.status_code == 202
+        mock_post.assert_not_awaited()
 
     async def test_missing_task_id_returns_422(self, client: AsyncClient) -> None:
         resp = await client.post("/api/v1/sweeps", json={})
