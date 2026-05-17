@@ -67,6 +67,31 @@ class TestStartSweep:
         resp = await client.post("/api/v1/sweeps", json={})
         assert resp.status_code == 422
 
+    async def test_zero_n_trials_returns_422(self, client: AsyncClient) -> None:
+        resp = await client.post(
+            "/api/v1/sweeps", json={"task_id": "task-1", "n_trials": 0}
+        )
+        assert resp.status_code == 422
+
+    async def test_negative_n_trials_returns_422(self, client: AsyncClient) -> None:
+        resp = await client.post(
+            "/api/v1/sweeps", json={"task_id": "task-1", "n_trials": -5}
+        )
+        assert resp.status_code == 422
+
+    async def test_search_space_stored_in_sweep_state(
+        self, client: AsyncClient, sweeps_store: dict
+    ) -> None:
+        space = {"name": "lr_search", "parameters": [{"type": "float", "name": "lr"}]}
+        body = (
+            await client.post(
+                "/api/v1/sweeps",
+                json={"task_id": "task-1", "search_space": space},
+            )
+        ).json()
+        sweep_id = body["sweep_id"]
+        assert sweeps_store[sweep_id]["search_space"] == space
+
 
 class TestGetSweepStatus:
     async def test_returns_200_for_known_sweep(

@@ -9,7 +9,7 @@ from typing import Any
 
 import httpx
 from fastapi import APIRouter, Depends, HTTPException, Request, status
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from ..deps import get_sweeps_store
 
@@ -20,7 +20,7 @@ router = APIRouter(prefix="/sweeps", tags=["sweeps"])
 
 class StartSweepRequest(BaseModel):
     task_id: str
-    n_trials: int = 50
+    n_trials: int = Field(default=50, ge=1)
     use_orcamind: bool = True
     search_space: dict[str, Any] | None = None
 
@@ -64,11 +64,18 @@ async def start_sweep(
                             "task_id": body.task_id,
                             "n_trials": body.n_trials,
                             "use_orcamind": body.use_orcamind,
+                            "search_space": body.search_space,
                         },
                     },
                 )
             if resp.status_code in (200, 201):
-                flow_run_id = resp.json().get("id")
+                try:
+                    flow_run_id = resp.json().get("id")
+                except ValueError:
+                    logger.warning(
+                        "Prefect returned non-JSON success response: status=%s",
+                        resp.status_code,
+                    )
         except httpx.HTTPError as exc:
             logger.warning("Failed to trigger Prefect flow: %s", exc)
 
@@ -79,6 +86,7 @@ async def start_sweep(
         "n_completed": 0,
         "n_failed": 0,
         "flow_run_id": flow_run_id,
+        "search_space": body.search_space,
         "results": [],
     }
 
