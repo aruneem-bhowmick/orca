@@ -24,6 +24,6 @@ async def get_orcamind_priors(
             req = RecommendationRequest(task_embedding=embedding.embedding_vector)
             recommendation = await client.recommend_model(req)
             return [recommendation]
-    except (httpx.ConnectError, httpx.TimeoutException):
-        logger.warning("OrcaMind unavailable; starting sweep without priors")
+    except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPStatusError) as exc:
+        logger.warning("OrcaMind unavailable; starting sweep without priors: %s", exc)
         return None
