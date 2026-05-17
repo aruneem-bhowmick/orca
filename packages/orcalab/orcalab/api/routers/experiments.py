@@ -97,13 +97,11 @@ async def cancel_experiment(
 @router.websocket("/{experiment_id}/live")
 async def experiment_live(websocket: WebSocket, experiment_id: UUID) -> None:
     await websocket.accept()
-    repo: ExperimentRepository = ExperimentRepository.__new__(ExperimentRepository)
     try:
         while True:
             async with websocket.app.state.db_sessionmaker() as session:  # type: ignore[attr-defined]
-                async with session.begin():
-                    live_repo = ExperimentRepository(session)
-                    experiment = await live_repo.get_by_id(experiment_id)
+                live_repo = ExperimentRepository(session)
+                experiment = await live_repo.get_by_id(experiment_id)
 
             if experiment is None:
                 await websocket.send_json({"error": "experiment not found"})

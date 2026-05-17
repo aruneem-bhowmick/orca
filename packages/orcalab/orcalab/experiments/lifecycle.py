@@ -26,6 +26,7 @@ _VALID_TRANSITIONS: frozenset[tuple[ExperimentStatus, ExperimentStatus]] = froze
         (ExperimentStatus.PENDING, ExperimentStatus.QUEUED),
         (ExperimentStatus.PENDING, ExperimentStatus.CANCELLED),
         (ExperimentStatus.QUEUED, ExperimentStatus.RUNNING),
+        (ExperimentStatus.QUEUED, ExperimentStatus.CANCELLED),
         (ExperimentStatus.RUNNING, ExperimentStatus.COMPLETED),
         (ExperimentStatus.RUNNING, ExperimentStatus.FAILED),
         (ExperimentStatus.RUNNING, ExperimentStatus.CANCELLED),
