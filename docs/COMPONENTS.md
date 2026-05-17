@@ -29,9 +29,12 @@ Seven fully-typed `Mapped[]` models backed by PostgreSQL:
 Async repository pattern over all tables:
 
 - `TaskRepository` — `list_all()`, `list_by_domain()`, `list_by_type()`, `get_by_id()`, `create()`, `update_embedding()`
-- `ExperimentRepository` — `create()`, `get_by_id()`, `list_by_task()`, `update_status()`, `mark_complete()`
+- `ExperimentRepository` — `create()`, `get_by_id()`, `list_by_task()`, `list_all(limit, offset)`, `update_status()`, `update_status_if_current(experiment_id, from_status, to_status) -> bool`, `mark_complete()`
 - `PerformanceRepository` — `log_metric()`, `get_final_metrics()`, `get_history()`, `list_all_with_context()`
 - `EmbeddingRepository` — `create()`, `get_by_id()`
+- `SearchSpaceRepository` — `create(name, definition)`, `list_all(limit, offset)`
+
+`list_all` on both `ExperimentRepository` and `SearchSpaceRepository` applies `order_by(primary_key)` so that `OFFSET`-based pagination returns consistent results as the table changes. `update_status_if_current` issues an atomic conditional `UPDATE … WHERE status = from_status` and returns `True` when one row was affected, `False` when the status had already changed — enabling optimistic concurrency without a separate SELECT.
 
 ### Pydantic v2 Schemas (`schemas/`)
 
@@ -45,6 +48,7 @@ Async repository pattern over all tables:
 | `model.py`          | `ModelConfig`, `ModelSummary`                                     |
 | `recommendation.py` | `RecommendationRequest`, `ModelRecommendation`, `FeedbackRequest` |
 | `training.py`       | `TrainingConfig`, `ExperimentResult`                              |
+| `search_space.py`   | `SearchSpaceRecord`                                               |
 | `transfer.py`       | `TransferMapping`, `TransferScore`, `TransferRecommendation`      |
 | `metrics.py`        | `MetricPoint`, `PerformanceMetrics`, `PerformanceSummary`         |
 
