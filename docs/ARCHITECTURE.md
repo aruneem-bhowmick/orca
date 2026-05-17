@@ -31,6 +31,17 @@
 └──────────────────────────────────────────────────────────────────┘
 ```
 
+### OrcaMind ↔ OrcaLab Bidirectional Data Flow
+
+The `←→` arrow between OrcaMind and OrcaLab represents an active two-way exchange that closes the meta-learning loop:
+
+| Direction | When | Mechanism |
+|---|---|---|
+| **OrcaMind → OrcaLab** (priors in) | Before a sweep starts | `get_orcamind_priors` Prefect task embeds the task via `GET /api/v1/tasks/{id}/embedding`, requests a model recommendation via `POST /api/v1/recommend-model`, and passes the result to `MetaInformedSearch.initialize_from_orcamind()` which warm-starts the Bayesian search with prior knowledge |
+| **OrcaLab → OrcaMind** (feedback out) | After each trial completes | `log_results` Prefect task submits a `FeedbackRequest` to `POST /api/v1/feedback` carrying the experiment ID, the scalar objective metric, and the hyperparameter configuration — feeding completed-trial signal back into OrcaMind's meta-learning data store |
+
+Both directions are fully resilient: network and HTTP errors (`ConnectError`, `TimeoutException`, `HTTPStatusError`) degrade gracefully — sweeps start without priors and run to completion even when OrcaMind is unreachable.
+
 ---
 
 ## Repository Structure
@@ -52,7 +63,7 @@ orca/
 │   │   │   ├── embedders/            # StatisticalEmbedder, NeuralEmbedder, FaissIndex
 │   │   │   ├── selectors/            # NearestNeighbor, LearningToRank, PerformancePredictor
 │   │   │   ├── training/             # MetaTrainer, TaskSampler, callbacks, metrics
-│   │   │   ├── api/                  # FastAPI app factory + 12 endpoints across 7 routers
+│   │   │   ├── api/                  # FastAPI app factory + 13 endpoints across 7 routers
 │   │   │   ├── dashboard/            # Streamlit app (app.py + 4 pages)
 │   │   │   └── cli.py                # Typer CLI — 6 commands
 │   │   ├── alembic/                  # Database migration environment
@@ -76,7 +87,7 @@ orca/
 │       │   ├── pruning/              # ASHA, median, and meta-informed trial pruners
 │       │   ├── orchestration/
 │       │   │   ├── flows/            # Prefect flows (single experiment, sweep, meta sweep)
-│       │   │   └── tasks/            # Prefect tasks (prepare, train, evaluate, log)
+│       │   │   └── tasks/            # Prefect tasks (prepare_data, train_model, evaluate, log_results, get_orcamind_priors)
 │       │   ├── visualization/        # Streamlit dashboard — app entry point + pages + chart components
 │       │   │   ├── app.py            # st.navigation() entry point; sidebar API URL input; 4-page layout
 │       │   │   ├── components/       # Reusable Plotly components (metric_plots, parallel_coords, pareto_frontier)
@@ -97,14 +108,15 @@ orca/
 │           │   ├── search/           # SearchStrategy, RandomSearch, GridSearch, BayesianSearch, EvolutionarySearch — 78+ tests
 │           │   ├── search_spaces/    # Parameter types, SearchSpace sampling/serialization, SearchSpaceComposer — 44 tests
 │           │   ├── pruning/          # Pruner ABC, MedianStoppingPruner, ASHAPruner, MetaPruner — 90 tests
-│           │   ├── orchestration/    # Prefect task and flow unit tests — 50 tests (Prefect stub in conftest.py)
+│           │   ├── orchestration/    # Prefect task and flow unit tests — 52 tests (Prefect stub in conftest.py)
 │           │   ├── visualization/    # Streamlit component and page unit tests — 115 tests
 │           │   │   ├── conftest.py   # Session-scoped _patch_streamlit; saves/restores sys.modules on teardown
 │           │   │   ├── components/   # test_metric_plots, test_parallel_coords, test_pareto_frontier
 │           │   │   └── pages/        # test_app, test_live_experiments, test_search_progress, test_results_explorer, test_meta_analysis
 │           │   └── *.py              # Package import, metadata, CLI, and config tests
 │           └── integration/
-│               └── api/              # OrcaLab REST API integration tests — 62 tests (all external deps mocked)
+│               ├── api/              # OrcaLab REST API integration tests — 62 tests (all external deps mocked)
+│               └── (OrcaMind bidirectional flows) # 20 integration tests — respx-mocked OrcaMind HTTP API
 │                   ├── conftest.py   # ASGITransport client; pre-populates app.state; dependency_overrides for all repos
 │                   ├── test_health.py        # Root + health endpoints (DB ok, Prefect degraded)
 │                   ├── test_experiments.py   # CRUD, pagination, cancel semantics, atomic update assertion
@@ -162,5 +174,5 @@ orca/
 - **uv** workspace for monorepo package management
 - **ruff** for linting and formatting (line length 100, Python 3.11 target)
 - **mypy** (strict on `orca-shared`) for static type checking
-- **pytest** + **pytest-asyncio** + **pytest-cov** for testing (72+ test files across all packages)
+- **pytest** + **pytest-asyncio** + **pytest-cov** for testing (75+ test files across all packages)
 - **pre-commit** hooks for quality gates on commit and push
