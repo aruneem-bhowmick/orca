@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import html
 import logging
 import time
 
@@ -45,9 +46,9 @@ def compute_progress(
     current_epoch: int | None, total_epochs: int | None
 ) -> float:
     """Return a 0.0–1.0 progress ratio; 0.0 for missing or invalid inputs."""
-    if not current_epoch or not total_epochs or total_epochs <= 0:
+    if current_epoch is None or total_epochs is None or total_epochs <= 0:
         return 0.0
-    return min(float(current_epoch) / float(total_epochs), 1.0)
+    return max(0.0, min(float(current_epoch) / float(total_epochs), 1.0))
 
 
 # ── Streamlit page ────────────────────────────────────────────────────────────
@@ -107,8 +108,9 @@ def _page() -> None:
                 str(row["status"].iloc[0]) if "status" in row.columns else "UNKNOWN"
             )
             color = color_for_status(status)
+            safe_status = html.escape(status)
             st.markdown(
-                f"**Status**: <span style='color:{color}'>{status}</span>",
+                f"**Status**: <span style='color:{color}'>{safe_status}</span>",
                 unsafe_allow_html=True,
             )
 
@@ -123,10 +125,9 @@ def _page() -> None:
                 else None
             )
             progress = compute_progress(current_epoch, total_epochs)
-            st.progress(
-                progress,
-                text=f"Epoch {current_epoch or '?'} / {total_epochs or '?'}",
-            )
+            epoch_label = current_epoch if current_epoch is not None else "?"
+            total_label = total_epochs if total_epochs is not None else "?"
+            st.progress(progress, text=f"Epoch {epoch_label} / {total_label}")
 
         with st.spinner("Loading metric history…"):
             try:
