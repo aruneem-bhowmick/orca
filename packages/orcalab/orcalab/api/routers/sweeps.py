@@ -76,6 +76,11 @@ async def start_sweep(
                         "Prefect returned non-JSON success response: status=%s",
                         resp.status_code,
                     )
+            else:
+                logger.warning(
+                    "Prefect flow trigger returned non-success status: %s",
+                    resp.status_code,
+                )
         except httpx.HTTPError as exc:
             logger.warning("Failed to trigger Prefect flow: %s", exc)
 
