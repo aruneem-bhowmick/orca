@@ -21,16 +21,22 @@ def _make_task_decorator(**kw):
     return decorator
 
 
-def _task(**kw):
+def _task(fn=None, **kw):
+    """Support both @task and @task(...) call patterns."""
+    if callable(fn):
+        return _make_task_decorator()(fn)
     return _make_task_decorator(**kw)
 
 
-def _flow(name=None, **kw):
-    def decorator(fn):
-        fn.fn = fn
-        fn.flow_name = name
-        return fn
+def _flow(fn=None, name=None, **kw):
+    """Support both @flow and @flow(...) call patterns."""
+    def decorator(f):
+        f.fn = f
+        f.flow_name = name
+        return f
 
+    if callable(fn):
+        return decorator(fn)
     return decorator
 
 
