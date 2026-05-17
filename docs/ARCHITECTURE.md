@@ -77,7 +77,10 @@ orca/
 │       │   ├── orchestration/
 │       │   │   ├── flows/            # Prefect flows (single experiment, sweep, meta sweep)
 │       │   │   └── tasks/            # Prefect tasks (prepare, train, evaluate, log)
-│       │   ├── visualization/        # Streamlit dashboard (live experiments, search progress, results)
+│       │   ├── visualization/        # Streamlit dashboard — app entry point + pages + chart components
+│       │   │   ├── app.py            # st.navigation() entry point; sidebar API URL input; 4-page layout
+│       │   │   ├── components/       # Reusable Plotly components (metric_plots, parallel_coords, pareto_frontier)
+│       │   │   └── pages/            # Dashboard pages (live_experiments, search_progress, results_explorer, meta_analysis)
 │       │   ├── api/                  # FastAPI app + WebSocket streaming
 │       │   └── cli.py                # Typer CLI — 4 commands
 │       ├── config/                   # Hydra YAML configs (root, search/bayesian, pruner/asha)
@@ -88,6 +91,10 @@ orca/
 │           │   ├── search_spaces/    # Parameter types, SearchSpace sampling/serialization, SearchSpaceComposer — 44 tests
 │           │   ├── pruning/          # Pruner ABC, MedianStoppingPruner, ASHAPruner, MetaPruner — 90 tests
 │           │   ├── orchestration/    # Prefect task and flow unit tests — 50 tests (Prefect stub in conftest.py)
+│           │   ├── visualization/    # Streamlit component and page unit tests — 115 tests
+│           │   │   ├── conftest.py   # Session-scoped _patch_streamlit; saves/restores sys.modules on teardown
+│           │   │   ├── components/   # test_metric_plots, test_parallel_coords, test_pareto_frontier
+│           │   │   └── pages/        # test_app, test_live_experiments, test_search_progress, test_results_explorer, test_meta_analysis
 │           │   └── *.py              # Package import, metadata, CLI, and config tests
 │           └── integration/          # API + sweep lifecycle tests
 │
@@ -141,5 +148,5 @@ orca/
 - **uv** workspace for monorepo package management
 - **ruff** for linting and formatting (line length 100, Python 3.11 target)
 - **mypy** (strict on `orca-shared`) for static type checking
-- **pytest** + **pytest-asyncio** + **pytest-cov** for testing (64+ test files across all packages)
+- **pytest** + **pytest-asyncio** + **pytest-cov** for testing (72+ test files across all packages)
 - **pre-commit** hooks for quality gates on commit and push

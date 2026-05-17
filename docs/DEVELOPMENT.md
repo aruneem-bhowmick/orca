@@ -25,11 +25,16 @@ pytest packages/orcalab/tests/unit/pruning/ -v
 # OrcaLab orchestration tests only (no Prefect install required)
 pytest packages/orcalab/tests/unit/orchestration/ -v
 
+# OrcaLab visualization tests only (no Streamlit or Plotly install required)
+pytest packages/orcalab/tests/unit/visualization/ -v
+
 # Integration tests (requires docker-compose stack)
 pytest packages/orcamind/tests/integration/ -v
 ```
 
-The test suite has 64+ test files across unit and integration categories. Integration tests auto-skip when their target service port is unreachable — run `make docker-up` first to exercise them.
+The test suite has 72+ test files across unit and integration categories. Integration tests auto-skip when their target service port is unreachable — run `make docker-up` first to exercise them.
+
+The visualization unit tests run without a live Streamlit or Plotly install. A session-scoped `_patch_streamlit` fixture in `tests/unit/visualization/conftest.py` replaces both libraries in `sys.modules` before any page or component module is imported, so the pure data-processing functions can be tested independently of the Streamlit runtime.
 
 ---
 
