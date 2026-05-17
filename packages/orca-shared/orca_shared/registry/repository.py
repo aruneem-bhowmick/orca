@@ -12,10 +12,12 @@ from orca_shared.registry.models import (
     Experiment as ExperimentORM,
     Model as ModelORM,
     Performance as PerformanceORM,
+    SearchSpace as SearchSpaceORM,
     Task as TaskORM,
 )
 from orca_shared.schemas.embedding import Embedding
 from orca_shared.schemas.metrics import MetricPoint, PerformanceMetrics, PerformanceSummary
+from orca_shared.schemas.search_space import SearchSpaceRecord
 from orca_shared.schemas.task import Task, TaskCreate, TaskSummary
 from orca_shared.schemas.training import ExperimentResult
 
@@ -129,6 +131,14 @@ class ExperimentRepository:
             .values(status=status)
         )
 
+    async def list_all(
+        self, *, limit: int = 500, offset: int = 0
+    ) -> list[ExperimentResult]:
+        result = await self._session.execute(
+            select(ExperimentORM).limit(limit).offset(offset)
+        )
+        return [ExperimentResult.model_validate(r) for r in result.scalars()]
+
     async def mark_complete(
         self, experiment_id: uuid.UUID, mlflow_run_id: str
     ) -> None:
@@ -228,6 +238,34 @@ class PerformanceRepository:
             )
             for row in result.all()
         ]
+
+
+class SearchSpaceRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def create(
+        self,
+        name: str | None,
+        definition: dict,
+    ) -> SearchSpaceRecord:
+        row = SearchSpaceORM(
+            search_space_id=uuid.uuid4(),
+            name=name,
+            definition=definition,
+            created_at=datetime.now(timezone.utc),
+        )
+        self._session.add(row)
+        await self._session.flush()
+        return SearchSpaceRecord.model_validate(row)
+
+    async def list_all(
+        self, *, limit: int = 500, offset: int = 0
+    ) -> list[SearchSpaceRecord]:
+        result = await self._session.execute(
+            select(SearchSpaceORM).limit(limit).offset(offset)
+        )
+        return [SearchSpaceRecord.model_validate(r) for r in result.scalars()]
 
 
 class EmbeddingRepository:
