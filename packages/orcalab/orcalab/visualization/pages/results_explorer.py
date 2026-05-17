@@ -151,8 +151,8 @@ def _page() -> None:
         for eid in (id_a, id_b):
             try:
                 exp_objs.append(ExperimentResult(**exp_map[eid]))
-            except Exception:
-                pass
+            except Exception as exc:
+                logger.warning("Failed to parse ExperimentResult for %s: %s", eid, exc)
 
         if exp_objs:
             all_metrics: set[str] = set()

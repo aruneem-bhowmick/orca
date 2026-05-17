@@ -28,8 +28,17 @@ def fetch_sweep_trials(api_url: str, sweep_id: str) -> list[dict]:
 
 
 def find_best_trial(trials: list[dict]) -> dict | None:
-    """Return the trial with the highest objective; ``None`` if trials is empty."""
-    valid = [t for t in trials if t.get("objective") is not None]
+    """Return the trial with the highest numeric objective; ``None`` if none qualify."""
+    valid = []
+    for t in trials:
+        raw = t.get("objective")
+        if raw is None:
+            continue
+        try:
+            obj = float(raw)
+        except (TypeError, ValueError):
+            continue
+        valid.append({**t, "objective": obj})
     if not valid:
         return None
     return max(valid, key=lambda t: t["objective"])
