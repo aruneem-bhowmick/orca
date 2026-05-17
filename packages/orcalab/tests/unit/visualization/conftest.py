@@ -29,6 +29,9 @@ _MOCKED_MODULES = (
 def _patch_streamlit():
     mock_st = MagicMock()
 
+    # Capture originals so teardown can restore rather than unconditionally delete.
+    originals = {mod: sys.modules.get(mod) for mod in _MOCKED_MODULES}
+
     for mod in _MOCKED_MODULES:
         sys.modules[mod] = MagicMock()
 
@@ -37,6 +40,10 @@ def _patch_streamlit():
 
     yield mock_st
 
-    # Cleanup: remove only the keys we set.
+    # Restore pre-existing entries; remove entries that were not present before.
     for mod in _MOCKED_MODULES:
-        sys.modules.pop(mod, None)
+        original = originals[mod]
+        if original is None:
+            sys.modules.pop(mod, None)
+        else:
+            sys.modules[mod] = original
