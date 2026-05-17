@@ -42,7 +42,7 @@ orca/
 │   │   └── orca_shared/
 │   │       ├── clients/              # Async httpx clients (OrcaMind, OrcaLab, OrcaNet)
 │   │       ├── registry/             # SQLAlchemy ORM models + async repository layer
-│   │       ├── schemas/              # Pydantic v2 data contracts (20+ models)
+│   │       ├── schemas/              # Pydantic v2 data contracts (21+ models)
 │   │       ├── storage/              # LocalBackend + MinIOBackend
 │   │       └── tracking/             # MLflow wrappers (OrcaTracker, ArtifactManager, ModelRegistry)
 │   │
@@ -81,12 +81,19 @@ orca/
 │       │   │   ├── app.py            # st.navigation() entry point; sidebar API URL input; 4-page layout
 │       │   │   ├── components/       # Reusable Plotly components (metric_plots, parallel_coords, pareto_frontier)
 │       │   │   └── pages/            # Dashboard pages (live_experiments, search_progress, results_explorer, meta_analysis)
-│       │   ├── api/                  # FastAPI app + WebSocket streaming
+│       │   ├── api/                  # FastAPI app (10 REST + 1 WebSocket endpoint) — port 8001
+│       │   │   ├── main.py           # create_app() factory; ASGI lifespan (DB engine, sweeps dict); health + root endpoints
+│       │   │   ├── middleware.py     # RequestLoggingMiddleware (try/finally); CORS deny-by-default
+│       │   │   ├── deps.py           # get_db, get_experiment_repo, get_search_space_repo, get_sweeps_store
+│       │   │   └── routers/
+│       │   │       ├── experiments.py  # CRUD + WebSocket /live stream
+│       │   │       ├── sweeps.py       # Prefect flow trigger, status poll, results
+│       │   │       └── search_spaces.py  # Persist and list search space definitions
 │       │   └── cli.py                # Typer CLI — 4 commands
 │       ├── config/                   # Hydra YAML configs (root, search/bayesian, pruner/asha)
 │       └── tests/
 │           ├── unit/
-│           │   ├── experiments/      # ExperimentLifecycle, ExperimentRunner, BatchExperimentRunner — 55 tests
+│           │   ├── experiments/      # ExperimentLifecycle, ExperimentRunner, BatchExperimentRunner — 56 tests
 │           │   ├── search/           # SearchStrategy, RandomSearch, GridSearch, BayesianSearch, EvolutionarySearch — 78+ tests
 │           │   ├── search_spaces/    # Parameter types, SearchSpace sampling/serialization, SearchSpaceComposer — 44 tests
 │           │   ├── pruning/          # Pruner ABC, MedianStoppingPruner, ASHAPruner, MetaPruner — 90 tests
@@ -96,7 +103,14 @@ orca/
 │           │   │   ├── components/   # test_metric_plots, test_parallel_coords, test_pareto_frontier
 │           │   │   └── pages/        # test_app, test_live_experiments, test_search_progress, test_results_explorer, test_meta_analysis
 │           │   └── *.py              # Package import, metadata, CLI, and config tests
-│           └── integration/          # API + sweep lifecycle tests
+│           └── integration/
+│               └── api/              # OrcaLab REST API integration tests — 62 tests (all external deps mocked)
+│                   ├── conftest.py   # ASGITransport client; pre-populates app.state; dependency_overrides for all repos
+│                   ├── test_health.py        # Root + health endpoints (DB ok, Prefect degraded)
+│                   ├── test_experiments.py   # CRUD, pagination, cancel semantics, atomic update assertion
+│                   ├── test_sweeps.py        # Start sweep, status, results, Prefect mock, validation
+│                   ├── test_search_spaces.py # Create and list search space records
+│                   └── test_websocket.py     # Direct handler invocation — metrics stream, disconnect, terminal status
 │
 ├── scripts/
 │   └── bootstrap_meta_dataset.py    # Seed registry from OpenML CC-18 / CTR-23
