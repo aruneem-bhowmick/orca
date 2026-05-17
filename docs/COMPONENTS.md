@@ -202,7 +202,10 @@ orcalab/
 ├── orchestration/
 │   ├── flows/         # Prefect flows (single experiment, sweep, meta-informed sweep, continuous learning loop)
 │   └── tasks/         # Prefect tasks (prepare_data, train_model, evaluate, log_results)
-├── visualization/     # Streamlit dashboard components and pages
+├── visualization/     # Streamlit dashboard — entry point, reusable chart components, and four page modules
+│   ├── app.py         # st.navigation() entry point with sidebar API URL input
+│   ├── components/    # Reusable Plotly chart builders (metric_plots, parallel_coords, pareto_frontier)
+│   └── pages/         # Dashboard pages (live_experiments, search_progress, results_explorer, meta_analysis)
 ├── api/               # FastAPI application and WebSocket endpoint
 └── cli.py             # Typer CLI — 4 commands
 ```
@@ -952,6 +955,203 @@ Apply all deployments with:
 ```bash
 prefect deploy --all
 ```
+
+---
+
+### Streamlit Dashboard (`orcalab.visualization`)
+
+A four-page Streamlit application that provides live experiment observability for an OrcaLab deployment. Every page is structured as a collection of named, pure data-processing functions (fetch helpers and transform helpers) plus a single `_page()` render function guarded by `if __name__ == "__main__": _page()`. This pattern lets the unit test suite import and call the data functions directly, without requiring a live Streamlit runtime or Plotly installation.
+
+The app is launched via the `orcalab dashboard` CLI command or directly:
+
+```bash
+streamlit run orcalab/visualization/app.py  # binds to port 8502 by default
+```
+
+#### Application Entry Point (`app.py`)
+
+```python
+st.set_page_config(page_title="OrcaLab", layout="wide")
+st.sidebar.text_input("OrcaLab API URL", value="http://localhost:8001")
+pg = st.navigation([
+    st.Page("pages/live_experiments.py", title="Live Experiments"),
+    st.Page("pages/search_progress.py",  title="Search Progress"),
+    st.Page("pages/results_explorer.py", title="Results Explorer"),
+    st.Page("pages/meta_analysis.py",    title="Meta-Analysis"),
+])
+if __name__ == "__main__":
+    pg.run()
+```
+
+The sidebar API URL is declared here and mirrored inside each page module so the current page always has the value in scope regardless of navigation order.
+
+---
+
+#### Reusable Chart Components (`components/`)
+
+All three component modules expose pure functions that return a Plotly `go.Figure`. They have no Streamlit dependency and can be called from any context.
+
+##### `metric_plots.py`
+
+| Function | Signature | Description |
+|---|---|---|
+| `loss_curve` | `(history: list[dict], title: str = "Training Loss") -> go.Figure` | Multi-series line chart — one `go.Scatter` trace per metric key found across all history dicts. The epoch key is `"epoch"` when any row contains that key, falling back to `"step"`. Metric keys are the sorted union across every row (excluding the epoch key and `"run_id"`). Rows where the epoch or value is `None`/`NaN` are skipped per-series. Returns an empty, titled figure for an empty history list. |
+| `metric_comparison` | `(results: list[ExperimentResult], metric: str) -> go.Figure` | Bar chart with one `go.Bar` trace. Labels are the first 8 characters of each `experiment_id` UUID. Experiments with `metrics=None`, missing the requested key, or a `NaN` value are silently excluded. Returns an empty figure when no valid results remain. |
+
+##### `parallel_coords.py`
+
+| Function | Signature | Description |
+|---|---|---|
+| `_safe_float` | `(v: object) -> float` | Module-private helper. Converts `v` to `float`, returning `math.nan` for `None` or any unconvertible value. Used internally to normalise the `objective` column without raising on malformed API payloads. |
+| `parallel_coordinates` | `(trials: list[dict], colorscale: str = "Viridis") -> go.Figure` | `go.Parcoords` chart. Parameter dimensions are the sorted union of all keys across every trial excluding `"objective"`. String-valued parameters are encoded as integer codes with `ticktext` labels (sorted by string representation to handle mixed types). Numeric parameters are passed as floats with `NaN` for missing values. The `objective` column drives the line colour via a continuous colourscale with `showscale=True`. Returns an empty figure for an empty trials list. |
+
+##### `pareto_frontier.py`
+
+| Function | Signature | Description |
+|---|---|---|
+| `_is_pareto_optimal` | `(costs: list[tuple[float, float]]) -> list[bool]` | O(n²) domination check under minimisation on both axes. Point `j` dominates point `i` iff `xⱼ ≤ xᵢ` and `yⱼ ≤ yᵢ` with at least one strict inequality. Returns a `list[bool]` of the same length. |
+| `pareto_plot` | `(results: list[ExperimentResult], x_metric: str, y_metric: str) -> go.Figure` | Two-trace scatter. Sub-optimal experiments are rendered as steelblue circles (size 8); Pareto-optimal experiments as red diamonds (size 10). Experiments with `metrics=None`, a missing axis metric, or any `NaN` value on either axis are excluded before the frontier calculation. Axis titles are set to `x_metric` and `y_metric`. Returns an empty figure with axis labels when no valid points exist. |
+
+---
+
+#### Dashboard Pages (`pages/`)
+
+All pages use `requests.get` (synchronous) for API calls, consistent with the OrcaMind dashboard pattern.
+
+##### `live_experiments.py` — Live Experiments
+
+Auto-refreshing view of all running and recent experiments.
+
+**Pure functions:**
+
+| Function | Signature | Description |
+|---|---|---|
+| `fetch_experiments` | `(api_url: str) -> list[dict]` | `GET {api_url}/api/v1/experiments`. Raises on any HTTP error. |
+| `fetch_experiment_history` | `(api_url: str, experiment_id: str) -> list[dict]` | `GET {api_url}/api/v1/experiments/{experiment_id}/history`. |
+| `color_for_status` | `(status: str) -> str` | Case-insensitive lookup into `STATUS_COLORS`: `RUNNING` → `#28a745`, `PENDING` → `#6c757d`, `FAILED` → `#dc3545`, `COMPLETED` → `#007bff`. Unknown statuses fall back to gray. |
+| `compute_progress` | `(current_epoch: int \| None, total_epochs: int \| None) -> float` | Returns `float(current_epoch) / float(total_epochs)` clamped to `[0.0, 1.0]`. Returns `0.0` when either argument is `None` or `total_epochs ≤ 0`. Negative epoch values are clamped to `0.0`. |
+
+**`_page()` flow:**
+1. Fetch all experiments; call `st.error` + `st.stop` on failure.
+2. Status-filter dropdown; `st.dataframe` of filtered results.
+3. Selectbox for per-experiment detail — HTML-escaped coloured status label (XSS-safe), `st.progress` bar with `Epoch N / M` label (explicit `is None` guard preserves epoch `0`).
+4. `loss_curve()` chart from per-experiment history.
+5. When the auto-refresh checkbox is enabled: `time.sleep(5)` + `st.rerun()`.
+
+---
+
+##### `search_progress.py` — Search Progress
+
+Hyperparameter sweep visualisation with parallel coordinates.
+
+**Pure functions:**
+
+| Function | Signature | Description |
+|---|---|---|
+| `fetch_sweeps` | `(api_url: str) -> list[dict]` | `GET {api_url}/api/v1/sweeps`. |
+| `fetch_sweep_trials` | `(api_url: str, sweep_id: str) -> list[dict]` | `GET {api_url}/api/v1/sweeps/{sweep_id}/trials`. |
+| `find_best_trial` | `(trials: list[dict]) -> dict \| None` | Returns the trial with the highest numeric `objective`. Each trial's objective is converted to `float` inside a `try/except`; non-numeric values (strings, `None`) are skipped. Returns `None` when no valid numeric objective exists. The returned dict always has `objective` as a `float`. |
+| `build_cumulative_df` | `(trials: list[dict]) -> pd.DataFrame` | Returns `DataFrame[trial_index, cumulative_count]` with 1-based sequential indices. Returns an empty DataFrame with the same columns for an empty trials list. |
+
+**`_page()` flow:**
+1. Sweep selectbox → `fetch_sweep_trials()`.
+2. `parallel_coordinates()` chart for all trials.
+3. `st.sidebar.metric("Best Objective", f"{best['objective']:.4f}")` when a best trial exists.
+4. `px.line` cumulative trial count chart.
+
+---
+
+##### `results_explorer.py` — Results Explorer
+
+Filterable table of completed experiments with side-by-side A/B config diff.
+
+**Pure functions:**
+
+| Function | Signature | Description |
+|---|---|---|
+| `fetch_completed_experiments` | `(api_url: str) -> list[dict]` | `GET {api_url}/api/v1/experiments` with `params={"status": "COMPLETED"}`. |
+| `filter_experiments` | `(experiments, *, task_id, domain, date_from, date_to) -> list[dict]` | Applies up to four optional filters. Experiments missing the `completed_at` field are excluded when either date filter is active. Unparseable `completed_at` strings are excluded rather than raising. |
+| `diff_configs` | `(exp_a: dict, exp_b: dict) -> dict` | Returns `{key: {"a": val_a, "b": val_b}}` for every key where the two dicts differ, sorted alphabetically. Returns `{}` for identical inputs. |
+
+**`_page()` flow:**
+1. Four-column filter row (task_id, domain, date_from, date_to) → filtered experiment table.
+2. Two selectboxes (A / B) drawn from the filtered list.
+3. `diff_configs()` result as `st.json()`; `metric_comparison()` chart for a user-chosen metric.
+4. Failed `ExperimentResult` construction is caught and logged at `WARNING` level rather than silently swallowed.
+
+---
+
+##### `meta_analysis.py` — Meta-Analysis
+
+Cross-experiment aggregate views: heatmap, scatter, and improvement trend.
+
+**Pure functions:**
+
+| Function | Signature | Description |
+|---|---|---|
+| `fetch_all_experiments` | `(api_url: str) -> list[dict]` | `GET {api_url}/api/v1/experiments`. |
+| `build_domain_arch_heatmap` | `(experiments: list[dict], metric: str = "accuracy") -> pd.DataFrame` | Pivot table — rows are domains, columns are architectures, values are mean metric. Experiments missing `domain`, `architecture`, or the requested metric are excluded. Returns an empty `DataFrame` when no valid records exist. |
+| `build_scatter_df` | `(experiments: list[dict], metric: str = "accuracy") -> pd.DataFrame` | Returns `DataFrame[complexity, accuracy, experiment_id]` where `complexity = int(n_features) × int(n_samples)`. Both `n_features` and `n_samples` must be present and numeric; either missing or non-integer-convertible value excludes the record. |
+| `build_trend_df` | `(experiments: list[dict], metric: str = "accuracy") -> pd.DataFrame` | Returns `DataFrame[completed_at, value, best_so_far]` sorted ascending by `completed_at`. `best_so_far` is the running cumulative maximum of `value`. `completed_at` is parsed via `pd.to_datetime(..., errors="coerce")`; NaT results exclude the record. |
+
+**`_page()` flow:**
+1. `go.Heatmap` (RdYlGn colourscale) — NaN cells are converted to `None` for Plotly compatibility.
+2. `px.scatter` of task complexity vs. accuracy.
+3. `px.line` of `best_so_far` over time.
+
+---
+
+#### Testing Infrastructure
+
+The visualization test suite is self-contained under `tests/unit/visualization/` and requires no live Streamlit, Plotly, or OrcaLab API.
+
+**`conftest.py`** — session-scoped autouse `_patch_streamlit` fixture:
+
+```python
+_MOCKED_MODULES = (
+    "streamlit", "streamlit.components", "streamlit.components.v1",
+    "streamlit.testing", "streamlit.testing.v1",
+    "plotly", "plotly.express", "plotly.graph_objects",
+)
+
+@pytest.fixture(scope="session", autouse=True)
+def _patch_streamlit():
+    originals = {mod: sys.modules.get(mod) for mod in _MOCKED_MODULES}
+    for mod in _MOCKED_MODULES:
+        sys.modules[mod] = MagicMock()
+    sys.modules["streamlit"] = mock_st  # returned for per-test assertions
+    yield mock_st
+    for mod, original in originals.items():
+        if original is None:
+            sys.modules.pop(mod, None)
+        else:
+            sys.modules[mod] = original   # restore pre-existing entries
+```
+
+Each test file uses a **module-scoped fixture** that pops its target module from `sys.modules` and re-imports it cleanly, preventing stale mock state from leaking between test files:
+
+```python
+@pytest.fixture(scope="module")
+def mp(_patch_streamlit):
+    sys.modules.pop("orcalab.visualization.components.metric_plots", None)
+    return importlib.import_module("orcalab.visualization.components.metric_plots")
+```
+
+API calls inside page modules are patched at call-site using `unittest.mock.patch("requests.get", return_value=mock_resp)` so network calls never reach a real server.
+
+**Test coverage summary:**
+
+| File | Tests | Covers |
+|---|---|---|
+| `components/test_metric_plots.py` | 13 | `loss_curve` (7), `metric_comparison` (6) |
+| `components/test_parallel_coords.py` | 6 | `parallel_coordinates` — empty, numeric, categorical, missing objective, colorscale forwarding, default |
+| `components/test_pareto_frontier.py` | 11 | `_is_pareto_optimal` (5), `pareto_plot` (6) |
+| `pages/test_app.py` | 6 | Import, `set_page_config`, title, navigation call, 4-page count, sidebar URL |
+| `pages/test_live_experiments.py` | 16 | `fetch_experiments` (3), `fetch_experiment_history` (3), `color_for_status` (6), `compute_progress` (7, including negative epoch) |
+| `pages/test_search_progress.py` | 15 | `fetch_sweeps` (3), `fetch_sweep_trials` (3), `find_best_trial` (5, including non-numeric objectives), `build_cumulative_df` (5) |
+| `pages/test_results_explorer.py` | 19 | `fetch_completed_experiments` (4), `filter_experiments` (10), `diff_configs` (5) |
+| `pages/test_meta_analysis.py` | 23 | `fetch_all_experiments` (3), `build_domain_arch_heatmap` (8), `build_scatter_df` (6, including partial complexity), `build_trend_df` (8, including invalid timestamps) |
+| **Total** | **115** | |
 
 ---
 
