@@ -56,9 +56,12 @@ class TestParallelCoordinates:
         assert fig is not None
 
     def test_custom_colorscale_forwarded(self, pc):
+        pc.go.Parcoords.reset_mock()
         pc.parallel_coordinates(NUMERIC_TRIALS, colorscale="Plasma")
-        # go.Parcoords is mocked; verify add_trace was called with some args
-        assert True  # if no exception, colorscale was accepted
+        assert pc.go.Parcoords.called
+        line = pc.go.Parcoords.call_args.kwargs.get("line", {})
+        assert isinstance(line, dict)
+        assert line.get("colorscale") == "Plasma"
 
     def test_default_colorscale_is_viridis(self, pc):
         import inspect

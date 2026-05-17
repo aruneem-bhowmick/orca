@@ -132,6 +132,9 @@ class TestColorForStatus:
 
 
 class TestComputeProgress:
+    def test_negative_current_epoch_returns_zero(self, le):
+        assert le.compute_progress(-1, 10) == 0.0
+
     def test_returns_correct_ratio(self, le):
         assert abs(le.compute_progress(5, 10) - 0.5) < 1e-9
 

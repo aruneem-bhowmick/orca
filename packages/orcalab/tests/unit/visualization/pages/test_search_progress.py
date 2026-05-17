@@ -111,7 +111,16 @@ class TestFindBestTrial:
         ]
         best = sp.find_best_trial(trials)
         assert best is not None
-        assert best["objective"] == 0.87
+        assert best["objective"] == pytest.approx(0.87)
+
+    def test_skips_non_numeric_objectives(self, sp):
+        trials = [
+            {"lr": 0.001, "objective": "bad"},
+            {"lr": 0.01, "objective": 0.87},
+        ]
+        best = sp.find_best_trial(trials)
+        assert best is not None
+        assert best["objective"] == pytest.approx(0.87)
 
 
 # ── build_cumulative_df ───────────────────────────────────────────────────────

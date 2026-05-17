@@ -80,7 +80,12 @@ class TestLossCurve:
 
     def test_title_passed_through(self, mp):
         mp.loss_curve(HISTORY, title="My Chart")
-        # No assertion on figure internals (go is mocked); just verify no error
+        fig = mp.go.Figure.return_value
+        fig.update_layout.assert_called()
+        assert any(
+            call.kwargs.get("title") == "My Chart"
+            for call in fig.update_layout.call_args_list
+        )
 
 
 # ── metric_comparison ─────────────────────────────────────────────────────────
@@ -125,9 +130,10 @@ class TestMetricComparison:
         results = [
             _make_result("abcdef12-0000-0000-0000-000000000001", {"accuracy": 0.9})
         ]
+        mp.go.Bar.reset_mock()
         mp.metric_comparison(results, "accuracy")
+        assert mp.go.Bar.called
         call_args = mp.go.Bar.call_args
-        if call_args:
-            labels = call_args.kwargs.get("x") or (call_args.args[0] if call_args.args else None)
-            if labels:
-                assert labels[0] == "abcdef12"
+        labels = call_args.kwargs.get("x") or (call_args.args[0] if call_args.args else None)
+        assert labels is not None
+        assert labels[0] == "abcdef12"

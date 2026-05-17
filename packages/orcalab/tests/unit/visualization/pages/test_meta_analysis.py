@@ -152,6 +152,11 @@ class TestBuildScatterDf:
         result = ma.build_scatter_df(exps)
         assert result.empty
 
+    def test_excludes_experiment_with_only_one_complexity_dimension(self, ma):
+        exps = [{"experiment_id": "x", "n_features": 10, "metrics": {"accuracy": 0.9}}]
+        result = ma.build_scatter_df(exps)
+        assert result.empty
+
 
 # ── build_trend_df ────────────────────────────────────────────────────────────
 
@@ -188,6 +193,11 @@ class TestBuildTrendDf:
 
     def test_excludes_experiments_without_metric(self, ma):
         exps = [{"experiment_id": "x", "completed_at": "2024-01-01T00:00:00", "metrics": {}}]
+        result = ma.build_trend_df(exps)
+        assert result.empty
+
+    def test_invalid_timestamp_is_excluded(self, ma):
+        exps = [{"experiment_id": "x", "completed_at": "not-a-date", "metrics": {"accuracy": 0.9}}]
         result = ma.build_trend_df(exps)
         assert result.empty
 
