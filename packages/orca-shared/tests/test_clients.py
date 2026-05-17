@@ -152,6 +152,14 @@ class TestOrcaMindClientHTTP:
         assert result.architecture == "resnet"
 
     @pytest.mark.asyncio
+    async def test_recommend_model_raises_on_empty_list(self):
+        with respx.mock(base_url="http://host") as rm:
+            rm.post("/api/v1/recommend-model").respond(200, json=[])
+            c = OrcaMindClient("http://host")
+            with pytest.raises(ValueError, match="no model recommendations"):
+                await c.recommend_model(RecommendationRequest(task_embedding=[0.1, 0.2]))
+
+    @pytest.mark.asyncio
     async def test_recommend_model_raises_on_5xx(self):
         with respx.mock(base_url="http://host") as rm:
             rm.post("/api/v1/recommend-model").respond(503)

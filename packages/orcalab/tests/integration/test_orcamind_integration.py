@@ -264,6 +264,12 @@ class TestGetOrcaMindPriorsTask:
             result = await get_orcamind_priors.fn(_TASK_ID, _ORCAMIND_URL)
         assert result is None
 
+    async def test_returns_none_on_http_status_error(self) -> None:
+        with respx.mock(base_url=_ORCAMIND_URL, assert_all_called=False) as rm:
+            rm.get(f"/api/v1/tasks/{_TASK_UUID}/embedding").respond(404)
+            result = await get_orcamind_priors.fn(_TASK_ID, _ORCAMIND_URL)
+        assert result is None
+
     async def test_has_retry_decorator(self) -> None:
         assert get_orcamind_priors.retries == 1  # type: ignore[attr-defined]
 
