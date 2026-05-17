@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 
+import httpx
 from prefect import task
 
 from orca_shared.clients.orcamind_client import OrcaMindClient
@@ -22,5 +23,5 @@ async def log_results(result: ExperimentResult, orcamind_client: OrcaMindClient)
     )
     try:
         await orcamind_client.submit_feedback(req)
-    except NotImplementedError:
-        logger.debug("OrcaMind client not yet implemented; skipping result logging")
+    except (httpx.ConnectError, httpx.TimeoutException, httpx.HTTPStatusError) as exc:
+        logger.warning("Failed to submit feedback to OrcaMind: %s", exc)
