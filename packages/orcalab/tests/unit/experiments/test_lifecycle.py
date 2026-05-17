@@ -41,6 +41,7 @@ class TestValidTransitions:
             ("pending", ExperimentStatus.QUEUED),
             ("pending", ExperimentStatus.CANCELLED),
             ("queued", ExperimentStatus.RUNNING),
+            ("queued", ExperimentStatus.CANCELLED),
             ("running", ExperimentStatus.COMPLETED),
             ("running", ExperimentStatus.FAILED),
             ("running", ExperimentStatus.CANCELLED),
