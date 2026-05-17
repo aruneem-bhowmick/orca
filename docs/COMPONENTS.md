@@ -29,9 +29,12 @@ Seven fully-typed `Mapped[]` models backed by PostgreSQL:
 Async repository pattern over all tables:
 
 - `TaskRepository` — `list_all()`, `list_by_domain()`, `list_by_type()`, `get_by_id()`, `create()`, `update_embedding()`
-- `ExperimentRepository` — `create()`, `get_by_id()`, `list_by_task()`, `update_status()`, `mark_complete()`
+- `ExperimentRepository` — `create()`, `get_by_id()`, `list_by_task()`, `list_all(limit, offset)`, `update_status()`, `update_status_if_current(experiment_id, from_status, to_status) -> bool`, `mark_complete()`
 - `PerformanceRepository` — `log_metric()`, `get_final_metrics()`, `get_history()`, `list_all_with_context()`
 - `EmbeddingRepository` — `create()`, `get_by_id()`
+- `SearchSpaceRepository` — `create(name, definition)`, `list_all(limit, offset)`
+
+`list_all` on both `ExperimentRepository` and `SearchSpaceRepository` applies `order_by(primary_key)` so that `OFFSET`-based pagination returns consistent results as the table changes. `update_status_if_current` issues an atomic conditional `UPDATE … WHERE status = from_status` and returns `True` when one row was affected, `False` when the status had already changed — enabling optimistic concurrency without a separate SELECT.
 
 ### Pydantic v2 Schemas (`schemas/`)
 
@@ -45,6 +48,7 @@ Async repository pattern over all tables:
 | `model.py`          | `ModelConfig`, `ModelSummary`                                     |
 | `recommendation.py` | `RecommendationRequest`, `ModelRecommendation`, `FeedbackRequest` |
 | `training.py`       | `TrainingConfig`, `ExperimentResult`                              |
+| `search_space.py`   | `SearchSpaceRecord`                                               |
 | `transfer.py`       | `TransferMapping`, `TransferScore`, `TransferRecommendation`      |
 | `metrics.py`        | `MetricPoint`, `PerformanceMetrics`, `PerformanceSummary`         |
 
@@ -246,9 +250,10 @@ Extends `orca_shared.schemas.ExperimentResult` with three additional fields need
 
 ```text
 PENDING ──► QUEUED ──► RUNNING ──► COMPLETED
-   │                      │
-   └──► CANCELLED ◄────── ┤
-                           └──► FAILED
+   │           │            │
+   │           └────────────┤
+   └──► CANCELLED ◄─────────┘
+                              └──► FAILED
 ```
 
 | Transition | Trigger |
@@ -256,6 +261,7 @@ PENDING ──► QUEUED ──► RUNNING ──► COMPLETED
 | `PENDING → QUEUED` | Experiment submitted to the work queue |
 | `PENDING → CANCELLED` | Cancelled before reaching the queue |
 | `QUEUED → RUNNING` | Picked up by a worker |
+| `QUEUED → CANCELLED` | Cancelled after queuing but before a worker picks it up |
 | `RUNNING → COMPLETED` | Training finished successfully |
 | `RUNNING → FAILED` | Unrecoverable error or pruner decision |
 | `RUNNING → CANCELLED` | User-initiated cancellation while running |
@@ -273,7 +279,7 @@ for entry in lifecycle.audit_log:
 # {"timestamp": "2025-…", "from": "running", "to": "failed", "reason": "OOM on epoch 7"}
 ```
 
-**`transition(new_status, reason="")`** — async. Validates the edge, then calls `repository.update_status()` first; only on success does it update `experiment.status` in memory and append to the audit log. This ordering means a failed DB write leaves both in-memory state and the audit log unchanged — no split-brain.
+**`transition(new_status, reason="")`** — async. Validates the edge, then calls `repository.update_status_if_current(experiment_id, current_status, new_status)` — an atomic conditional `UPDATE … WHERE status = current_status`. If the database reports zero rows affected because another process concurrently changed the status, `InvalidTransitionError` is raised with a "Concurrent modification" message and both in-memory state and the audit log remain unchanged — no split-brain.
 
 **`audit_log`** — returns a copy of the internal list. Each entry is a `dict` with keys `timestamp` (ISO-8601 UTC), `from`, `to`, and `reason`.
 
@@ -1152,6 +1158,53 @@ API calls inside page modules are patched at call-site using `unittest.mock.patc
 | `pages/test_results_explorer.py` | 19 | `fetch_completed_experiments` (4), `filter_experiments` (10), `diff_configs` (5) |
 | `pages/test_meta_analysis.py` | 23 | `fetch_all_experiments` (3), `build_domain_arch_heatmap` (8), `build_scatter_df` (6, including partial complexity), `build_trend_df` (8, including invalid timestamps) |
 | **Total** | **115** | |
+
+---
+
+### REST API (`orcalab.api`)
+
+10 REST endpoints and 1 WebSocket endpoint served by FastAPI, documented at `GET /docs`. The service runs on port 8001 by default and is launched via `orcalab serve` or `uvicorn orcalab.api.main:create_app`.
+
+
+| Method   | Path                                 | Status | Description                                                                                                   |
+|----------|--------------------------------------|--------|---------------------------------------------------------------------------------------------------------------|
+| `GET`    | `/`                                  | 200    | Service info (name, version, status)                                                                          |
+| `GET`    | `/health`                            | 200    | Liveness probe — checks DB via `SELECT 1`; checks Prefect reachability when `PREFECT_API_URL` is set         |
+| `POST`   | `/api/v1/experiments`                | 201    | Create an experiment record; returns `ExperimentResult` with `status=pending`                                 |
+| `GET`    | `/api/v1/experiments`                | 200    | Paginated experiment list (`limit`, `offset`); deterministic order by `experiment_id`                         |
+| `GET`    | `/api/v1/experiments/{id}`           | 200    | Experiment detail — 404 if not found; 422 on non-UUID path segment                                           |
+| `DELETE` | `/api/v1/experiments/{id}`           | 200    | Cancel a `pending`, `queued`, or `running` experiment; 409 for terminal statuses; 404 if not found            |
+| `WS`     | `/api/v1/experiments/{id}/live`      | —      | WebSocket — streams `{experiment_id, epoch, metric, status}` JSON every 2 s; closes on terminal status        |
+| `POST`   | `/api/v1/sweeps`                     | 202    | Trigger Prefect `meta_informed_sweep` flow; store sweep state; returns `{sweep_id}`                           |
+| `GET`    | `/api/v1/sweeps/{id}`                | 200    | Sweep status — `{n_trials_total, n_completed, n_failed, best_result}`; 404 for unknown sweep                  |
+| `GET`    | `/api/v1/sweeps/{id}/results`        | 200    | Trial results sorted by objective descending; 404 for unknown sweep                                           |
+| `POST`   | `/api/v1/search-spaces`              | 201    | Persist a search space definition; returns `SearchSpaceRecord` with `search_space_id`                         |
+| `GET`    | `/api/v1/search-spaces`              | 200    | Paginated list of persisted search space definitions                                                          |
+
+
+**Architecture highlights:**
+
+- **`create_app()` factory** — DB engine and `async_sessionmaker` initialised once at ASGI lifespan startup and stored on `app.state`. `app.state.sweeps: dict[str, dict]` (in-memory sweep store) is also initialised at startup and disposed gracefully on shutdown.
+- **Dependency injection** — `get_db` yields an `AsyncSession`; `get_experiment_repo` and `get_search_space_repo` inject typed repository instances; `get_sweeps_store` returns `app.state.sweeps`. All dependencies are overridable in tests via `dependency_overrides`.
+- **CORS — deny by default** — `allow_origins=[]` and `allow_credentials=False` when the `CORS_ORIGINS` env var is not set. When set, origins are parsed from a comma-separated list.
+- **Request logging** — `RequestLoggingMiddleware` logs every request with method, path, status code, and elapsed time in milliseconds. Uses `try/finally` so the log line is always written even when `call_next` raises (defaulting to status 500 in that case).
+- **Atomic experiment cancellation** — `DELETE /experiments/{id}` calls `ExperimentLifecycle.transition(CANCELLED)`, which uses `repository.update_status_if_current` — a single conditional `UPDATE WHERE status = current_status`. A concurrent status change that causes zero rows to be updated raises `InvalidTransitionError`, surfaced as 409 to the caller rather than silently discarding the conflict.
+- **Prefect triggering** — `POST /sweeps` POSTs to `{PREFECT_API_URL}/deployments/name/meta_informed_sweep/default/create_flow_run` via `httpx.AsyncClient`. Non-2xx responses emit a `logger.warning` without failing the request. When `PREFECT_API_URL` is not set, no HTTP call is made and `flow_run_id` is stored as `None`.
+- **WebSocket metric streaming** — the `/experiments/{id}/live` handler polls the DB every 2 s using the app-level `db_sessionmaker` directly (bypassing the HTTP-only `get_db` dependency). It closes automatically on `COMPLETED`, `FAILED`, or `CANCELLED` status, or on `WebSocketDisconnect` from the client.
+- **Sweeps — in-memory state** — sweep records are stored in `app.state.sweeps` (a plain dict keyed by `sweep_id`). `best_result` is computed on-read as `max(results, key=objective)`. This avoids requiring a DB migration for sweep state.
+
+**Integration test coverage:**
+
+The API test suite lives under `tests/integration/api/` and requires no running database, Prefect server, or MLflow instance — all external dependencies are mocked via `dependency_overrides` and `unittest.mock`.
+
+| Test file                     | Tests | Covers                                                                                               |
+|-------------------------------|-------|------------------------------------------------------------------------------------------------------|
+| `test_health.py`              | 6     | Root endpoint, health ok, Prefect degraded when `PREFECT_API_URL` unset                              |
+| `test_experiments.py`         | 23    | Create (201, pending status, repo call), list (pagination, limit/offset), get (200/404/422), delete (cancel, 409, 404, atomic assert) |
+| `test_sweeps.py`              | 16    | POST 202, sweep_id in response, sweep stored, no Prefect call when URL unset, 422 validation, search_space stored, status 200/404, results sorted/empty/404 |
+| `test_search_spaces.py`       | 10    | Create (201, search_space_id, repo call, definition forwarded, name passed), list (200, list, repo call, records, pagination) |
+| `test_websocket.py`           | 7     | Accepts connection, streams metrics, closes on completed/failed, error on unknown id, experiment_id in messages, handles disconnect |
+| **Total**                     | **62**|                                                                                                      |
 
 ---
 

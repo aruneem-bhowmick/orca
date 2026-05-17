@@ -26,6 +26,7 @@ _VALID_TRANSITIONS: frozenset[tuple[ExperimentStatus, ExperimentStatus]] = froze
         (ExperimentStatus.PENDING, ExperimentStatus.QUEUED),
         (ExperimentStatus.PENDING, ExperimentStatus.CANCELLED),
         (ExperimentStatus.QUEUED, ExperimentStatus.RUNNING),
+        (ExperimentStatus.QUEUED, ExperimentStatus.CANCELLED),
         (ExperimentStatus.RUNNING, ExperimentStatus.COMPLETED),
         (ExperimentStatus.RUNNING, ExperimentStatus.FAILED),
         (ExperimentStatus.RUNNING, ExperimentStatus.CANCELLED),
@@ -51,7 +52,13 @@ class ExperimentLifecycle:
         self._audit_log: list[dict] = []
 
     async def transition(self, new_status: ExperimentStatus, reason: str = "") -> None:
-        """Transition to *new_status*, or raise InvalidTransitionError if not allowed."""
+        """Transition to *new_status*, or raise InvalidTransitionError if not allowed.
+
+        The database update is conditional on the current status matching the
+        expected pre-transition state, preventing a concurrent writer from
+        silently overwriting a status that changed between the in-memory check
+        and the write.
+        """
         current = ExperimentStatus(self._experiment.status)
         if (current, new_status) not in _VALID_TRANSITIONS:
             raise InvalidTransitionError(
@@ -63,9 +70,13 @@ class ExperimentLifecycle:
             "to": new_status.value,
             "reason": reason,
         }
-        await self._repository.update_status(
-            self._experiment.experiment_id, new_status.value
+        updated = await self._repository.update_status_if_current(
+            self._experiment.experiment_id, current.value, new_status.value
         )
+        if not updated:
+            raise InvalidTransitionError(
+                f"Concurrent modification: status was already changed from {current.value!r}"
+            )
         self._experiment.status = new_status.value
         self._audit_log.append(entry)
 

@@ -22,9 +22,10 @@ def _make_experiment(status: str = "pending") -> Experiment:
     )
 
 
-def _make_repo() -> AsyncMock:
+def _make_repo(*, concurrent_conflict: bool = False) -> AsyncMock:
     repo = AsyncMock()
     repo.update_status = AsyncMock(return_value=None)
+    repo.update_status_if_current = AsyncMock(return_value=not concurrent_conflict)
     return repo
 
 
@@ -40,6 +41,7 @@ class TestValidTransitions:
             ("pending", ExperimentStatus.QUEUED),
             ("pending", ExperimentStatus.CANCELLED),
             ("queued", ExperimentStatus.RUNNING),
+            ("queued", ExperimentStatus.CANCELLED),
             ("running", ExperimentStatus.COMPLETED),
             ("running", ExperimentStatus.FAILED),
             ("running", ExperimentStatus.CANCELLED),
@@ -58,14 +60,18 @@ class TestValidTransitions:
         repo = _make_repo()
         lc = ExperimentLifecycle(exp, repo)
         await lc.transition(ExperimentStatus.QUEUED)
-        repo.update_status.assert_awaited_once_with(exp.experiment_id, "queued")
+        repo.update_status_if_current.assert_awaited_once_with(
+            exp.experiment_id, "pending", "queued"
+        )
 
     async def test_running_to_completed_updates_status(self) -> None:
         exp = _make_experiment("running")
         repo = _make_repo()
         lc = ExperimentLifecycle(exp, repo)
         await lc.transition(ExperimentStatus.COMPLETED)
-        repo.update_status.assert_awaited_once_with(exp.experiment_id, "completed")
+        repo.update_status_if_current.assert_awaited_once_with(
+            exp.experiment_id, "running", "completed"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -102,7 +108,7 @@ class TestInvalidTransitions:
         lc = ExperimentLifecycle(exp, repo)
         with pytest.raises(InvalidTransitionError):
             await lc.transition(ExperimentStatus.QUEUED)
-        repo.update_status.assert_not_awaited()
+        repo.update_status_if_current.assert_not_awaited()
         assert exp.status == "running"
 
     async def test_invalid_transition_error_message_contains_states(self) -> None:
@@ -164,3 +170,12 @@ class TestAuditLog:
         with pytest.raises(InvalidTransitionError):
             await lc.transition(ExperimentStatus.RUNNING)
         assert lc.audit_log == []
+
+    async def test_concurrent_modification_raises_and_is_not_logged(self) -> None:
+        exp = _make_experiment("pending")
+        repo = _make_repo(concurrent_conflict=True)
+        lc = ExperimentLifecycle(exp, repo)
+        with pytest.raises(InvalidTransitionError, match="Concurrent modification"):
+            await lc.transition(ExperimentStatus.QUEUED)
+        assert lc.audit_log == []
+        assert exp.status == "pending"

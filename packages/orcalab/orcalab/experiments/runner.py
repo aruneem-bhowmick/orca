@@ -29,6 +29,11 @@ class _NullRepository:
     async def update_status(self, experiment_id: UUID, status: str) -> None:  # noqa: ARG002
         return
 
+    async def update_status_if_current(  # noqa: ARG002
+        self, experiment_id: UUID, from_status: str, to_status: str
+    ) -> bool:
+        return True
+
 
 def _build_result(
     experiment: Experiment,
