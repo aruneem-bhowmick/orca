@@ -18,16 +18,20 @@ logger = logging.getLogger("orcalab.api")
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next) -> Response:
         t0 = time.perf_counter()
-        response = await call_next(request)
-        elapsed_ms = (time.perf_counter() - t0) * 1000
-        logger.info(
-            "%s %s -> %d (%.1f ms)",
-            request.method,
-            request.url.path,
-            response.status_code,
-            elapsed_ms,
-        )
-        return response
+        status_code = 500
+        try:
+            response = await call_next(request)
+            status_code = response.status_code
+            return response
+        finally:
+            elapsed_ms = (time.perf_counter() - t0) * 1000
+            logger.info(
+                "%s %s -> %d (%.1f ms)",
+                request.method,
+                request.url.path,
+                status_code,
+                elapsed_ms,
+            )
 
 
 def add_middleware(app: FastAPI) -> None:
