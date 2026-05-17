@@ -250,9 +250,10 @@ Extends `orca_shared.schemas.ExperimentResult` with three additional fields need
 
 ```text
 PENDING ──► QUEUED ──► RUNNING ──► COMPLETED
-   │                      │
-   └──► CANCELLED ◄────── ┤
-                           └──► FAILED
+   │           │            │
+   │           └────────────┤
+   └──► CANCELLED ◄─────────┘
+                              └──► FAILED
 ```
 
 | Transition | Trigger |
@@ -260,6 +261,7 @@ PENDING ──► QUEUED ──► RUNNING ──► COMPLETED
 | `PENDING → QUEUED` | Experiment submitted to the work queue |
 | `PENDING → CANCELLED` | Cancelled before reaching the queue |
 | `QUEUED → RUNNING` | Picked up by a worker |
+| `QUEUED → CANCELLED` | Cancelled after queuing but before a worker picks it up |
 | `RUNNING → COMPLETED` | Training finished successfully |
 | `RUNNING → FAILED` | Unrecoverable error or pruner decision |
 | `RUNNING → CANCELLED` | User-initiated cancellation while running |
@@ -277,7 +279,7 @@ for entry in lifecycle.audit_log:
 # {"timestamp": "2025-…", "from": "running", "to": "failed", "reason": "OOM on epoch 7"}
 ```
 
-**`transition(new_status, reason="")`** — async. Validates the edge, then calls `repository.update_status()` first; only on success does it update `experiment.status` in memory and append to the audit log. This ordering means a failed DB write leaves both in-memory state and the audit log unchanged — no split-brain.
+**`transition(new_status, reason="")`** — async. Validates the edge, then calls `repository.update_status_if_current(experiment_id, current_status, new_status)` — an atomic conditional `UPDATE … WHERE status = current_status`. If the database reports zero rows affected because another process concurrently changed the status, `InvalidTransitionError` is raised with a "Concurrent modification" message and both in-memory state and the audit log remain unchanged — no split-brain.
 
 **`audit_log`** — returns a copy of the internal list. Each entry is a `dict` with keys `timestamp` (ISO-8601 UTC), `from`, `to`, and `reason`.
 
