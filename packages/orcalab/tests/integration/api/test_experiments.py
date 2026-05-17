@@ -170,7 +170,7 @@ class TestDeleteExperiment:
         resp = await client.delete(f"/api/v1/experiments/{uuid4()}")
         assert resp.status_code == 404
 
-    async def test_calls_update_status_on_cancel(
+    async def test_calls_update_status_if_current_on_cancel(
         self,
         client: AsyncClient,
         mock_experiment_repo: AsyncMock,
@@ -181,6 +181,6 @@ class TestDeleteExperiment:
             _experiment(experiment_id, status="cancelled"),
         ]
         await client.delete(f"/api/v1/experiments/{experiment_id}")
-        mock_experiment_repo.update_status.assert_awaited_once_with(
-            experiment_id, "cancelled"
+        mock_experiment_repo.update_status_if_current.assert_awaited_once_with(
+            experiment_id, "pending", "cancelled"
         )

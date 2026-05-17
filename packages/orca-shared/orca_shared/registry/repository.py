@@ -131,6 +131,24 @@ class ExperimentRepository:
             .values(status=status)
         )
 
+    async def update_status_if_current(
+        self, experiment_id: uuid.UUID, from_status: str, to_status: str
+    ) -> bool:
+        """Update status only when the current DB status matches *from_status*.
+
+        Returns True when the row was updated, False when another writer already
+        changed the status (optimistic concurrency conflict).
+        """
+        result = await self._session.execute(
+            update(ExperimentORM)
+            .where(
+                ExperimentORM.experiment_id == experiment_id,
+                ExperimentORM.status == from_status,
+            )
+            .values(status=to_status)
+        )
+        return result.rowcount > 0
+
     async def list_all(
         self, *, limit: int = 500, offset: int = 0
     ) -> list[ExperimentResult]:

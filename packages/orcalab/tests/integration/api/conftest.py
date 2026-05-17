@@ -91,6 +91,7 @@ def mock_experiment_repo(experiment_id: UUID, task_id: UUID, now: datetime) -> A
     )
     repo.list_all.return_value = []
     repo.update_status.return_value = None
+    repo.update_status_if_current.return_value = True
     repo.mark_complete.return_value = None
     return repo
 
