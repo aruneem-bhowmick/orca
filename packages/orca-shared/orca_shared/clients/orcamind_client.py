@@ -21,6 +21,8 @@ class OrcaMindClient(_BaseAsyncClient):
         )
         response.raise_for_status()
         items = response.json()
+        if not isinstance(items, list) or not items:
+            raise ValueError("OrcaMind returned no model recommendations")
         return ModelRecommendation.model_validate(items[0])
 
     async def predict_performance(
