@@ -1,4 +1,4 @@
-"""OrcaLab Streamlit dashboard – main entry point and navigation."""
+"""OrcaLab Streamlit dashboard - main entry point and navigation."""
 
 from __future__ import annotations
 

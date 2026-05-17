@@ -1,4 +1,4 @@
-"""Unit tests for metric_plots – pure Plotly chart functions."""
+"""Unit tests for metric_plots - pure Plotly chart functions."""
 
 from __future__ import annotations
 
