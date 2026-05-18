@@ -31,6 +31,7 @@ RUN groupadd --gid 1001 orca && \
     useradd --uid 1001 --gid orca --shell /bin/bash --create-home orca
 
 COPY --from=builder /opt/venv /opt/venv
+COPY --from=builder /build/packages/orcalab/orcalab /app/orcalab
 
 ENV PATH="/opt/venv/bin:$PATH" \
     PYTHONUNBUFFERED=1 \
