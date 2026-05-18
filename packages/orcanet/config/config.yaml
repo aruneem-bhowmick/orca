@@ -1,0 +1,22 @@
+defaults:
+  - retriever: hybrid
+  - embedder: cross_domain
+  - llm: openai
+
+llm:
+  provider: openai
+  model: gpt-4-turbo
+  temperature: 0.7
+  api_key: ${oc.env:OPENAI_API_KEY}
+
+retrieval:
+  top_k_initial: 50
+  top_k_final: 10
+  use_llm_reranking: true
+  similarity_threshold: 0.6
+
+orcamind:
+  api_url: ${oc.env:ORCAMIND_API_URL,http://localhost:8000}
+
+orcalab:
+  api_url: ${oc.env:ORCALAB_API_URL,http://localhost:8001}

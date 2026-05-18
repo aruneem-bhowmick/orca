@@ -1,0 +1,8 @@
+# @package _global_.embedder
+type: cross_domain
+input_dim: 25
+embedding_dim: 64
+n_domains: 10
+n_task_types: 3
+hidden_dims: [128, 64]
+model_path: ${oc.env:CROSS_DOMAIN_MODEL_PATH,/data/models/cross_domain_embedder.pt}

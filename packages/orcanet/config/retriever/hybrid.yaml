@@ -1,0 +1,7 @@
+# @package _global_.retrieval
+type: hybrid
+faiss_index_path: ${oc.env:FAISS_INDEX_PATH,/data/faiss/tasks.index}
+database_url: ${oc.env:DATABASE_URL,postgresql+asyncpg://orca:orca@localhost:5432/orca_registry}
+top_k_initial: 50
+top_k_final: 10
+similarity_threshold: 0.6
