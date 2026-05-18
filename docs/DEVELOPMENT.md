@@ -36,9 +36,12 @@ pytest packages/orcalab/tests/integration/ -v
 
 # OrcaMind integration tests (requires docker-compose stack)
 pytest packages/orcamind/tests/integration/ -v
+
+# OrcaLab performance / benchmark tests (no services required)
+pytest packages/orcalab/tests/performance/ -v
 ```
 
-The test suite has 80+ test files across unit and integration categories.
+The test suite has 80+ test files across unit, integration, and performance categories.
 
 The OrcaLab API integration tests run without a live database, Prefect server, or MLflow instance. An `ASGITransport` client fixture pre-populates `app.state` manually (bypassing the ASGI lifespan) and overrides all dependency providers via `dependency_overrides`, so tests exercise the full request/response cycle including middleware, routing, and validation while every external call goes to an `AsyncMock`.
 
@@ -47,6 +50,8 @@ The OrcaMind ↔ OrcaLab bidirectional integration tests run without a live Orca
 The visualization unit tests run without a live Streamlit or Plotly install. A session-scoped `_patch_streamlit` fixture in `tests/unit/visualization/conftest.py` replaces both libraries in `sys.modules` before any page or component module is imported, so the pure data-processing functions can be tested independently of the Streamlit runtime.
 
 OrcaMind integration tests auto-skip when their target service port is unreachable — run `make docker-up` first to exercise them.
+
+The performance benchmark tests in `tests/performance/` make executable compute-efficiency assertions that cannot be expressed as ordinary unit tests. They drive deterministic synthetic sweeps — no external services, no randomness — and enforce measurable invariants about algorithm behaviour at scale. Currently the tier contains `TestASHAPruningSavings`, which simulates 20-trial hyperparameter sweeps on a concave-quadratic learning-curve objective and asserts that ASHA executes ≤60% of the steps an unpruned baseline would require (≥40% compute savings). The scaling test additionally runs a 27-trial cohort and asserts that savings for the larger cohort are at least as good as for the 20-trial baseline, enforcing the monotonicity property directly.
 
 ---
 
