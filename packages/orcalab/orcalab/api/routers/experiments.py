@@ -112,6 +112,8 @@ async def experiment_live(websocket: WebSocket, experiment_id: UUID) -> None:
                 {
                     "experiment_id": str(experiment_id),
                     "status": experiment.status,
+                    "epoch": metrics.get("epoch"),
+                    "loss": metrics.get("loss"),
                     "metrics": metrics,
                 }
             )
