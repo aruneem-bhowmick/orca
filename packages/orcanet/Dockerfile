@@ -1,7 +1,7 @@
 # ── Stage 1: builder ─────────────────────────────────────────────────────────
 FROM python:3.11-slim AS builder
 
-RUN pip install --no-cache-dir uv==0.1.40
+RUN pip install --no-cache-dir uv==0.6.16
 
 WORKDIR /build
 
