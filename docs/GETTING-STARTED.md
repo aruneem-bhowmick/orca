@@ -26,6 +26,7 @@ uv venv && source .venv/bin/activate   # Windows: .venv\Scripts\activate
 uv pip install -e packages/orca-shared
 uv pip install -e "packages/orcamind[dev]"
 uv pip install -e "packages/orcalab[dev]"
+uv pip install -e "packages/orcanet[dev]"
 
 # Start backing services (Prefect required by OrcaLab)
 docker compose -f docker-compose.dev.yml up -d postgres redis minio mlflow prefect
@@ -43,11 +44,16 @@ docker compose -f docker-compose.dev.yml up -d orcalab
 # Start the Streamlit dashboard (waits for OrcaLab API to be healthy)
 docker compose -f docker-compose.dev.yml up -d orcalab-dashboard
 
+# Start OrcaNet (waits for postgres, orcamind, and orcalab to be healthy)
+docker compose -f docker-compose.dev.yml up -d orcanet
+
 # Verify
 curl http://localhost:8000/health
 # → {"status":"healthy","db":true,"faiss":false,"mlflow":true}
 curl http://localhost:8001/health
 # → {"status":"healthy","db":true,"prefect":true}
+curl http://localhost:8002/health
+# → {"status":"ok","orcamind":"http://orcamind:8000","orcalab":"http://orcalab:8001"}
 # Dashboard — open in browser: http://localhost:8502
 ```
 
@@ -109,4 +115,12 @@ orcalab serve --reload
 
 orcalab dashboard
 # Streamlit dashboard: http://localhost:8502
+
+# 9. (Optional) Start the OrcaNet transfer agent
+export ORCAMIND_API_URL="http://localhost:8000"
+export ORCALAB_API_URL="http://localhost:8001"
+# export OPENAI_API_KEY="sk-..."  # required for LLM re-ranking
+
+orcanet serve --reload
+# Interactive docs: http://localhost:8002/docs
 ```
