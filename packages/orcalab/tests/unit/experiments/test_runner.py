@@ -339,9 +339,13 @@ class TestTimeoutBehaviour:
         exp = _make_experiment(epochs=5)
         runner, _, _ = _make_runner(_always_ok_factory())
 
+        async def _close_and_timeout(coro, timeout):
+            coro.close()
+            raise asyncio.TimeoutError
+
         with patch(
             "orcalab.experiments.runner.asyncio.wait_for",
-            side_effect=asyncio.TimeoutError,
+            side_effect=_close_and_timeout,
         ):
             result = await runner.run(exp)
 
@@ -352,8 +356,9 @@ class TestTimeoutBehaviour:
         runner, _, _ = _make_runner(_always_ok_factory(), max_retries=2)
         wait_for_call_count = [0]
 
-        async def _raise_timeout(*_args, **_kwargs):
+        async def _raise_timeout(coro, *_args, **_kwargs):
             wait_for_call_count[0] += 1
+            coro.close()
             raise asyncio.TimeoutError
 
         with patch("orcalab.experiments.runner.asyncio.wait_for", side_effect=_raise_timeout):
@@ -368,8 +373,9 @@ class TestTimeoutBehaviour:
         runner, _, _ = _make_runner(_always_ok_factory(), max_retries=0)
         call_count = [0]
 
-        async def _raise_timeout(*_args, **_kwargs):
+        async def _raise_timeout(coro, *_args, **_kwargs):
             call_count[0] += 1
+            coro.close()
             raise asyncio.TimeoutError
 
         with patch("orcalab.experiments.runner.asyncio.wait_for", side_effect=_raise_timeout):
@@ -382,9 +388,13 @@ class TestTimeoutBehaviour:
         exp = _make_experiment(epochs=5)
         runner, _, artifact_mgr = _make_runner(_always_ok_factory(), max_retries=0)
 
+        async def _close_and_timeout(coro, timeout):
+            coro.close()
+            raise asyncio.TimeoutError
+
         with patch(
             "orcalab.experiments.runner.asyncio.wait_for",
-            side_effect=asyncio.TimeoutError,
+            side_effect=_close_and_timeout,
         ):
             await runner.run(exp)
 
