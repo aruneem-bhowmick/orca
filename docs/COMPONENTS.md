@@ -1,4 +1,4 @@
-# Components
+﻿# Components
 
 > Part of the [Orca](../README.md) meta-learning platform.
 
@@ -1190,7 +1190,7 @@ API calls inside page modules are patched at call-site using `unittest.mock.patc
 
 ### REST API (`orcalab.api`)
 
-10 REST endpoints and 1 WebSocket endpoint served by FastAPI, documented at `GET /docs`. The service runs on port 8001 by default and is launched via `orcalab serve` or `uvicorn orcalab.api.main:create_app`.
+10 REST endpoints and 1 WebSocket endpoint served by FastAPI, documented at `GET /docs`. The service runs on port 8001 by default and is launched via `orcalab serve` or `uvicorn orcalab.api.main:app`.
 
 
 | Method   | Path                                 | Status | Description                                                                                                   |
@@ -1211,7 +1211,7 @@ API calls inside page modules are patched at call-site using `unittest.mock.patc
 
 **Architecture highlights:**
 
-- **`create_app()` factory** — DB engine and `async_sessionmaker` initialised once at ASGI lifespan startup and stored on `app.state`. `app.state.sweeps: dict[str, dict]` (in-memory sweep store) is also initialised at startup and disposed gracefully on shutdown.
+- **`create_app()` factory + module-level `app` instance** — `app = create_app()` is declared at module scope so that `uvicorn orcalab.api.main:app` resolves correctly at container startup. DB engine and `async_sessionmaker` are initialised once at ASGI lifespan startup and stored on `app.state`. `app.state.sweeps: dict[str, dict]` (in-memory sweep store) is also initialised at startup and disposed gracefully on shutdown.
 - **Dependency injection** — `get_db` yields an `AsyncSession`; `get_experiment_repo` and `get_search_space_repo` inject typed repository instances; `get_sweeps_store` returns `app.state.sweeps`. All dependencies are overridable in tests via `dependency_overrides`.
 - **CORS — deny by default** — `allow_origins=[]` and `allow_credentials=False` when the `CORS_ORIGINS` env var is not set. When set, origins are parsed from a comma-separated list.
 - **Request logging** — `RequestLoggingMiddleware` logs every request with method, path, status code, and elapsed time in milliseconds. Uses `try/finally` so the log line is always written even when `call_next` raises (defaulting to status 500 in that case).
@@ -1231,7 +1231,11 @@ The API test suite lives under `tests/integration/api/` and requires no running 
 | `test_sweeps.py`              | 16    | POST 202, sweep_id in response, sweep stored, no Prefect call when URL unset, 422 validation, search_space stored, status 200/404, results sorted/empty/404 |
 | `test_search_spaces.py`       | 10    | Create (201, search_space_id, repo call, definition forwarded, name passed), list (200, list, repo call, records, pagination) |
 | `test_websocket.py`           | 7     | Accepts connection, streams metrics, closes on completed/failed, error on unknown id, experiment_id in messages, handles disconnect |
-| **Total**                     | **62**|                                                                                                      |
+| `test_dockerfile.py`          | 12    | Multi-stage build structure, builder uv install, runtime venv copy, source copy, HEALTHCHECK, EXPOSE, CMD |
+| `test_docker_compose.py`      | 18    | orcalab service config (env vars, depends_on, healthcheck, port); orcalab-dashboard service (port, command, ORCALAB_API_URL) |
+| `test_init_prefect.py`        | 6     | Work-pool creation args (prefect work-pool create orcalab-pool --type process), check=True |
+| `test_app_module_export.py`   | 9     | Module-level app attribute exists, is FastAPI instance, has correct title, all route prefixes registered |
+| **Total**                     | **107**|                                                                                                     |
 
 ---
 

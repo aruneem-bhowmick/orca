@@ -179,6 +179,26 @@ services:
       start_period: 30s
       retries: 3
 
+  # ── OrcaLab Dashboard (Streamlit) ───────────────────────────────────────────
+  orcalab-dashboard:
+    build:
+      context: .
+      dockerfile: packages/orcalab/Dockerfile
+    <<: [*restart-policy, *default-logging]
+    command:
+      - streamlit
+      - run
+      - /app/orcalab/visualization/app.py
+      - --server.port=8502
+      - --server.address=0.0.0.0
+    ports:
+      - "8502:8502"
+    environment:
+      ORCALAB_API_URL: http://orcalab:8001
+    depends_on:
+      orcalab:
+        condition: service_healthy
+
   # ── OrcaNet (stub — future package) ─────────────────────────────────────────
   # orcanet:
   #   build:
