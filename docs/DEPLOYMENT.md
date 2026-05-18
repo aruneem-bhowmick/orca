@@ -75,8 +75,8 @@ OrcaNet  (port 8002) ←─ depends on postgres, orcamind, orcalab
 | Variable           | Required | Default (dev)                                          | Description                                   |
 |--------------------|----------|--------------------------------------------------------|-----------------------------------------------|
 | `DATABASE_URL`     | yes      | `postgresql+asyncpg://orca:orca_dev_secret@postgres:5432/orca_registry` | Async PostgreSQL connection string |
-| `ORCAMIND_API_URL` | no       | `http://localhost:8000`                                | OrcaMind service base URL; source task retrieval and model recommendation degrade gracefully when unset |
-| `ORCALAB_API_URL`  | no       | `http://localhost:8001`                                | OrcaLab service base URL; validation dispatch degrades gracefully when unset |
+| `ORCAMIND_API_URL` | no       | `http://orcamind:8000`                                 | OrcaMind service base URL; source task retrieval and model recommendation degrade gracefully when unset |
+| `ORCALAB_API_URL`  | no       | `http://orcalab:8001`                                  | OrcaLab service base URL; validation dispatch degrades gracefully when unset |
 | `OPENAI_API_KEY`   | no       | —                                                      | OpenAI API key; LLM re-ranking step skipped when unset (use `LLM_PROVIDER=anthropic` with `ANTHROPIC_API_KEY` to swap providers) |
 
 ---
