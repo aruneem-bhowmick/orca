@@ -42,6 +42,18 @@ The `←→` arrow between OrcaMind and OrcaLab represents an active two-way exc
 
 Both directions are fully resilient: network and HTTP errors (`ConnectError`, `TimeoutException`, `HTTPStatusError`) degrade gracefully — sweeps start without priors and run to completion even when OrcaMind is unreachable.
 
+### OrcaNet Three-Way Integration
+
+OrcaNet orchestrates both OrcaMind and OrcaLab to deliver end-to-end knowledge transfer:
+
+| Direction | When | Mechanism |
+|---|---|---|
+| **OrcaNet → OrcaMind** (source retrieval) | At recommendation time | `OrcaMindClient.get_best_model(source_task_id)` retrieves the best-performing model config for a source task; `OrcaMindClient.recommend_model(target_task_id)` fetches candidate architectures for the target domain |
+| **OrcaNet → OrcaLab** (validation dispatch) | After scoring, when `transfer_score > 0.4` | `OrcaLabClient.create_experiment(task_id, model_config, tags)` triggers a validation run using the proposed transfer configuration; `wait_for_completion()` polls until the experiment reaches a terminal state |
+| **OrcaLab → OrcaNet** (validation result) | On experiment completion | Validated accuracy from `ExperimentResult.metrics` is written back to the `transfer_mappings` row, closing the loop and making the result available to future queries |
+
+All three inter-service calls are guarded by timeouts and degrade gracefully — a transfer recommendation is always returned even if OrcaLab validation has not yet completed or if OrcaMind is temporarily unreachable.
+
 ---
 
 ## Repository Structure
@@ -126,11 +138,31 @@ orca/
 │                   ├── test_search_spaces.py # Create and list search space records
 │                   └── test_websocket.py     # Direct handler invocation — metrics stream, disconnect, terminal status
 │
+│   └── orcanet/                      # Cross-domain knowledge transfer agent (port 8002)
+│       ├── orcanet/
+│       │   ├── embeddings/           # Domain-adversarial embedder (DANN), text/stats fusion, architecture graph embedder
+│       │   ├── transfer/             # CKA feature transfer, weight transfer, architecture adaptation, multi-task training
+│       │   ├── retrieval/            # Three-stage hybrid retrieval (FAISS → PostgreSQL metadata filter → LLM re-ranking)
+│       │   ├── reasoning/            # LangChain ReAct agent, Pydantic-validated response models, retry logic
+│       │   │   └── prompts/          # Transfer explanation, task similarity, architecture recommendation templates
+│       │   ├── api/                  # FastAPI service (8 endpoints) — port 8002
+│       │   └── cli.py                # Typer CLI — serve and version commands
+│       ├── config/                   # Hydra YAML configs
+│       │   ├── config.yaml           # Root: llm, retrieval thresholds, orcamind/orcalab URLs
+│       │   ├── retriever/hybrid.yaml # FAISS index path, top-k thresholds, similarity threshold
+│       │   ├── embedder/cross_domain.yaml  # DANN dims: input=25, embedding=64, n_domains=10
+│       │   └── llm/openai.yaml       # Provider (openai), model (gpt-4-turbo), temperature
+│       ├── notebooks/
+│       │   └── cross_domain_transfer_demo.ipynb  # Interactive end-to-end pipeline notebook
+│       └── tests/
+│           ├── unit/                 # Package structure, CLI smoke tests, config validation
+│           └── integration/          # API integration tests (planned)
+│
 ├── scripts/
 │   ├── bootstrap_meta_dataset.py    # Seed registry from OpenML CC-18 / CTR-23
 │   └── init_prefect.py              # Create orcalab-pool Prefect work pool for sweep flow deployments
 │
-├── docker-compose.dev.yml            # Full dev stack: Postgres, Redis, MinIO, MLflow, Prefect, OrcaMind, OrcaLab API (8001), OrcaLab Dashboard (8502)
+├── docker-compose.dev.yml            # Full dev stack: Postgres, Redis, MinIO, MLflow, Prefect, OrcaMind (8000), OrcaLab API (8001), OrcaLab Dashboard (8502), OrcaNet (8002)
 ├── Makefile                          # install, test, lint, type-check, docker-up/down/logs, clean
 ├── pyproject.toml                    # uv workspace config + ruff / mypy / pytest settings
 └── .pre-commit-config.yaml           # ruff + mypy + unit-test hooks
@@ -148,6 +180,9 @@ orca/
 - **learn2learn** + **higher** for differentiable inner-loop optimization (MAML second-order)
 - **FAISS** for approximate nearest-neighbor search over task embeddings
 - **scikit-learn**, **XGBoost**, **SciPy** for selectors and statistical embedders
+- **Domain-Adversarial Neural Networks (DANN)** (Ganin et al. 2016) for domain-invariant task embeddings in OrcaNet
+- **Centered Kernel Alignment (CKA)** (Kornblith et al. 2019) for feature-level transfer scoring in OrcaNet
+- **sentence-transformers** (`all-MiniLM-L6-v2`) for natural-language task description embedding
 
 ### Data & Infrastructure
 
@@ -165,6 +200,7 @@ orca/
 - **FastAPI** + **Uvicorn** for REST APIs; **WebSockets** for real-time metric streaming
 - **Typer** + **Rich** for the CLI
 - **Streamlit** + **Plotly** for the analytics dashboard
+- **LangChain** (`langchain`, `langchain-openai`, `langchain-anthropic`) for the OrcaNet ReAct reasoning agent and tool orchestration
 
 ### Experiment Orchestration (OrcaLab)
 
