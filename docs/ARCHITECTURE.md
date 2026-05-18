@@ -104,7 +104,7 @@ orca/
 │       ├── config/                   # Hydra YAML configs (root, search/bayesian, pruner/asha)
 │       └── tests/
 │           ├── unit/
-│           │   ├── experiments/      # ExperimentLifecycle, ExperimentRunner, BatchExperimentRunner — 56 tests
+│           │   ├── experiments/      # ExperimentLifecycle, ExperimentRunner, BatchExperimentRunner — 61 tests
 │           │   ├── search/           # SearchStrategy, RandomSearch, GridSearch, BayesianSearch, EvolutionarySearch — 78+ tests
 │           │   ├── search_spaces/    # Parameter types, SearchSpace sampling/serialization, SearchSpaceComposer — 44 tests
 │           │   ├── pruning/          # Pruner ABC, MedianStoppingPruner, ASHAPruner, MetaPruner — 90 tests
@@ -114,9 +114,10 @@ orca/
 │           │   │   ├── components/   # test_metric_plots, test_parallel_coords, test_pareto_frontier
 │           │   │   └── pages/        # test_app, test_live_experiments, test_search_progress, test_results_explorer, test_meta_analysis
 │           │   └── *.py              # Package import, metadata, CLI, and config tests
-│           └── integration/
-│               ├── api/              # OrcaLab REST API integration tests — 62 tests (all external deps mocked)
-│               └── (OrcaMind bidirectional flows) # 20 integration tests — respx-mocked OrcaMind HTTP API
+│           ├── integration/
+│           │   ├── api/              # OrcaLab REST API integration tests — 62 tests (all external deps mocked)
+│           │   └── (OrcaMind bidirectional flows) # 20 integration tests — respx-mocked OrcaMind HTTP API
+│           └── performance/          # ASHA compute-savings benchmarks — 4 tests
 │                   ├── conftest.py   # ASGITransport client; pre-populates app.state; dependency_overrides for all repos
 │                   ├── test_health.py        # Root + health endpoints (DB ok, Prefect degraded)
 │                   ├── test_experiments.py   # CRUD, pagination, cancel semantics, atomic update assertion
@@ -174,5 +175,5 @@ orca/
 - **uv** workspace for monorepo package management
 - **ruff** for linting and formatting (line length 100, Python 3.11 target)
 - **mypy** (strict on `orca-shared`) for static type checking
-- **pytest** + **pytest-asyncio** + **pytest-cov** for testing (75+ test files across all packages)
+- **pytest** + **pytest-asyncio** + **pytest-cov** for testing (80+ test files across all packages)
 - **pre-commit** hooks for quality gates on commit and push

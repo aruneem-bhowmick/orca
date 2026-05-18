@@ -334,6 +334,8 @@ result = await runner.run(experiment, pruner=asha_pruner)
 
 **Retry semantics** — all retry attempts occur while the experiment is in `RUNNING` state. The lifecycle records exactly one `QUEUED → RUNNING` entry and exactly one terminal transition (`RUNNING → COMPLETED` or `RUNNING → FAILED`), regardless of retry count. The audit log is never polluted with intermediate failures.
 
+**Timeout semantics** — each attempt is wrapped in `asyncio.wait_for(timeout=self._timeout)`. A `TimeoutError` is treated identically to any other exception: the attempt is counted as failed, the retry counter increments, and once all attempts are exhausted the experiment transitions to `FAILED`. Artifact upload is never attempted when every attempt times out. The `TestTimeoutBehaviour` class in `tests/unit/experiments/test_runner.py` covers this code path with 5 tests: single-attempt failure, exhaustion after retries, zero-retry fast failure, no artifact upload, and recovery when a retry succeeds.
+
 **`TrainableModel` protocol** — any object with a `train_epoch(epoch: int) -> float` method satisfies this interface. The runner is framework-agnostic: PyTorch, scikit-learn, or a mock all work equally.
 
 #### `BatchExperimentRunner` (`batch_runner.py`)
@@ -731,7 +733,7 @@ should_stop = pruner.should_prune(
 - `keep = max(1, n // reduction_factor)` — at least one trial always survives, even when only a single trial has reached the rung.
 - Steps beyond `max_resource` are not rung levels and always return `False`.
 
-**Compute savings** — in a 20-trial sweep with sequential best-first execution, ASHA executes ~100 total steps vs. 1,620 for unpruned runs (>93% savings). The test suite asserts a conservative ≥40% threshold to remain valid across concurrent-execution patterns where the best trial is not always evaluated first.
+**Compute savings** — in a 20-trial sweep with sequential best-first execution, ASHA executes ~100 total steps vs. 1,620 for unpruned runs (>93% savings). The `TestASHAPruningSavings` class in `tests/performance/test_pruning_savings.py` drives a deterministic concave-quadratic synthetic sweep and makes four executable assertions: (1) ≥40% compute savings for 20 trials — a conservative threshold that holds even under concurrent-execution orderings where the best trial is not always evaluated first; (2) the highest-quality trial is never pruned and always runs to `max_resource`; (3) the lowest-quality trial is pruned before completion once a strong competitor has run; (4) savings with 27 trials meet the ≥40% threshold and are at least as large as with 20 trials, enforcing the monotonicity property directly.
 
 #### `MetaPruner` (`meta_pruner.py`)
 
