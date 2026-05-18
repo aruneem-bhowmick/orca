@@ -455,7 +455,7 @@ Dispatches an async meta-adaptation background task and returns immediately. The
 { "job_id": "uuid-string" }
 ```
 
-Poll `GET /api/v1/experiments/{job_id}` to check completion status.
+Poll OrcaLab (`GET http://localhost:8001/api/v1/experiments/{job_id}`) to check completion status. The experiment record is served by OrcaLab on port 8001, not OrcaMind.
 
 ---
 
@@ -536,3 +536,4 @@ All Pydantic models live in `packages/orca-shared/orca_shared/schemas/`.
 | `model.py`         | `ModelConfig`, `ModelSummary`                             |
 | `metrics.py`       | `MetricPoint`, `PerformanceMetrics`, `PerformanceSummary` |
 | `search_space.py`  | `SearchSpaceRecord`                                       |
+
