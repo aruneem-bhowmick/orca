@@ -28,6 +28,7 @@ alembic upgrade head
 | Revision | Description                                                                                                                                                                |
 | -------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `0001`   | Initial schema — all 7 registry tables in FK-safe creation order; deferred `fk_tasks_embedding_id` to resolve the `tasks ↔ embeddings` circular dependency |
+| `0002`   | Add nullable JSONB `metrics` column to `experiments` — stores per-epoch snapshots (`{"loss": float, "epoch": int}`) written by `ExperimentRepository.update_metrics()`; nullable so existing rows default to `NULL` (treated as `{}` by the repository and WebSocket handler); fully reversible via `downgrade` |
 
 
 To generate a new revision after ORM changes:
