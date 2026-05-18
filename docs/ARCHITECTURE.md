@@ -79,7 +79,7 @@ orca/
 │   │       ├── unit/                 # 40+ unit test files (no services required)
 │   │       └── integration/          # API + Docker service smoke tests
 │   │
-│   └── orcalab/                      # Experiment orchestration hub
+│   └── orcalab/                      # Experiment orchestration hub (API port 8001, Dashboard port 8502)
 │       ├── orcalab/
 │       │   ├── experiments/          # Experiment lifecycle (states, runner, batch runner)
 │       │   ├── search/               # SearchStrategy ABC, RandomSearch, GridSearch, BayesianSearch, EvolutionarySearch, MetaInformedSearch
@@ -93,7 +93,7 @@ orca/
 │       │   │   ├── components/       # Reusable Plotly components (metric_plots, parallel_coords, pareto_frontier)
 │       │   │   └── pages/            # Dashboard pages (live_experiments, search_progress, results_explorer, meta_analysis)
 │       │   ├── api/                  # FastAPI app (10 REST + 1 WebSocket endpoint) — port 8001
-│       │   │   ├── main.py           # create_app() factory; ASGI lifespan (DB engine, sweeps dict); health + root endpoints
+│       │   │   ├── main.py           # create_app() factory + module-level app instance (uvicorn entrypoint); ASGI lifespan (DB engine, sweeps dict); health + root endpoints
 │       │   │   ├── middleware.py     # RequestLoggingMiddleware (try/finally); CORS deny-by-default
 │       │   │   ├── deps.py           # get_db, get_experiment_repo, get_search_space_repo, get_sweeps_store
 │       │   │   └── routers/
@@ -113,7 +113,7 @@ orca/
 │           │   │   ├── conftest.py   # Session-scoped _patch_streamlit; saves/restores sys.modules on teardown
 │           │   │   ├── components/   # test_metric_plots, test_parallel_coords, test_pareto_frontier
 │           │   │   └── pages/        # test_app, test_live_experiments, test_search_progress, test_results_explorer, test_meta_analysis
-│           │   └── *.py              # Package import, metadata, CLI, and config tests
+│           │   └── *.py              # Package import, metadata, CLI, config, and deployment validation tests (Dockerfile structure, docker-compose services, Prefect init, app export) — 45 tests
 │           ├── integration/
 │           │   ├── api/              # OrcaLab REST API integration tests — 62 tests (all external deps mocked)
 │           │   └── (OrcaMind bidirectional flows) # 20 integration tests — respx-mocked OrcaMind HTTP API
@@ -126,9 +126,10 @@ orca/
 │                   └── test_websocket.py     # Direct handler invocation — metrics stream, disconnect, terminal status
 │
 ├── scripts/
-│   └── bootstrap_meta_dataset.py    # Seed registry from OpenML CC-18 / CTR-23
+│   ├── bootstrap_meta_dataset.py    # Seed registry from OpenML CC-18 / CTR-23
+│   └── init_prefect.py              # Create orcalab-pool Prefect work pool for sweep flow deployments
 │
-├── docker-compose.dev.yml            # Full dev stack: Postgres, Redis, MinIO, MLflow, Prefect, OrcaMind, OrcaLab
+├── docker-compose.dev.yml            # Full dev stack: Postgres, Redis, MinIO, MLflow, Prefect, OrcaMind, OrcaLab API (8001), OrcaLab Dashboard (8502)
 ├── Makefile                          # install, test, lint, type-check, docker-up/down/logs, clean
 ├── pyproject.toml                    # uv workspace config + ruff / mypy / pytest settings
 └── .pre-commit-config.yaml           # ruff + mypy + unit-test hooks
