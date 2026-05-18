@@ -38,7 +38,9 @@ def test_submodule_importable(submodule: str) -> None:
 
 
 def test_no_submodule_cross_import_side_effects() -> None:
-    """Importing all sub-packages does not leave unexpected names in sys.modules."""
+    """Importing all sub-packages does not introduce unexpected third-party modules."""
+    _stdlib = frozenset(sys.stdlib_module_names)  # available on Python 3.10+
+
     before = set(sys.modules.keys())
     for mod in [
         "orcanet",
@@ -53,6 +55,11 @@ def test_no_submodule_cross_import_side_effects() -> None:
 
     after = set(sys.modules.keys())
     new_mods = after - before
-    # All new modules should be orcanet sub-modules or standard library
-    non_orcanet = {m for m in new_mods if not m.startswith("orcanet")}
-    assert not non_orcanet, f"Unexpected modules registered: {non_orcanet}"
+    # Allow orcanet sub-modules and any stdlib module (including private helpers
+    # like _collections_abc that Python loads as side effects of stdlib imports).
+    unexpected = {
+        m
+        for m in new_mods
+        if not m.startswith("orcanet") and m.split(".")[0].lstrip("_") not in _stdlib
+    }
+    assert not unexpected, f"Unexpected third-party modules registered: {unexpected}"
