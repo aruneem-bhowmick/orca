@@ -1065,7 +1065,7 @@ Auto-refreshing view of all running and recent experiments.
 | Function | Signature | Description |
 |---|---|---|
 | `fetch_experiments` | `(api_url: str) -> list[dict]` | `GET {api_url}/api/v1/experiments`. Raises on any HTTP error. |
-| `fetch_experiment_history` | `(api_url: str, experiment_id: str) -> list[dict]` | `GET {api_url}/api/v1/experiments/{experiment_id}/history`. |
+| `fetch_experiment_history` | `(api_url: str, experiment_id: str) -> list[dict]` | `GET {api_url}/api/v1/experiments/{experiment_id}` — returns the experiment record; callers extract the `metrics` JSONB field (most recent epoch snapshot) as a single-element history list. For real-time per-epoch streaming, use `WS /api/v1/experiments/{id}/live` instead. |
 | `color_for_status` | `(status: str) -> str` | Case-insensitive lookup into `STATUS_COLORS`: `RUNNING` → `#28a745`, `PENDING` → `#6c757d`, `FAILED` → `#dc3545`, `COMPLETED` → `#007bff`. Unknown statuses fall back to gray. |
 | `compute_progress` | `(current_epoch: int \| None, total_epochs: int \| None) -> float` | Returns `float(current_epoch) / float(total_epochs)` clamped to `[0.0, 1.0]`. Returns `0.0` when either argument is `None` or `total_epochs ≤ 0`. Negative epoch values are clamped to `0.0`. |
 
