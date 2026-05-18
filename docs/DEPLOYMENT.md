@@ -8,7 +8,7 @@ This guide covers deploying the full Orca stack using Docker Compose. For local 
 
 ## Service Topology
 
-```
+```text
 PostgreSQL 15  ─────────────────────────────────────┐
 Redis 7         ─────────────────────────────────┐   │
 MinIO           ────────────────────────────┐    │   │
@@ -96,11 +96,11 @@ docker compose -f docker-compose.dev.yml run --rm orcamind python scripts/init_d
 ## Starting the Stack
 
 ```bash
+# Apply database migrations first (required before OrcaMind starts)
+docker compose -f docker-compose.dev.yml run --rm orcamind python scripts/init_db.py
+
 # Start all services
 docker compose -f docker-compose.dev.yml up -d
-
-# Apply database migrations (first run or after schema changes)
-docker compose -f docker-compose.dev.yml run --rm orcamind python scripts/init_db.py
 
 # Initialize the Prefect work pool (first run only)
 docker compose -f docker-compose.dev.yml run --rm orcalab python scripts/init_prefect.py
@@ -108,6 +108,8 @@ docker compose -f docker-compose.dev.yml run --rm orcalab python scripts/init_pr
 # Tail logs
 docker compose -f docker-compose.dev.yml logs -f orcamind orcalab
 ```
+
+> After schema changes on a running stack, re-run `init_db.py` (`docker compose ... run --rm orcamind python scripts/init_db.py`) while services are up — the migration runner uses `NullPool` and exits cleanly without disrupting live connections.
 
 The `init_prefect.py` script creates the `orcalab-pool` Prefect work pool (type: `process`) that the `meta_informed_sweep` deployment requires. This is a one-time operation per Prefect server instance.
 
@@ -175,7 +177,7 @@ Replace the dev-mode inline passwords with proper secrets before deploying to an
 
 - Use Docker secrets (`secrets:` block) or environment files (`.env`) excluded from version control.
 - Rotate `POSTGRES_PASSWORD`, `MINIO_ROOT_PASSWORD`, and `MINIO_SECRET_KEY`.
-- Set `CORS_ORIGINS` to your actual frontend origin(s) rather than leaving it open.
+- Set `CORS_ORIGINS` to your frontend origin(s); if unset, CORS requests are denied by default.
 
 ### Persistence
 
