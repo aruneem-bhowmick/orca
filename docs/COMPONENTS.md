@@ -16,7 +16,7 @@ Seven fully-typed `Mapped[]` models backed by PostgreSQL:
 | `tasks`             | ML tasks / datasets          | `name`, `domain`, `task_type`, `n_samples`, `n_features`, `n_classes`, `metadata` (JSONB) |
 | `embeddings`        | Task embedding vectors       | `embedding_vector` (ARRAY Float), `embedding_type`, `dimension`, `model_version`          |
 | `models`            | Model architectures          | `name`, `architecture`, `config` (JSONB), `parameter_count`, `flops`                      |
-| `experiments`       | Training runs                | `task_id`, `model_id`, `training_config` (JSONB), `status`, `mlflow_run_id`               |
+| `experiments`       | Training runs                | `task_id`, `model_id`, `training_config` (JSONB), `status`, `mlflow_run_id`, `metrics` (JSONB, nullable) |
 | `performances`      | Per-run metrics              | `metric_name`, `metric_value`, `epoch`, `is_final`, `metadata` (JSONB)                    |
 | `transfer_mappings` | Task-to-task transfer scores | `source_task_id`, `target_task_id`, `transfer_score`, `transfer_type`                     |
 | `search_spaces`     | Hyperparameter definitions   | `name`, `definition` (JSONB), `parent_id` (self-referential tree)                         |
@@ -29,12 +29,14 @@ Seven fully-typed `Mapped[]` models backed by PostgreSQL:
 Async repository pattern over all tables:
 
 - `TaskRepository` — `list_all()`, `list_by_domain()`, `list_by_type()`, `get_by_id()`, `create()`, `update_embedding()`
-- `ExperimentRepository` — `create()`, `get_by_id()`, `list_by_task()`, `list_all(limit, offset)`, `update_status()`, `update_status_if_current(experiment_id, from_status, to_status) -> bool`, `mark_complete()`
+- `ExperimentRepository` — `create()`, `get_by_id()`, `list_by_task()`, `list_all(limit, offset)`, `update_status()`, `update_status_if_current(experiment_id, from_status, to_status) -> bool`, `mark_complete()`, `update_metrics(experiment_id, metrics) -> None`
 - `PerformanceRepository` — `log_metric()`, `get_final_metrics()`, `get_history()`, `list_all_with_context()`
 - `EmbeddingRepository` — `create()`, `get_by_id()`
 - `SearchSpaceRepository` — `create(name, definition)`, `list_all(limit, offset)`
 
 `list_all` on both `ExperimentRepository` and `SearchSpaceRepository` applies `order_by(primary_key)` so that `OFFSET`-based pagination returns consistent results as the table changes. `update_status_if_current` issues an atomic conditional `UPDATE … WHERE status = from_status` and returns `True` when one row was affected, `False` when the status had already changed — enabling optimistic concurrency without a separate SELECT.
+
+`update_metrics(experiment_id, metrics)` merges the supplied dict into the stored `experiments.metrics` JSONB column using a read-modify-write cycle. The SELECT issues `WITH FOR UPDATE` to acquire a row-level lock before reading the current value, preventing concurrent epoch writes from overwriting each other. If the experiment row does not exist the call is a no-op. After updating the in-memory dict it calls `session.flush()` so the change is visible within the current transaction without requiring a full commit.
 
 ### Pydantic v2 Schemas (`schemas/`)
 
@@ -303,6 +305,7 @@ runner = ExperimentRunner(
     max_retries=2,      # must be >= 0
     timeout=3600,       # seconds; must be > 0
     model_factory=lambda cfg: MyModel(**cfg),
+    repository=experiment_repo,   # optional — enables per-epoch DB writes
 )
 result = await runner.run(experiment, pruner=asha_pruner)
 ```
@@ -316,6 +319,7 @@ result = await runner.run(experiment, pruner=asha_pruner)
 | `max_retries` | `int` | `2` | Maximum retry attempts after the first failure. Raises `ValueError` if `< 0`. |
 | `timeout` | `int` | `3600` | Per-attempt wall-clock timeout in seconds. Raises `ValueError` if `<= 0`. |
 | `model_factory` | `Callable[[dict], TrainableModel] \| None` | `None` | Called with `experiment.arch_config` to produce a `TrainableModel`. Omitting it raises `NotImplementedError` at runtime. |
+| `repository` | `Any \| None` | `None` → `_NullRepository` | Any object with an `async update_metrics(experiment_id, metrics)` method. When `None`, a no-op `_NullRepository` is used so the runner works without a live database session. Inject a real `ExperimentRepository` to enable per-epoch DB writes that the WebSocket live stream can read. |
 
 **`run(experiment, pruner=None)` execution flow:**
 
@@ -325,8 +329,9 @@ result = await runner.run(experiment, pruner=asha_pruner)
    - Call `model_factory(experiment.arch_config)` to instantiate the model.
    - Log `training_config` params to MLflow.
    - Loop epochs `1 → N` (`training_config.epochs`, default 10):
-     - Call `model.train_epoch(epoch) → float` (the primary metric).
-     - Log the metric to MLflow with the epoch as `step`.
+     - Call `model.train_epoch(epoch) → float` (the primary metric, representing training loss).
+     - Log the metric to MLflow under the key `"loss"` with the epoch number as `step`.
+     - Write `{"loss": value, "epoch": N}` to the repository via `repository.update_metrics()` so the WebSocket live stream reflects current per-epoch progress. The write is a no-op when no repository is injected.
      - If `pruner.should_prune(trial_id, epoch, metric, history)` returns `True`: transition to `FAILED(reason="pruned")` and return immediately. The checkpoint is **not** uploaded.
    - On successful epoch loop: upload checkpoint via `artifact_manager`, transition to `COMPLETED`, return.
    - On exception or timeout: record the error, try the next attempt.
@@ -1201,7 +1206,7 @@ API calls inside page modules are patched at call-site using `unittest.mock.patc
 | `GET`    | `/api/v1/experiments`                | 200    | Paginated experiment list (`limit`, `offset`); deterministic order by `experiment_id`                         |
 | `GET`    | `/api/v1/experiments/{id}`           | 200    | Experiment detail — 404 if not found; 422 on non-UUID path segment                                           |
 | `DELETE` | `/api/v1/experiments/{id}`           | 200    | Cancel a `pending`, `queued`, or `running` experiment; 409 for terminal statuses; 404 if not found            |
-| `WS`     | `/api/v1/experiments/{id}/live`      | —      | WebSocket — streams `{experiment_id, epoch, metric, status}` JSON every 2 s; closes on terminal status        |
+| `WS`     | `/api/v1/experiments/{id}/live`      | —      | WebSocket — streams `{experiment_id, status, epoch, loss, metrics}` JSON every 2 s; `epoch` and `loss` are top-level scalar fields extracted from the stored `metrics` dict (`null` before the first runner epoch write); the full `metrics` dict is included for backward compatibility; closes on terminal status |
 | `POST`   | `/api/v1/sweeps`                     | 202    | Trigger Prefect `meta_informed_sweep` flow; store sweep state; returns `{sweep_id}`                           |
 | `GET`    | `/api/v1/sweeps/{id}`                | 200    | Sweep status — `{n_trials_total, n_completed, n_failed, best_result}`; 404 for unknown sweep                  |
 | `GET`    | `/api/v1/sweeps/{id}/results`        | 200    | Trial results sorted by objective descending; 404 for unknown sweep                                           |
@@ -1217,7 +1222,7 @@ API calls inside page modules are patched at call-site using `unittest.mock.patc
 - **Request logging** — `RequestLoggingMiddleware` logs every request with method, path, status code, and elapsed time in milliseconds. Uses `try/finally` so the log line is always written even when `call_next` raises (defaulting to status 500 in that case).
 - **Atomic experiment cancellation** — `DELETE /experiments/{id}` calls `ExperimentLifecycle.transition(CANCELLED)`, which uses `repository.update_status_if_current` — a single conditional `UPDATE WHERE status = current_status`. A concurrent status change that causes zero rows to be updated raises `InvalidTransitionError`, surfaced as 409 to the caller rather than silently discarding the conflict.
 - **Prefect triggering** — `POST /sweeps` POSTs to `{PREFECT_API_URL}/deployments/name/meta_informed_sweep/default/create_flow_run` via `httpx.AsyncClient`. Non-2xx responses emit a `logger.warning` without failing the request. When `PREFECT_API_URL` is not set, no HTTP call is made and `flow_run_id` is stored as `None`.
-- **WebSocket metric streaming** — the `/experiments/{id}/live` handler polls the DB every 2 s using the app-level `db_sessionmaker` directly (bypassing the HTTP-only `get_db` dependency). It closes automatically on `COMPLETED`, `FAILED`, or `CANCELLED` status, or on `WebSocketDisconnect` from the client.
+- **WebSocket metric streaming** — the `/experiments/{id}/live` handler polls the DB every 2 s using the app-level `db_sessionmaker` directly (bypassing the HTTP-only `get_db` dependency). Every message includes `epoch` and `loss` as top-level scalar fields extracted from `experiment.metrics` (both `null` before the runner's first epoch write), plus the full `metrics` dict for backward compatibility. Clients can therefore assert `"epoch" in data` and `"loss" in data` unconditionally — the fields are always present, with `null` values before training starts. The handler closes automatically on `COMPLETED`, `FAILED`, or `CANCELLED` status, or on `WebSocketDisconnect` from the client.
 - **Sweeps — in-memory state** — sweep records are stored in `app.state.sweeps` (a plain dict keyed by `sweep_id`). `best_result` is computed on-read as `max(results, key=objective)`. This avoids requiring a DB migration for sweep state.
 
 **Integration test coverage:**
@@ -1230,12 +1235,12 @@ The API test suite lives under `tests/integration/api/` and requires no running 
 | `test_experiments.py`         | 23    | Create (201, pending status, repo call), list (pagination, limit/offset), get (200/404/422), delete (cancel, 409, 404, atomic assert) |
 | `test_sweeps.py`              | 16    | POST 202, sweep_id in response, sweep stored, no Prefect call when URL unset, 422 validation, search_space stored, status 200/404, results sorted/empty/404 |
 | `test_search_spaces.py`       | 10    | Create (201, search_space_id, repo call, definition forwarded, name passed), list (200, list, repo call, records, pagination) |
-| `test_websocket.py`           | 7     | Accepts connection, streams metrics, closes on completed/failed, error on unknown id, experiment_id in messages, handles disconnect |
+| `test_websocket.py`           | 15    | Accepts connection, streams metrics, closes on completed/failed, error on unknown id, experiment_id in messages, handles disconnect; `TestWebSocketSpecAssertions` (8 tests) — top-level `epoch` and `loss` fields present in every message, stored values reflected, backward-compat `metrics` dict, `null` before first write, epoch number advances across successive messages |
 | `test_dockerfile.py`          | 12    | Multi-stage build structure, builder uv install, runtime venv copy, source copy, HEALTHCHECK, EXPOSE, CMD |
 | `test_docker_compose.py`      | 18    | orcalab service config (env vars, depends_on, healthcheck, port); orcalab-dashboard service (port, command, ORCALAB_API_URL) |
 | `test_init_prefect.py`        | 6     | Work-pool creation args (prefect work-pool create orcalab-pool --type process), check=True |
 | `test_app_module_export.py`   | 9     | Module-level app attribute exists, is FastAPI instance, has correct title, all route prefixes registered |
-| **Total**                     | **107**|                                                                                                     |
+| **Total**                     | **115**|                                                                                                     |
 
 ---
 
