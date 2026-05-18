@@ -199,16 +199,34 @@ services:
       orcalab:
         condition: service_healthy
 
-  # ── OrcaNet (stub — future package) ─────────────────────────────────────────
-  # orcanet:
-  #   build:
-  #     context: .
-  #     dockerfile: packages/orcanet/Dockerfile
-  #   ports:
-  #     - "8002:8002"
-  #   depends_on:
-  #     - postgres
-  #     - orcamind
+  # ── OrcaNet ──────────────────────────────────────────────────────────────────
+  orcanet:
+    build:
+      context: .
+      dockerfile: packages/orcanet/Dockerfile
+    <<: [*restart-policy, *default-logging]
+    ports:
+      - "8002:8002"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://orca:orca_dev_secret@postgres:5432/orca_registry
+      ORCAMIND_API_URL: http://orcamind:8000
+      ORCALAB_API_URL: http://orcalab:8001
+      OPENAI_API_KEY: ${OPENAI_API_KEY}
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_started
+      orcamind:
+        condition: service_healthy
+      orcalab:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8002/health').raise_for_status()"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
 
 volumes:
   postgres-data:

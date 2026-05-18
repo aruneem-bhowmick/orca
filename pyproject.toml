@@ -1,5 +1,5 @@
 [tool.uv.workspace]
-members = ["packages/orca-shared", "packages/orcamind", "packages/orcalab"]
+members = ["packages/orca-shared", "packages/orcamind", "packages/orcalab", "packages/orcanet"]
 
 [tool.ruff]
 line-length = 100
@@ -15,7 +15,7 @@ module = "orca_shared.*"
 strict = true
 
 [tool.pytest.ini_options]
-testpaths = ["packages/orca-shared/tests", "packages/orcamind/tests", "packages/orcalab/tests"]
+testpaths = ["packages/orca-shared/tests", "packages/orcamind/tests", "packages/orcalab/tests", "packages/orcanet/tests"]
 asyncio_mode = "auto"
 addopts = "--cov=packages --cov-report=term-missing"
 markers = [
