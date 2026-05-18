@@ -5,6 +5,8 @@ from __future__ import annotations
 import importlib
 import sys
 
+import pytest
+
 
 def test_package_importable() -> None:
     """orcanet is importable without errors."""
@@ -19,34 +21,20 @@ def test_version_attribute() -> None:
     assert orcanet.__version__
 
 
-def test_submodule_transfer_importable() -> None:
-    """orcanet.transfer sub-package is importable."""
-    importlib.import_module("orcanet.transfer")
-
-
-def test_submodule_embeddings_importable() -> None:
-    """orcanet.embeddings sub-package is importable."""
-    importlib.import_module("orcanet.embeddings")
-
-
-def test_submodule_reasoning_importable() -> None:
-    """orcanet.reasoning sub-package is importable."""
-    importlib.import_module("orcanet.reasoning")
-
-
-def test_submodule_reasoning_prompts_importable() -> None:
-    """orcanet.reasoning.prompts sub-package is importable."""
-    importlib.import_module("orcanet.reasoning.prompts")
-
-
-def test_submodule_retrieval_importable() -> None:
-    """orcanet.retrieval sub-package is importable."""
-    importlib.import_module("orcanet.retrieval")
-
-
-def test_submodule_api_importable() -> None:
-    """orcanet.api sub-package is importable."""
-    importlib.import_module("orcanet.api")
+@pytest.mark.parametrize(
+    "submodule",
+    [
+        "orcanet.transfer",
+        "orcanet.embeddings",
+        "orcanet.reasoning",
+        "orcanet.reasoning.prompts",
+        "orcanet.retrieval",
+        "orcanet.api",
+    ],
+)
+def test_submodule_importable(submodule: str) -> None:
+    """Every orcanet sub-package is importable without errors."""
+    importlib.import_module(submodule)
 
 
 def test_no_submodule_cross_import_side_effects() -> None:
