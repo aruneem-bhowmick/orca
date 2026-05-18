@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import uuid
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, call, patch
@@ -326,3 +327,85 @@ class TestRunnerConstruction:
         runner = ExperimentRunner(tracker=tracker, artifact_manager=artifact_mgr)
         assert runner._max_retries == 2
         assert runner._timeout == 3600
+
+
+# ---------------------------------------------------------------------------
+# Timeout behaviour
+# ---------------------------------------------------------------------------
+
+
+class TestTimeoutBehaviour:
+    async def test_timeout_returns_failed_status(self) -> None:
+        exp = _make_experiment(epochs=5)
+        runner, _, _ = _make_runner(_always_ok_factory())
+
+        with patch(
+            "orcalab.experiments.runner.asyncio.wait_for",
+            side_effect=asyncio.TimeoutError,
+        ):
+            result = await runner.run(exp)
+
+        assert result.status == "failed"
+
+    async def test_timeout_retries_and_returns_failed_after_exhaustion(self) -> None:
+        exp = _make_experiment(epochs=5)
+        runner, _, _ = _make_runner(_always_ok_factory(), max_retries=2)
+        wait_for_call_count = [0]
+
+        async def _raise_timeout(*_args, **_kwargs):
+            wait_for_call_count[0] += 1
+            raise asyncio.TimeoutError
+
+        with patch("orcalab.experiments.runner.asyncio.wait_for", side_effect=_raise_timeout):
+            result = await runner.run(exp)
+
+        assert result.status == "failed"
+        # 1 initial attempt + 2 retries = 3 total calls
+        assert wait_for_call_count[0] == 3
+
+    async def test_timeout_with_zero_retries_fails_after_one_attempt(self) -> None:
+        exp = _make_experiment(epochs=5)
+        runner, _, _ = _make_runner(_always_ok_factory(), max_retries=0)
+        call_count = [0]
+
+        async def _raise_timeout(*_args, **_kwargs):
+            call_count[0] += 1
+            raise asyncio.TimeoutError
+
+        with patch("orcalab.experiments.runner.asyncio.wait_for", side_effect=_raise_timeout):
+            result = await runner.run(exp)
+
+        assert result.status == "failed"
+        assert call_count[0] == 1
+
+    async def test_timeout_does_not_call_upload_model(self) -> None:
+        exp = _make_experiment(epochs=5)
+        runner, _, artifact_mgr = _make_runner(_always_ok_factory(), max_retries=0)
+
+        with patch(
+            "orcalab.experiments.runner.asyncio.wait_for",
+            side_effect=asyncio.TimeoutError,
+        ):
+            await runner.run(exp)
+
+        artifact_mgr.upload_model.assert_not_awaited()
+
+    async def test_succeeds_after_initial_timeout_if_retry_works(self) -> None:
+        exp = _make_experiment(epochs=2)
+        runner, tracker, _ = _make_runner(_always_ok_factory(), max_retries=2)
+        call_count = [0]
+
+        original_wait_for = asyncio.wait_for
+
+        async def _fail_first_then_succeed(coro, timeout):
+            call_count[0] += 1
+            if call_count[0] == 1:
+                coro.close()
+                raise asyncio.TimeoutError
+            return await original_wait_for(coro, timeout=timeout)
+
+        with patch("orcalab.experiments.runner.asyncio.wait_for", side_effect=_fail_first_then_succeed):
+            result = await runner.run(exp)
+
+        assert result.status == "completed"
+        assert call_count[0] == 2
