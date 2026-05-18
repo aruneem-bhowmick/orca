@@ -49,6 +49,13 @@ def _simulate(pruner: ASHAPruner) -> int:
 
 
 class TestASHAPruningSavings:
+    """Executable compute-savings assertions for the ASHA pruner.
+
+    Each test drives a deterministic synthetic sweep — trials ordered by quality,
+    metrics generated from a concave quadratic curve — and makes a measurable claim
+    about ASHA's pruning behaviour that would catch a regression in the pruner logic.
+    """
+
     def test_compute_savings_at_least_40_percent(self) -> None:
         """ASHA must execute ≤60% of the steps of an unpruned baseline."""
         pruner = ASHAPruner(
