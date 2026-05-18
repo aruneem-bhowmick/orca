@@ -114,6 +114,7 @@ def make_experiment_row(**kwargs) -> SimpleNamespace:
         started_at=None,
         completed_at=None,
         created_by=None,
+        metrics=None,
     )
     defaults.update(kwargs)
     return SimpleNamespace(**defaults)

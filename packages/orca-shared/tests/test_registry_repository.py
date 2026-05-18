@@ -268,6 +268,77 @@ class TestExperimentRepositoryMarkComplete:
         assert result is None
 
 
+class TestExperimentRepositoryUpdateMetrics:
+    async def test_merges_new_keys_into_empty_metrics(self, mock_session, experiment_id):
+        row = make_experiment_row(experiment_id=experiment_id, metrics=None)
+        mock_session.execute.return_value = make_execute_result([row])
+
+        await ExperimentRepository(mock_session).update_metrics(
+            experiment_id, {"loss": 0.5, "epoch": 1}
+        )
+
+        assert row.metrics == {"loss": 0.5, "epoch": 1}
+
+    async def test_merges_into_existing_metrics(self, mock_session, experiment_id):
+        row = make_experiment_row(experiment_id=experiment_id, metrics={"loss": 0.9, "epoch": 1})
+        mock_session.execute.return_value = make_execute_result([row])
+
+        await ExperimentRepository(mock_session).update_metrics(
+            experiment_id, {"loss": 0.7, "epoch": 2}
+        )
+
+        assert row.metrics["loss"] == pytest.approx(0.7)
+        assert row.metrics["epoch"] == 2
+
+    async def test_overwrites_existing_key(self, mock_session, experiment_id):
+        row = make_experiment_row(experiment_id=experiment_id, metrics={"loss": 1.0})
+        mock_session.execute.return_value = make_execute_result([row])
+
+        await ExperimentRepository(mock_session).update_metrics(experiment_id, {"loss": 0.3})
+
+        assert row.metrics["loss"] == pytest.approx(0.3)
+
+    async def test_preserves_unrelated_keys(self, mock_session, experiment_id):
+        row = make_experiment_row(
+            experiment_id=experiment_id, metrics={"accuracy": 0.88, "epoch": 5}
+        )
+        mock_session.execute.return_value = make_execute_result([row])
+
+        await ExperimentRepository(mock_session).update_metrics(
+            experiment_id, {"loss": 0.4, "epoch": 6}
+        )
+
+        assert row.metrics["accuracy"] == pytest.approx(0.88)
+        assert row.metrics["loss"] == pytest.approx(0.4)
+        assert row.metrics["epoch"] == 6
+
+    async def test_noop_when_experiment_not_found(self, mock_session):
+        mock_session.execute.return_value = make_execute_result([])
+
+        await ExperimentRepository(mock_session).update_metrics(
+            uuid.uuid4(), {"loss": 0.5}
+        )  # must not raise
+
+    async def test_calls_flush_after_update(self, mock_session, experiment_id):
+        row = make_experiment_row(experiment_id=experiment_id, metrics=None)
+        mock_session.execute.return_value = make_execute_result([row])
+
+        await ExperimentRepository(mock_session).update_metrics(
+            experiment_id, {"loss": 0.2, "epoch": 3}
+        )
+
+        mock_session.flush.assert_awaited_once()
+
+    async def test_returns_none(self, mock_session, experiment_id):
+        row = make_experiment_row(experiment_id=experiment_id)
+        mock_session.execute.return_value = make_execute_result([row])
+
+        result = await ExperimentRepository(mock_session).update_metrics(
+            experiment_id, {"loss": 0.1}
+        )
+        assert result is None
+
+
 # ---------------------------------------------------------------------------
 # PerformanceRepository
 # ---------------------------------------------------------------------------
