@@ -169,7 +169,9 @@ class ExperimentRepository:
         losing keys written by earlier epochs.
         """
         result = await self._session.execute(
-            select(ExperimentORM).where(ExperimentORM.experiment_id == experiment_id)
+            select(ExperimentORM)
+            .where(ExperimentORM.experiment_id == experiment_id)
+            .with_for_update()
         )
         row = result.scalar_one_or_none()
         if row is not None:
