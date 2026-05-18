@@ -129,12 +129,19 @@ class TestSuccessfulRun:
         result = await runner.run(exp)
         assert result.mlflow_run_id == "run-abc-123"
 
-    async def test_result_metrics_contain_final_metric(self) -> None:
+    async def test_result_metrics_contain_loss(self) -> None:
         exp = _make_experiment(epochs=3)
         runner, _, _ = _make_runner(_always_ok_factory())
         result = await runner.run(exp)
         assert result.metrics is not None
-        assert "metric" in result.metrics
+        assert "loss" in result.metrics
+
+    async def test_result_metrics_do_not_use_generic_metric_key(self) -> None:
+        exp = _make_experiment(epochs=3)
+        runner, _, _ = _make_runner(_always_ok_factory())
+        result = await runner.run(exp)
+        assert result.metrics is not None
+        assert "metric" not in result.metrics
 
     async def test_log_params_called_with_training_config(self) -> None:
         exp = _make_experiment(epochs=1)
@@ -431,3 +438,108 @@ class TestTimeoutBehaviour:
 
         assert result.status == "completed"
         assert call_count[0] == 2
+
+
+# ---------------------------------------------------------------------------
+# Epoch tracking and metric naming
+# ---------------------------------------------------------------------------
+
+
+def _make_runner_with_repo(
+    model_factory: Any = None,
+    max_retries: int = 0,
+    timeout: int = 3600,
+) -> tuple["ExperimentRunner", MagicMock, AsyncMock, AsyncMock]:
+    """Return (runner, mock_tracker, mock_artifact_manager, mock_repository)."""
+    tracker = MagicMock()
+    tracker.__aenter__ = AsyncMock(return_value=tracker)
+    tracker.__aexit__ = AsyncMock(return_value=False)
+    tracker.run_id = "run-epoch-test"
+    tracker.log_params = MagicMock()
+    tracker.log_metric = MagicMock()
+
+    artifact_mgr = AsyncMock()
+    artifact_mgr.upload_model = AsyncMock(return_value="s3://bucket/model")
+
+    repo = AsyncMock()
+    repo.update_status = AsyncMock()
+    repo.update_status_if_current = AsyncMock(return_value=True)
+    repo.update_metrics = AsyncMock()
+
+    runner = ExperimentRunner(
+        tracker=tracker,
+        artifact_manager=artifact_mgr,
+        max_retries=max_retries,
+        timeout=timeout,
+        model_factory=model_factory or _always_ok_factory(),
+        repository=repo,
+    )
+    return runner, tracker, artifact_mgr, repo
+
+
+class TestEpochTracking:
+    async def test_result_metrics_contain_epoch(self) -> None:
+        exp = _make_experiment(epochs=4)
+        runner, _, _, _ = _make_runner_with_repo(_always_ok_factory())
+        result = await runner.run(exp)
+        assert result.metrics is not None
+        assert "epoch" in result.metrics
+
+    async def test_epoch_equals_total_epochs_on_success(self) -> None:
+        total = 5
+        exp = _make_experiment(epochs=total)
+        runner, _, _, _ = _make_runner_with_repo(_always_ok_factory())
+        result = await runner.run(exp)
+        assert result.metrics is not None
+        assert result.metrics["epoch"] == total
+
+    async def test_loss_key_in_result_metrics(self) -> None:
+        exp = _make_experiment(epochs=3)
+        runner, _, _, _ = _make_runner_with_repo(_always_ok_factory())
+        result = await runner.run(exp)
+        assert result.metrics is not None
+        assert "loss" in result.metrics
+
+    async def test_tracker_log_metric_uses_loss_name(self) -> None:
+        exp = _make_experiment(epochs=3)
+        runner, tracker, _, _ = _make_runner_with_repo(_always_ok_factory())
+        await runner.run(exp)
+        names_logged = [c.args[0] for c in tracker.log_metric.call_args_list]
+        assert all(n == "loss" for n in names_logged)
+        assert "metric" not in names_logged
+
+    async def test_repository_update_metrics_called_once_per_epoch(self) -> None:
+        epochs = 4
+        exp = _make_experiment(epochs=epochs)
+        runner, _, _, repo = _make_runner_with_repo(_always_ok_factory())
+        await runner.run(exp)
+        assert repo.update_metrics.await_count == epochs
+
+    async def test_repository_update_metrics_receives_correct_epoch_numbers(self) -> None:
+        exp = _make_experiment(epochs=3)
+        runner, _, _, repo = _make_runner_with_repo(_always_ok_factory())
+        await runner.run(exp)
+        epoch_args = [c.args[1]["epoch"] for c in repo.update_metrics.call_args_list]
+        assert epoch_args == [1, 2, 3]
+
+    async def test_repository_update_metrics_receives_loss_key(self) -> None:
+        exp = _make_experiment(epochs=2)
+        runner, _, _, repo = _make_runner_with_repo(_always_ok_factory())
+        await runner.run(exp)
+        for c in repo.update_metrics.call_args_list:
+            metrics_dict = c.args[1]
+            assert "loss" in metrics_dict
+
+    async def test_null_repository_does_not_raise(self) -> None:
+        exp = _make_experiment(epochs=3)
+        runner, _, _ = _make_runner(_always_ok_factory())  # uses _NullRepository
+        result = await runner.run(exp)
+        assert result.status == "completed"
+
+    async def test_loss_value_matches_model_train_epoch_return(self) -> None:
+        exp = _make_experiment(epochs=3)
+        runner, _, _, _ = _make_runner_with_repo(_always_ok_factory())
+        result = await runner.run(exp)
+        assert result.metrics is not None
+        # _always_ok_factory returns epoch/10.0; last epoch is 3 → 0.3
+        assert result.metrics["loss"] == pytest.approx(3 / 10.0)
