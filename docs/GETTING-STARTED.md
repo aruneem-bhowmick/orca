@@ -33,15 +33,22 @@ docker compose -f docker-compose.dev.yml up -d postgres redis minio mlflow prefe
 # Apply database migrations (creates all 7 registry tables)
 docker compose -f docker-compose.dev.yml run --rm orcamind python scripts/init_db.py
 
-# Start OrcaMind, then OrcaLab (OrcaLab waits for OrcaMind to be healthy)
+# Start OrcaMind, then initialise the Prefect work pool for sweep flows
 docker compose -f docker-compose.dev.yml up -d orcamind
+python scripts/init_prefect.py
+
+# Start OrcaLab API (waits for OrcaMind to be healthy)
 docker compose -f docker-compose.dev.yml up -d orcalab
+
+# Start the Streamlit dashboard (waits for OrcaLab API to be healthy)
+docker compose -f docker-compose.dev.yml up -d orcalab-dashboard
 
 # Verify
 curl http://localhost:8000/health
 # → {"status":"healthy","db":true,"faiss":false,"mlflow":true}
 curl http://localhost:8001/health
-# → {"status":"healthy"}
+# → {"status":"healthy","db":true,"prefect":true}
+# Dashboard — open in browser: http://localhost:8502
 ```
 
 Or with Make (starts the full stack including OrcaLab):
@@ -93,8 +100,13 @@ orcamind dashboard
 # 8. (Optional) Start the OrcaLab API and dashboard
 export PREFECT_API_URL="http://localhost:4200/api"
 export ORCAMIND_API_URL="http://localhost:8000"
+
+# Create the Prefect work pool if not already created
+python scripts/init_prefect.py
+
 orcalab serve --reload
-# http://localhost:8001
+# Interactive docs: http://localhost:8001/docs
+
 orcalab dashboard
-# http://localhost:8502
+# Streamlit dashboard: http://localhost:8502
 ```
