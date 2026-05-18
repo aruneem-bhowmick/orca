@@ -1276,3 +1276,137 @@ config/
 ```
 
 All external service URLs (Prefect API, OrcaMind API) are resolved via `${oc.env:VAR,default}` interpolation — no credentials appear in committed config files.
+
+---
+
+## `orcanet` — Cross-Domain Knowledge Transfer Agent
+
+OrcaNet is the third component of the Orca ecosystem. It orchestrates OrcaMind and OrcaLab to deliver end-to-end cross-domain knowledge transfer: retrieving proven model configurations from one domain and adapting them to a new target task, validated through a real OrcaLab experiment. The package is currently in the scaffold phase — the module structure, CLI, config hierarchy, Dockerfile, and test suite are in place; the algorithm implementations inside each namespace are in progress.
+
+### Package Structure
+
+```text
+orcanet/
+├── embeddings/    # Domain-adversarial embedder (DANN), text/stats fusion, architecture graph embedder
+├── transfer/      # CKA feature transfer, weight transfer, architecture adaptation, multi-task training
+├── retrieval/     # Three-stage hybrid retrieval (FAISS → PostgreSQL metadata filter → LLM re-ranking)
+├── reasoning/     # LangChain ReAct agent, Pydantic response models, retry logic
+│   └── prompts/   # Prompt templates: transfer explanation, task similarity, architecture recommendation
+├── api/           # FastAPI service (8 endpoints) — port 8002
+└── cli.py         # Typer CLI — serve and version commands
+```
+
+### Module Namespaces
+
+#### `orcanet.embeddings` — Domain-Invariant Embedders (planned)
+
+The embeddings namespace will house three complementary embedders that encode tasks and model architectures into a shared latent space that is invariant to the source domain:
+
+- **`CrossDomainEmbedder`** — Domain-Adversarial Neural Network (Ganin et al. 2016). Takes the 25-dim statistical meta-feature vector from `StatisticalEmbedder` as input and projects it to a 64-dim domain-invariant representation. Input/output dimensions (`input_dim=25`, `embedding_dim=64`) and domain/task-type counts (`n_domains=10`, `n_task_types=3`) are Hydra-configurable. The adversarial discriminator is trained jointly with the feature extractor to maximise task-type classification accuracy while minimising domain discriminability.
+- **`TextStatsFusion`** — Combines the 64-dim DANN embedding with a sentence-transformers (`all-MiniLM-L6-v2`) encoding of the free-text task description via a learned gating mechanism. When no text description is provided, the gate collapses to the statistical embedding.
+- **`ArchitectureGraphEmbedder`** — Encodes model computation graphs as attributed graphs (node = layer operation, edge = data flow) and produces a fixed-size graph embedding for architecture similarity scoring.
+
+#### `orcanet.transfer` — Transfer Strategies (planned)
+
+- **`CKATransferScorer`** — Centered Kernel Alignment (Kornblith et al. 2019). Computes the normalised Hilbert-Schmidt Independence Criterion between hidden activation matrices from the source and target domains, producing a scalar transfer score ∈ [0, 1]. Scores above `min_transfer_score` (default 0.4) are candidates for OrcaLab validation dispatch.
+- **`WeightTransfer`** — Layer-selective weight copying with architecture compatibility checking. Matches source and target layers by name and shape, skipping mismatched layers rather than raising.
+- **`ArchitectureAdapter`** — Adjusts input/output dimensions (first and last layer) of a source architecture to match target task requirements (number of classes, input channels) while preserving the intermediate layers.
+- **`MultiTaskTrainer`** — Jointly optimises shared trunk parameters across source and target tasks with task-specific head networks and a gradient-balancing loss weighting scheme.
+
+#### `orcanet.retrieval` — Hybrid Retrieval (planned)
+
+Three-stage pipeline that narrows from broad vector similarity to a small set of highly relevant candidates:
+
+1. **Stage 1 — FAISS vector search**: loads the task FAISS index from `faiss_index_path` and retrieves the `top_k_initial` (default 50) nearest tasks by embedding cosine similarity.
+2. **Stage 2 — PostgreSQL metadata filter**: queries the `transfer_mappings` and `tasks` tables to filter the stage-1 candidates by domain, task type, and existing transfer score, reducing to a smaller candidate set.
+3. **Stage 3 — LLM re-ranking** (optional): passes the remaining candidates to the LangChain reasoning agent for semantic re-ranking using the task description and architecture notes. Skipped when `use_llm_reranking=False` or when `OPENAI_API_KEY` is absent.
+
+Final output: at most `top_k_final` (default 10) ranked `SimilarTaskResult` objects.
+
+#### `orcanet.reasoning` — LangChain ReAct Agent (planned)
+
+LLM-powered reasoning layer that generates transfer explanations and re-ranks retrieval candidates:
+
+- **`TransferReasoningAgent`** — LangChain `AgentExecutor` configured with a ReAct prompt. Equipped with four tools: `lookup_task_metadata`, `get_transfer_score`, `fetch_model_config`, and `compare_domains`. On each call the agent iteratively selects tools, inspects results, and terminates when it has assembled a complete explanation.
+- **`TransferResponseModel`** — Pydantic v2 model for structured agent output: `explanation` (free text), `reasoning_trace` (list of tool-call steps), `confidence` (float), `caveats` (list of strings).
+- **Retry logic** — `@retry(stop=stop_after_attempt(3), wait=wait_exponential())` wraps agent invocations so transient API failures (rate limits, timeouts) are retried automatically.
+
+#### `orcanet.reasoning.prompts` — Prompt Templates (planned)
+
+Three Jinja2 / f-string prompt templates:
+
+| Template | Purpose |
+|---|---|
+| `transfer_explanation.py` | Explains why a source task's model transfers to the target task, citing dataset statistics and performance history |
+| `task_similarity.py` | Assesses structural similarity between two tasks based on domain, feature space, and class distribution |
+| `architecture_recommendation.py` | Recommends an architecture for the target task given similar-task performance history and computational constraints |
+
+#### `orcanet.api` — FastAPI Service (scaffolded, port 8002)
+
+Planned 8-endpoint FastAPI service. See [API Reference](API-REFERENCE.md#orcanet-api----port-8002) for the full request/response schema for each endpoint.
+
+| Method | Path | Description |
+|---|---|---|
+| `GET` | `/` | Service info (name, version, status) |
+| `GET` | `/health` | Liveness probe — reports connectivity to OrcaMind and OrcaLab |
+| `POST` | `/api/v1/transfer` | Initiate a transfer recommendation (retrieve → score → optionally validate) |
+| `GET` | `/api/v1/transfer/{id}` | Poll transfer recommendation status |
+| `POST` | `/api/v1/similar-tasks` | Three-stage hybrid retrieval of similar source tasks |
+| `POST` | `/api/v1/recommend-architecture` | Retrieve and rank architectures for a target task |
+| `POST` | `/api/v1/explain-transfer` | LLM-generated explanation for a source–target transfer pair |
+| `GET` | `/api/v1/transfer-mappings` | Paginated list of persisted transfer score records |
+
+### CLI (`orcanet`)
+
+Two commands installed as the `orcanet` entry point.
+
+```bash
+orcanet --help           # List all commands
+orcanet <command> --help # Per-command usage
+```
+
+| Command   | Purpose                                      | Key Options                               |
+|-----------|----------------------------------------------|-------------------------------------------|
+| `serve`   | Start the FastAPI server on port 8002        | `--host TEXT`, `--port INT`, `--reload`   |
+| `version` | Print the OrcaNet package version            | —                                         |
+
+The `serve` command binds `0.0.0.0` inside the container (network namespace isolation). The `host` binding carries an inline `# noqa: S104` suppression with an explanatory comment.
+
+### Hydra Configuration (`config/`)
+
+```text
+config/
+├── config.yaml              # Root: llm (provider, model, temperature), retrieval thresholds, orcamind/orcalab URLs
+├── retriever/
+│   └── hybrid.yaml          # FAISS index path, database_url (required from env), top_k thresholds
+├── embedder/
+│   └── cross_domain.yaml    # DANN dims: input=25, embedding=64, n_domains=10, n_task_types=3
+└── llm/
+    └── openai.yaml          # Provider (openai), model (gpt-4-turbo), temperature, max_tokens=2048
+```
+
+All sensitive values use `${oc.env:VAR}` (required) or `${oc.env:VAR,default}` (optional with fallback). The `database_url` in `retriever/hybrid.yaml` is declared required (`${oc.env:DATABASE_URL}` with no fallback) to prevent the retriever from silently connecting to a wrong database.
+
+| Config key | Resolution |
+|---|---|
+| `llm.api_key` | `${oc.env:OPENAI_API_KEY,}` — empty string when absent; LLM re-ranking step skipped |
+| `retrieval.database_url` | `${oc.env:DATABASE_URL}` — required; no fallback |
+| `orcamind.api_url` | `${oc.env:ORCAMIND_API_URL,http://localhost:8000}` |
+| `orcalab.api_url` | `${oc.env:ORCALAB_API_URL,http://localhost:8001}` |
+| `embedder.model_path` | `${oc.env:CROSS_DOMAIN_MODEL_PATH,/data/models/cross_domain_embedder.pt}` |
+
+### Test Infrastructure (`tests/`)
+
+Three unit test files and two empty `__init__.py` placeholders for future integration tests.
+
+| File | Tests | Covers |
+|---|---|---|
+| `tests/unit/test_package.py` | 4 | Package importability, `__version__` string, parametrized submodule imports (6 submodules in one test), no unexpected `sys.modules` side effects |
+| `tests/unit/test_cli.py` | 4 | `version` output matches `__version__`, `--help` exit 0, `serve --help` shows `--host`/`--port`/`--reload`, `no_args_is_help=True` shows both commands |
+| `tests/unit/test_config.py` | 10 | Root config key presence, retrieval defaults, LLM defaults, hybrid retriever YAML, cross-domain embedder dimensions, OpenAI LLM YAML, all `.yaml` files parseable by OmegaConf |
+
+**Notable patterns introduced in the OrcaNet test suite:**
+
+- *Parametrized submodule imports* — the six submodule import tests are expressed as a single `@pytest.mark.parametrize("submodule", [...])` test rather than six separate functions. Adding a new namespace requires only a new entry in the parameter list.
+- *Per-test CLI runner fixture* — `CliRunner` is instantiated via a `scope="function"` pytest fixture, not at module level, so runner state never leaks between tests.
+- *pyproject.toml anchor path resolution* — `test_config.py` locates `config/` by walking ancestor directories until a `pyproject.toml` is found. This is robust to test file moves and avoids the fragile `parents[N]` depth index that breaks when the file is relocated.
