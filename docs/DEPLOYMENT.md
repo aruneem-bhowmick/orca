@@ -9,17 +9,19 @@ This guide covers deploying the full Orca stack using Docker Compose. For local 
 ## Service Topology
 
 ```text
-PostgreSQL 15  ─────────────────────────────────────┐
-Redis 7         ─────────────────────────────────┐   │
-MinIO           ────────────────────────────┐    │   │
-                                             ↓    ↓   ↓
-MLflow  ─────────────────────────────────────────────┤
-Prefect ──────────────────────────────────────────── ┤
-                                             ↓    ↓   ↓
-OrcaMind (port 8000) ────────────────────────────────┤
-                                             ↓    ↓   ↓
-OrcaLab  (port 8001) ────────────────────────────────┤
+PostgreSQL 15  ─────────────────────────────────────────────────┐
+Redis 7         ─────────────────────────────────────────────┐   │
+MinIO           ────────────────────────────────────────┐    │   │
+                                                         ↓    ↓   ↓
+MLflow  ─────────────────────────────────────────────────────────┤
+Prefect ──────────────────────────────────────────────────────── ┤
+                                                         ↓    ↓   ↓
+OrcaMind (port 8000) ────────────────────────────────────────────┤
+                                                         ↓    ↓   ↓
+OrcaLab  (port 8001) ────────────────────────────────────────────┤
 OrcaLab Dashboard (port 8502) ←─ depends on OrcaLab
+                                                         ↓    ↓
+OrcaNet  (port 8002) ←─ depends on postgres, orcamind, orcalab
 ```
 
 ---
@@ -68,6 +70,15 @@ OrcaLab Dashboard (port 8502) ←─ depends on OrcaLab
 |-------------------|----------|----------------------------|---------------------------------------|
 | `ORCALAB_API_URL` | no       | `http://localhost:8001`    | OrcaLab API base URL for the Streamlit dashboard |
 
+### OrcaNet (port 8002)
+
+| Variable           | Required | Default (dev)                                          | Description                                   |
+|--------------------|----------|--------------------------------------------------------|-----------------------------------------------|
+| `DATABASE_URL`     | yes      | `postgresql+asyncpg://orca:orca_dev_secret@postgres:5432/orca_registry` | Async PostgreSQL connection string |
+| `ORCAMIND_API_URL` | no       | `http://localhost:8000`                                | OrcaMind service base URL; source task retrieval and model recommendation degrade gracefully when unset |
+| `ORCALAB_API_URL`  | no       | `http://localhost:8001`                                | OrcaLab service base URL; validation dispatch degrades gracefully when unset |
+| `OPENAI_API_KEY`   | no       | —                                                      | OpenAI API key; LLM re-ranking step skipped when unset (use `LLM_PROVIDER=anthropic` with `ANTHROPIC_API_KEY` to swap providers) |
+
 ---
 
 ## Service Startup Order
@@ -83,6 +94,7 @@ Services must start in dependency order. Docker Compose `depends_on` with `condi
 6. orcamind        ← healthcheck: httpx GET /health  (depends on postgres, redis, minio, mlflow)
 7. orcalab         ← healthcheck: httpx GET /health  (depends on all above + orcamind)
 8. orcalab-dashboard   ← no healthcheck (depends on orcalab)
+9. orcanet         ← healthcheck: httpx GET /health  (depends on postgres, orcamind, orcalab)
 ```
 
 Before OrcaMind starts, run the Alembic migrations:
@@ -106,7 +118,7 @@ docker compose -f docker-compose.dev.yml up -d
 docker compose -f docker-compose.dev.yml run --rm orcalab python scripts/init_prefect.py
 
 # Tail logs
-docker compose -f docker-compose.dev.yml logs -f orcamind orcalab
+docker compose -f docker-compose.dev.yml logs -f orcamind orcalab orcanet
 ```
 
 > After schema changes on a running stack, re-run `init_db.py` (`docker compose ... run --rm orcamind python scripts/init_db.py`) while services are up — the migration runner uses `NullPool` and exits cleanly without disrupting live connections.
@@ -127,6 +139,10 @@ curl http://localhost:8000/health
 # OrcaLab
 curl http://localhost:8001/health
 # {"status": "ok", "prefect": "http://prefect:4200/api"}
+
+# OrcaNet
+curl http://localhost:8002/health
+# {"status": "ok", "orcamind": "http://orcamind:8000", "orcalab": "http://orcalab:8001"}
 
 # MLflow
 curl http://localhost:5000/health
@@ -150,6 +166,7 @@ docker compose -f docker-compose.dev.yml run --rm orcamind \
 |-----------------------|-----------------------------|---------------------------------------------|
 | OrcaMind API docs     | http://localhost:8000/docs  | Swagger UI for all OrcaMind endpoints       |
 | OrcaLab API docs      | http://localhost:8001/docs  | Swagger UI for all OrcaLab endpoints        |
+| OrcaNet API docs      | http://localhost:8002/docs  | Swagger UI for all OrcaNet endpoints        |
 | OrcaLab Dashboard     | http://localhost:8502       | Streamlit UI — Live Experiments, Search Progress, Results Explorer, Meta-Analysis |
 | MLflow UI             | http://localhost:5000       | Experiment runs, metrics, model registry    |
 | Prefect UI            | http://localhost:4200       | Flow runs, work pools, deployments          |
