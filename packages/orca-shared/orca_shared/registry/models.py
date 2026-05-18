@@ -126,6 +126,7 @@ class Experiment(Base):
         DateTime(timezone=True), nullable=True
     )
     created_by: Mapped[Optional[str]] = mapped_column(String(100), nullable=True)
+    metrics: Mapped[Optional[dict[str, Any]]] = mapped_column(JSONB, nullable=True)
 
     task: Mapped[Optional[Task]] = relationship("Task", back_populates="experiments")
     model: Mapped[Optional[Model]] = relationship("Model", back_populates="experiments")

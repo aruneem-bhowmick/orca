@@ -160,6 +160,24 @@ class ExperimentRepository:
         )
         return [ExperimentResult.model_validate(r) for r in result.scalars()]
 
+    async def update_metrics(
+        self, experiment_id: uuid.UUID, metrics: dict[str, Any]
+    ) -> None:
+        """Merge *metrics* into the stored experiment metrics dict.
+
+        Merges rather than replaces so per-epoch writes accumulate without
+        losing keys written by earlier epochs.
+        """
+        result = await self._session.execute(
+            select(ExperimentORM).where(ExperimentORM.experiment_id == experiment_id)
+        )
+        row = result.scalar_one_or_none()
+        if row is not None:
+            existing: dict[str, Any] = dict(row.metrics or {})
+            existing.update(metrics)
+            row.metrics = existing
+            await self._session.flush()
+
     async def mark_complete(
         self, experiment_id: uuid.UUID, mlflow_run_id: str
     ) -> None:
