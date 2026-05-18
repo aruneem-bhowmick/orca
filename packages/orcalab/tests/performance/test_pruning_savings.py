@@ -1,6 +1,6 @@
 """Performance benchmark: ASHA pruner compute-savings assertion.
 
-Simulates 20 trials on a convex (quadratic) training objective and
+Simulates 20 trials on a concave (quadratic) training objective and
 measures how many total training steps ASHA executes compared with
 running every trial to completion.  The target is ≥40% savings.
 
@@ -118,30 +118,37 @@ class TestASHAPruningSavings:
         assert pruned_at < MAX_RESOURCE
 
     def test_savings_scale_with_more_trials(self) -> None:
-        """Savings should be at least as good as the 20-trial case; more trials → more pruning."""
-        extended_n = 27  # more trials means more competition → more pruning
-        pruner = ASHAPruner(
-            min_resource=MIN_RESOURCE,
-            max_resource=MAX_RESOURCE,
-            reduction_factor=REDUCTION_FACTOR,
-        )
+        """Savings must meet TARGET_SAVINGS and must be ≥ the 20-trial baseline savings."""
 
-        qualities = {f"trial_{i}": (i + 1) / extended_n for i in range(extended_n)}
-        all_values: dict[str, list[float]] = {tid: [] for tid in qualities}
-        total_steps = 0
+        def _run_simulation(n: int) -> float:
+            pruner = ASHAPruner(
+                min_resource=MIN_RESOURCE,
+                max_resource=MAX_RESOURCE,
+                reduction_factor=REDUCTION_FACTOR,
+            )
+            qualities = {f"trial_{i}": (i + 1) / n for i in range(n)}
+            all_values: dict[str, list[float]] = {tid: [] for tid in qualities}
+            total_steps = 0
+            for tid in sorted(qualities, key=lambda t: -qualities[t]):
+                q = qualities[tid]
+                for step in range(1, MAX_RESOURCE + 1):
+                    total_steps += 1
+                    metric = _metric(q, step)
+                    if pruner.should_prune(tid, step, metric, all_values):
+                        break
+                    all_values[tid].append(metric)
+            baseline = n * MAX_RESOURCE
+            return 1.0 - total_steps / baseline
 
-        for tid in sorted(qualities, key=lambda t: -qualities[t]):
-            q = qualities[tid]
-            for step in range(1, MAX_RESOURCE + 1):
-                total_steps += 1
-                metric = _metric(q, step)
-                if pruner.should_prune(tid, step, metric, all_values):
-                    break
-                all_values[tid].append(metric)
+        savings_20 = _run_simulation(N_TRIALS)  # N_TRIALS = 20
+        extended_n = 27
+        savings = _run_simulation(extended_n)
 
-        baseline = extended_n * MAX_RESOURCE
-        savings = 1.0 - total_steps / baseline
         assert savings >= TARGET_SAVINGS, (
             f"Expected ≥{TARGET_SAVINGS:.0%} savings with {extended_n} trials; "
             f"got {savings:.1%}"
+        )
+        assert savings >= savings_20, (
+            f"Expected savings with {extended_n} trials ({savings:.1%}) to be at least as good "
+            f"as savings with {N_TRIALS} trials ({savings_20:.1%})"
         )
