@@ -34,6 +34,11 @@ class _NullRepository:
     ) -> bool:
         return True
 
+    async def update_metrics(  # noqa: ARG002
+        self, experiment_id: UUID, metrics: dict[str, Any]
+    ) -> None:
+        return
+
 
 def _build_result(
     experiment: Experiment,
@@ -69,6 +74,7 @@ class ExperimentRunner:
         max_retries: int = 2,
         timeout: int = 3600,
         model_factory: Callable[[dict[str, Any]], TrainableModel] | None = None,
+        repository: Any | None = None,
     ) -> None:
         if max_retries < 0:
             raise ValueError(f"max_retries must be >= 0, got {max_retries}")
@@ -79,7 +85,7 @@ class ExperimentRunner:
         self._max_retries = max_retries
         self._timeout = timeout
         self._model_factory = model_factory or self._no_factory
-        self._repository = _NullRepository()
+        self._repository = repository if repository is not None else _NullRepository()
 
     @staticmethod
     def _no_factory(_config: dict[str, Any]) -> TrainableModel:
@@ -140,9 +146,11 @@ class ExperimentRunner:
 
             for epoch in range(1, epochs + 1):
                 metric = model.train_epoch(epoch)
-                tracker.log_metric("metric", metric, step=epoch)
+                tracker.log_metric("loss", metric, step=epoch)
                 trial_values.append(metric)
-                final_metrics["metric"] = metric
+                live_metrics: dict[str, Any] = {"loss": metric, "epoch": epoch}
+                final_metrics.update(live_metrics)
+                await self._repository.update_metrics(experiment.experiment_id, live_metrics)
 
                 if pruner is not None and pruner.should_prune(
                     trial_id,
