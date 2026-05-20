@@ -140,10 +140,11 @@ orca/
 │
 │   └── orcanet/                      # Cross-domain knowledge transfer agent (port 8002)
 │       ├── orcanet/
-│       │   ├── embeddings/           # CrossDomainEmbedder (DANN, implemented); TextTaskEmbedder (sentence-transformers + stats fusion, implemented); ArchitectureGraphEmbedder (planned)
+│       │   ├── embeddings/           # CrossDomainEmbedder (DANN, implemented); TextTaskEmbedder (sentence-transformers + stats fusion, implemented); ArchitectureEmbedder (GNN-based, implemented)
 │       │   │   ├── __init__.py       # Lazy __getattr__ shim — defers import torch until first access
 │       │   │   ├── cross_domain.py   # GradientReversalFunction, GradientReversalLayer, _FeatureMLP, CrossDomainEmbedder
-│       │   │   └── text_features.py  # _AddFusion, _AttentionFusion, TextTaskEmbedder
+│       │   │   ├── text_features.py  # _AddFusion, _AttentionFusion, TextTaskEmbedder
+│       │   │   └── architecture_embedder.py  # ArchitectureGraph, ArchitectureEmbedder
 │       │   ├── transfer/             # CKA feature transfer, weight transfer, architecture adaptation, multi-task training (planned)
 │       │   ├── retrieval/            # Three-stage hybrid retrieval (FAISS → PostgreSQL metadata filter → LLM re-ranking) (planned)
 │       │   ├── reasoning/            # LangChain ReAct agent, Pydantic-validated response models, retry logic (planned)
@@ -159,7 +160,7 @@ orca/
 │       │   └── cross_domain_transfer_demo.ipynb  # Interactive end-to-end pipeline notebook
 │       └── tests/
 │           ├── unit/
-│           │   ├── embeddings/       # CrossDomainEmbedder, GRL, and TextTaskEmbedder unit tests — 31 tests
+│           │   ├── embeddings/       # CrossDomainEmbedder, GRL, TextTaskEmbedder, and ArchitectureEmbedder unit tests — 76 tests
 │           │   └── *.py              # Package structure, CLI smoke tests, config validation — 18 tests
 │           └── integration/          # API integration tests (planned)
 │
