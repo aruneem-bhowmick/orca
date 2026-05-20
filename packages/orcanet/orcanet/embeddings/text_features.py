@@ -23,11 +23,13 @@ class _AddFusion(nn.Module):
     """Projects text and stat vectors to output_dim independently, then sums them."""
 
     def __init__(self, text_dim: int, stat_dim: int, output_dim: int) -> None:
+        """Initialise two independent linear projections for text and stat inputs."""
         super().__init__()
         self.text_proj = nn.Linear(text_dim, output_dim)
         self.stat_proj = nn.Linear(stat_dim, output_dim)
 
     def forward(self, x_text: torch.Tensor, x_stat: torch.Tensor) -> torch.Tensor:
+        """Return the element-wise sum of the text and stat projections."""
         return self.text_proj(x_text) + self.stat_proj(x_stat)
 
 
@@ -35,12 +37,14 @@ class _AttentionFusion(nn.Module):
     """Softmax-gated weighted sum of text and stat projections."""
 
     def __init__(self, text_dim: int, stat_dim: int, output_dim: int) -> None:
+        """Initialise text/stat projections and a 2-head attention gate."""
         super().__init__()
         self.text_proj = nn.Linear(text_dim, output_dim)
         self.stat_proj = nn.Linear(stat_dim, output_dim)
         self.attn = nn.Linear(2 * output_dim, 2)
 
     def forward(self, x_text: torch.Tensor, x_stat: torch.Tensor) -> torch.Tensor:
+        """Return a softmax-gated weighted combination of the text and stat projections."""
         t = self.text_proj(x_text)
         s = self.stat_proj(x_stat)
         weights = F.softmax(self.attn(torch.cat([t, s], dim=-1)), dim=-1)
@@ -67,6 +71,11 @@ class TextTaskEmbedder:
         fusion: str = "concat",
         output_dim: int = 128,
     ) -> None:
+        """Load the SentenceTransformer model and build the configured fusion network.
+
+        Raises:
+            ValueError: If *fusion* is not one of ``"concat"``, ``"add"``, or ``"attention"``.
+        """
         if fusion not in self._VALID_FUSIONS:
             raise ValueError(
                 f"fusion must be one of {sorted(self._VALID_FUSIONS)!r}, got {fusion!r}"
@@ -129,6 +138,7 @@ class TextTaskEmbedder:
     # ------------------------------------------------------------------
 
     def _build_fusion(self, fusion: str, output_dim: int) -> nn.Module:
+        """Construct and return the fusion network for the requested *fusion* strategy."""
         if fusion == "concat":
             return nn.Sequential(
                 nn.Linear(_TEXT_DIM + _STAT_DIM, 256),

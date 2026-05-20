@@ -30,6 +30,7 @@ class _DeterministicSentenceTransformer:
     )
 
     def __init__(self, model_name: str | None = None, **kwargs: object) -> None:
+        """Accept and ignore the model_name and any extra SentenceTransformer kwargs."""
         self._dim = 384
 
     def encode(
@@ -41,11 +42,13 @@ class _DeterministicSentenceTransformer:
         convert_to_numpy: bool = True,
         **kwargs: object,
     ) -> np.ndarray:
+        """Return keyword-based embeddings for *sentences* (string or list of strings)."""
         if isinstance(sentences, str):
             return self._encode_one(sentences)
         return np.stack([self._encode_one(s) for s in sentences])
 
     def _encode_one(self, text: str) -> np.ndarray:
+        """Return a deterministic 384-dim L2-normalised vector for *text*."""
         vec = np.zeros(self._dim, dtype=np.float32)
         words = text.lower().split()
         for idx, kw in enumerate(self._KEYWORDS):
@@ -63,7 +66,7 @@ class _DeterministicSentenceTransformer:
 
 @pytest.fixture(scope="session", autouse=True)
 def _patch_sentence_transformers() -> object:
-    """Replace SentenceTransformer with an offline deterministic stub for all embeddings unit tests."""
+    """Patch SentenceTransformer globally so all embeddings tests run offline without model weights."""
     with patch(
         "orcanet.embeddings.text_features.SentenceTransformer",
         _DeterministicSentenceTransformer,
