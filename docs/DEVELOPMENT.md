@@ -58,11 +58,14 @@ pytest packages/orcanet/tests/unit/test_cli.py -v
 # OrcaNet — Hydra config validation
 pytest packages/orcanet/tests/unit/test_config.py -v
 
-# OrcaNet — CrossDomainEmbedder, GRL, and TextTaskEmbedder unit tests (no services required)
+# OrcaNet — CrossDomainEmbedder, GRL, TextTaskEmbedder, and ArchitectureEmbedder unit tests (no services required)
 pytest packages/orcanet/tests/unit/embeddings/ -v
 
 # OrcaNet — TextTaskEmbedder only
 pytest packages/orcanet/tests/unit/embeddings/test_text_features.py -v
+
+# OrcaNet — ArchitectureGraph and ArchitectureEmbedder unit tests only
+pytest packages/orcanet/tests/unit/embeddings/test_architecture_embedder.py -v
 ```
 
 The test suite has 80+ test files across unit, integration, performance, and deployment-validation categories.
@@ -83,6 +86,8 @@ OrcaMind integration tests auto-skip when their target service port is unreachab
 - *Training-mode preservation testing* — `test_cross_domain.py` explicitly tests that `CrossDomainEmbedder.embed()` does not permanently mutate the model's training state. Two complementary assertions cover both directions: a model in `.train()` mode returns to training mode after `embed()` finishes, and a model already in `.eval()` stays in eval mode. This matters because `embed()` is commonly called from inside a training loop for online evaluation, and a silent mode flip would corrupt subsequent gradient computation.
 - *Domain invariance as a geometric assertion* — `TestDomainInvariance.test_within_vs_cross_domain_spread` quantifies domain invariance by comparing the standard deviation of cosine distances within each domain against the standard deviation of cross-domain distances, asserting a ratio in [0.3, 3.0]. This avoids the brittleness of testing exact cluster assignments while still enforcing the geometric property — the absence of domain clustering — that the OrcaNet retrieval layer relies on.
 - *Offline SentenceTransformer stub* — `tests/unit/embeddings/conftest.py` patches `orcanet.embeddings.text_features.SentenceTransformer` with `_DeterministicSentenceTransformer` via a session-scoped autouse fixture. The stub never downloads model weights: it maps a 36-keyword domain vocabulary (vision, financial, medical, NLP, general ML) to fixed vector dimensions and fills the remaining 348 dimensions with low-amplitude deterministic noise (σ = 0.05, seeded by `hash(text)`). Semantic ordering is preserved by construction — image-domain keywords are orthogonal to financial-domain keywords — so similarity-ordering tests hold without a network connection or a local model cache.
+- *Relative similarity assertion over fixed thresholds* — `test_architecture_embedder.py` tests cross-architecture separation by asserting `embedder.similarity(a, a) > embedder.similarity(a, b)` rather than `similarity < 0.9`. Hardcoded cosine thresholds are fragile across random weight seeds and optional message-passing backends (dense adjacency vs. `GCNConv`); the relative ordering holds for any valid embedder, making the test robust without weakening the invariant it enforces.
+- *Boundary tests for public API contracts* — the architecture embedder test suite covers `top_k=0` (must return `[]`) and `top_k=-1` (must raise `ValueError`) explicitly. Without the `ValueError` guard, Python's negative-slice semantics would silently return a near-full result list. The boundary tests pin this contract so future refactors cannot regress it.
 
 The performance benchmark tests in `tests/performance/` make executable compute-efficiency assertions that cannot be expressed as ordinary unit tests. They drive deterministic synthetic sweeps — no external services, no randomness — and enforce measurable invariants about algorithm behaviour at scale. Currently the tier contains `TestASHAPruningSavings`, which simulates 20-trial hyperparameter sweeps on a concave-quadratic learning-curve objective and asserts that ASHA executes ≤60% of the steps an unpruned baseline would require (≥40% compute savings). The scaling test additionally runs a 27-trial cohort and asserts that savings for the larger cohort are at least as good as for the 20-trial baseline, enforcing the monotonicity property directly.
 
