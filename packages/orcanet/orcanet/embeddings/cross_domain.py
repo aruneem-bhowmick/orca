@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import logging
 import math
+from pathlib import Path
 from typing import Any
 
 import torch
@@ -169,3 +170,28 @@ class CrossDomainEmbedder(nn.Module):
             )
 
         return {"task_loss": task_loss_history, "domain_loss": domain_loss_history}
+
+    def save(self, path: str | Path) -> None:
+        """Serialise model weights and constructor config to *path*."""
+        torch.save(
+            {
+                "config": {
+                    "input_dim": self._input_dim,
+                    "embedding_dim": self._embedding_dim,
+                    "n_domains": self._n_domains,
+                    "n_task_types": self._n_task_types,
+                    "hidden_dims": self._hidden_dims,
+                },
+                "state_dict": self.state_dict(),
+            },
+            path,
+        )
+
+    @classmethod
+    def load(cls, path: str | Path) -> CrossDomainEmbedder:
+        """Load a saved model from *path* and return it in eval mode."""
+        checkpoint = torch.load(path, map_location="cpu", weights_only=True)
+        obj = cls(**checkpoint["config"])
+        obj.load_state_dict(checkpoint["state_dict"])
+        obj.eval()
+        return obj
