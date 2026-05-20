@@ -265,8 +265,9 @@ class ArchitectureEmbedder(nn.Module):
 
     def _forward_graph(self, graph: ArchitectureGraph) -> torch.Tensor:
         """Run the full GNN pipeline and return the un-normalised readout vector."""
-        x = torch.from_numpy(graph.node_features)  # (n_nodes, node_dim)
-        edge_index = torch.from_numpy(graph.edge_index)  # (2, n_edges)
+        device = self.node_encoder.weight.device
+        x = torch.from_numpy(graph.node_features).to(device=device)  # (n_nodes, node_dim)
+        edge_index = torch.from_numpy(graph.edge_index).to(device=device)  # (2, n_edges)
         n_nodes = x.shape[0]
 
         h = F.relu(self.node_encoder(x))  # (n_nodes, hidden_dim)
@@ -292,13 +293,13 @@ class ArchitectureEmbedder(nn.Module):
 
         Returns a ``(n_nodes, n_nodes)`` float32 tensor where each row sums to 1.
         """
-        adj = torch.zeros(n_nodes, n_nodes, dtype=torch.float32)
+        adj = torch.zeros(n_nodes, n_nodes, dtype=torch.float32, device=edge_index.device)
 
         if edge_index.shape[1] > 0:
             src, dst = edge_index[0], edge_index[1]
             adj[dst, src] = 1.0
             adj[src, dst] = 1.0  # treat as undirected
 
-        adj = adj + torch.eye(n_nodes)  # self-loops
+        adj = adj + torch.eye(n_nodes, device=edge_index.device)  # self-loops
         deg = adj.sum(dim=1, keepdim=True).clamp(min=1.0)
         return adj / deg
