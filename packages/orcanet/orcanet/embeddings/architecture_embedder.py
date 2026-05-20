@@ -15,6 +15,9 @@ from dataclasses import dataclass
 from typing import Any
 
 import numpy as np
+import torch
+import torch.nn as nn
+import torch.nn.functional as F
 
 logger = logging.getLogger(__name__)
 
@@ -133,3 +136,161 @@ class ArchitectureGraph:
             edge_index=edge_index,
             graph_features=graph_features,
         )
+
+
+def _try_import_gcnconv() -> type | None:
+    """Return GCNConv class if torch_geometric is installed, else None."""
+    try:
+        from torch_geometric.nn import GCNConv  # type: ignore[import-untyped]
+
+        return GCNConv
+    except ImportError:
+        return None
+
+
+class ArchitectureEmbedder(nn.Module):
+    """GNN embedder that encodes architecture configs into fixed-size vector embeddings.
+
+    Uses manual adjacency-matrix message passing by default.  If the optional
+    ``torch-geometric`` package is available, ``GCNConv`` layers are used instead.
+
+    Args:
+        node_dim:   Dimensionality of input node features (must match ``_NODE_DIM`` = 16).
+        hidden_dim: Hidden dimensionality inside the GNN.
+        output_dim: Output embedding dimensionality (default 32).
+    """
+
+    def __init__(
+        self,
+        node_dim: int = 16,
+        hidden_dim: int = 64,
+        output_dim: int = 32,
+    ) -> None:
+        """Build the GNN: node encoder, 3 message-passing layers, and readout projection."""
+        super().__init__()
+        self._node_dim = node_dim
+        self._hidden_dim = hidden_dim
+        self._output_dim = output_dim
+
+        GCNConv = _try_import_gcnconv()
+
+        self.node_encoder = nn.Linear(node_dim, hidden_dim)
+
+        if GCNConv is not None:
+            self.message_passing: nn.Module = nn.ModuleList(
+                [GCNConv(hidden_dim, hidden_dim) for _ in range(3)]
+            )
+            self._use_gcnconv = True
+        else:
+            self.message_passing = nn.ModuleList(
+                [nn.Linear(hidden_dim, hidden_dim) for _ in range(3)]
+            )
+            self._use_gcnconv = False
+
+        self.readout = nn.Linear(hidden_dim, output_dim)
+
+    # ------------------------------------------------------------------
+    # Public interface
+    # ------------------------------------------------------------------
+
+    def embed(self, config: ModelConfig) -> np.ndarray:
+        """Encode an architecture config dict into an L2-normalised ``(output_dim,)`` vector.
+
+        Args:
+            config: Architecture configuration dict (see :class:`ArchitectureGraph`).
+
+        Returns:
+            A float32 numpy array of shape ``(output_dim,)`` with unit L2 norm.
+        """
+        graph = ArchitectureGraph.from_model_config(config)
+
+        was_training = self.training
+        self.eval()
+        try:
+            with torch.no_grad():
+                out = self._forward_graph(graph)
+        finally:
+            if was_training:
+                self.train()
+
+        out_np: np.ndarray = out.cpu().numpy()
+        norm = float(np.linalg.norm(out_np))
+        return out_np / norm if norm > 0.0 else out_np
+
+    def similarity(self, config_a: ModelConfig, config_b: ModelConfig) -> float:
+        """Return the cosine similarity between the embeddings of two architecture configs.
+
+        Args:
+            config_a: First architecture config.
+            config_b: Second architecture config.
+
+        Returns:
+            Cosine similarity in ``[-1, 1]`` (1.0 for identical configs).
+        """
+        emb_a = self.embed(config_a)
+        emb_b = self.embed(config_b)
+        return float(np.dot(emb_a, emb_b))
+
+    def find_similar_architectures(
+        self,
+        query: ModelConfig,
+        candidates: list[ModelConfig],
+        top_k: int = 5,
+    ) -> list[tuple[ModelConfig, float]]:
+        """Return the top-k most similar candidate architectures to *query*.
+
+        Args:
+            query:      Architecture config to search for.
+            candidates: Pool of architecture configs to rank.
+            top_k:      Number of results to return.
+
+        Returns:
+            List of ``(config, similarity_score)`` tuples sorted by similarity descending.
+            Length is ``min(top_k, len(candidates))``.
+        """
+        query_emb = self.embed(query)
+        scored: list[tuple[ModelConfig, float]] = [
+            (c, float(np.dot(query_emb, self.embed(c)))) for c in candidates
+        ]
+        scored.sort(key=lambda x: x[1], reverse=True)
+        return scored[:top_k]
+
+    # ------------------------------------------------------------------
+    # Private helpers
+    # ------------------------------------------------------------------
+
+    def _forward_graph(self, graph: ArchitectureGraph) -> torch.Tensor:
+        """Run the full GNN pipeline and return the un-normalised readout vector."""
+        x = torch.from_numpy(graph.node_features)  # (n_nodes, node_dim)
+        edge_index = torch.from_numpy(graph.edge_index)  # (2, n_edges)
+        n_nodes = x.shape[0]
+
+        h = F.relu(self.node_encoder(x))  # (n_nodes, hidden_dim)
+
+        if self._use_gcnconv:
+            for conv in self.message_passing:  # type: ignore[union-attr]
+                h = F.relu(conv(h, edge_index))
+        else:
+            adj_norm = self._build_adj_norm(n_nodes, edge_index)
+            for linear in self.message_passing:  # type: ignore[union-attr]
+                h = F.relu(linear(adj_norm @ h))
+
+        graph_emb = h.mean(dim=0)  # (hidden_dim,)
+        return self.readout(graph_emb)  # (output_dim,)
+
+    @staticmethod
+    def _build_adj_norm(n_nodes: int, edge_index: torch.Tensor) -> torch.Tensor:
+        """Build a row-normalised adjacency matrix with self-loops.
+
+        Returns a ``(n_nodes, n_nodes)`` float32 tensor where each row sums to 1.
+        """
+        adj = torch.zeros(n_nodes, n_nodes, dtype=torch.float32)
+
+        if edge_index.shape[1] > 0:
+            src, dst = edge_index[0], edge_index[1]
+            adj[dst, src] = 1.0
+            adj[src, dst] = 1.0  # treat as undirected
+
+        adj = adj + torch.eye(n_nodes)  # self-loops
+        deg = adj.sum(dim=1, keepdim=True).clamp(min=1.0)
+        return adj / deg
