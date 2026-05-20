@@ -111,7 +111,7 @@ class TextTaskEmbedder:
             else:
                 fused = self._fusion_net(x_text, x_stat)
 
-        out: np.ndarray = fused.squeeze(0).numpy()
+        out: np.ndarray = fused.squeeze(0).cpu().numpy()
         norm = np.linalg.norm(out)
         return out / norm if norm > 0 else out
 
