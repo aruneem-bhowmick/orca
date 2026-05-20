@@ -1287,7 +1287,7 @@ OrcaNet is the third component of the Orca ecosystem. It orchestrates OrcaMind a
 
 ```text
 orcanet/
-├── embeddings/    # CrossDomainEmbedder (DANN, implemented), TextTaskEmbedder (sentence-transformers + stats fusion, implemented), ArchitectureGraphEmbedder (planned)
+├── embeddings/    # CrossDomainEmbedder (DANN, implemented), TextTaskEmbedder (sentence-transformers + stats fusion, implemented), ArchitectureEmbedder (GNN-based, implemented)
 ├── transfer/      # CKA feature transfer, weight transfer, architecture adaptation, multi-task training
 ├── retrieval/     # Three-stage hybrid retrieval (FAISS → PostgreSQL metadata filter → LLM re-ranking)
 ├── reasoning/     # LangChain ReAct agent, Pydantic response models, retry logic
@@ -1300,7 +1300,7 @@ orcanet/
 
 #### `orcanet.embeddings` — Domain-Invariant Embedders
 
-The embeddings namespace houses two implemented embedders ? the DANN-based cross-domain embedder and the text-based task description embedder ? and one planned addition.
+The embeddings namespace houses three implemented embedders: the DANN-based cross-domain embedder, the text-based task description embedder, and the GNN-based architecture embedder.
 
 ##### `CrossDomainEmbedder` (implemented)
 
@@ -1395,7 +1395,7 @@ restored = CrossDomainEmbedder.load("/data/models/cross_domain_embedder.pt")
 
 **Lazy import pattern:**
 
-`orcanet.embeddings.__init__` uses a module-level `__getattr__` shim to defer `import torch` until `CrossDomainEmbedder`, `GradientReversalLayer`, or `TextTaskEmbedder` is accessed by name. Importing the namespace (`import orcanet.embeddings`) carries zero PyTorch startup cost, which keeps the service importability test and cold-start time unaffected.
+`orcanet.embeddings.__init__` uses a module-level `__getattr__` shim to defer `import torch` until `CrossDomainEmbedder`, `GradientReversalLayer`, `TextTaskEmbedder`, `ArchitectureEmbedder`, or `ArchitectureGraph` is accessed by name. Importing the namespace (`import orcanet.embeddings`) carries zero PyTorch startup cost, which keeps the service importability test and cold-start time unaffected.
 
 
 ##### `TextTaskEmbedder` (implemented)
@@ -1481,9 +1481,109 @@ matrix = embedder.embed_batch_descriptions(descriptions)
 similarity = float(np.dot(matrix[0], matrix[1]))
 ```
 
-**Planned additions:**
+##### `ArchitectureEmbedder` (implemented)
 
-- **`ArchitectureGraphEmbedder`** *(planned)* — Encodes model computation graphs as attributed graphs (node = layer operation, edge = data flow) and produces a fixed-size graph embedding for architecture similarity scoring.
+A GNN-based `nn.Module` that encodes any model architecture config dict into a 32-dimensional L2-normalised embedding by representing the architecture as a graph — layers as nodes, connectivity as edges — and applying residual adjacency-matrix message passing. The resulting unit vectors support cosine-similarity retrieval over architecture libraries, enabling the OrcaNet transfer pipeline to identify structurally similar source architectures without manual curation.
+
+**Architecture:**
+
+```
+ModelConfig dict  {"layers": [...], "skip_connections": [...]}
+              ↓
+    ArchitectureGraph.from_model_config()
+              ↓
+   node_features (n_nodes × 16)   edge_index (2 × n_edges)
+              ↓
+    node_encoder: Linear(16 → 64) + ReLU
+              ↓
+    3× residual message passing: h ← h + W(Â h)
+         (Â = row-normalised adjacency with self-loops, undirected)
+              ↓
+    mean pool across nodes → (64,)
+              ↓
+    readout: Linear(64 → 32)
+              ↓
+    L2 normalise → (32,) unit vector
+```
+
+**`ArchitectureGraph` dataclass:**
+
+`from_model_config(config)` converts a `ModelConfig` dict into GNN-ready numpy arrays:
+
+| Field | Shape | dtype | Content |
+|---|---|---|---|
+| `node_features` | `(n_nodes, 16)` | float32 | 8-dim one-hot layer type + 1 log-scaled size + 7-dim one-hot activation |
+| `edge_index` | `(2, n_edges)` | int64 | `[sources, targets]` — sequential `i → i+1` edges plus validated skip connections |
+| `graph_features` | `(3,)` | float32 | Global statistics: `[log1p(Σsize), depth, log1p(max_width)]` |
+
+Recognised layer types (indices 0–7): `linear`, `conv2d`, `lstm`, `attention`, `batchnorm`, `dropout`, `pooling`, `embedding`. Recognised activations (indices 0–6): `relu`, `sigmoid`, `tanh`, `gelu`, `selu`, `softmax`, `none`. Unknown types produce all-zero one-hot slots. Layer sizes are normalised as `log1p(size) / log1p(4096)` so the scalar feature stays in `[0, 1]` and does not dominate cosine similarity.
+
+Input sanitisation: negative or non-numeric `size` values are clamped to 0 with a debug log rather than propagating a `ValueError`; malformed skip-connection entries (wrong length, non-numeric elements, non-iterable) are skipped per-entry with a debug log. An empty or missing `layers` key produces a single zero-node with no edges and zero graph features rather than raising.
+
+**Constructor:**
+
+```python
+ArchitectureEmbedder(
+    node_dim:   int = 16,   # must match _NODE_DIM = len(layer_types) + 1 + len(activation_types)
+    hidden_dim: int = 64,   # GNN hidden width
+    output_dim: int = 32,   # output embedding dimensionality
+)
+```
+
+**Public API:**
+
+| Method | Signature | Description |
+|---|---|---|
+| `embed` | `(config: ModelConfig) → np.ndarray` | Returns a `(output_dim,)` float32 unit vector. Switches to eval + `torch.no_grad()`, restores the caller's training mode in a `finally` block so the method is safe to call from inside a training loop. |
+| `similarity` | `(config_a, config_b: ModelConfig) → float` | Cosine similarity in `[-1, 1]`; 1.0 for identical configs. Implemented as a dot product of unit vectors — no separate normalisation step needed. |
+| `find_similar_architectures` | `(query, candidates, top_k=5) → list[tuple[ModelConfig, float]]` | Ranks `candidates` by cosine similarity to `query`; returns the top-`top_k` `(config, score)` pairs sorted descending. Raises `ValueError` for negative `top_k`; `top_k=0` returns an empty list. |
+
+**Message-passing details:**
+
+The default path (no `torch-geometric`) builds a dense row-normalised adjacency matrix `Â` with self-loops, treats edges as undirected, and runs three rounds of residual propagation: `h ← h + W(Âh)`. Residuals preserve each node's own identity after neighbourhood aggregation — without them, iterated averaging collapses all sequential-graph embeddings toward a common direction regardless of layer types. If `torch-geometric` is installed (`pip install orcanet[gnn]`), `GCNConv` layers replace the dense adjacency path transparently; the public API is unchanged.
+
+All tensor allocations in `_forward_graph` are dispatched to `self.node_encoder.weight.device`, and `_build_adj_norm` inherits the device from the `edge_index` tensor, so moving the module to CUDA with `.to("cuda")` works without modification.
+
+**Usage example:**
+
+```python
+from orcanet.embeddings import ArchitectureEmbedder, ArchitectureGraph
+
+embedder = ArchitectureEmbedder()          # defaults: 16-dim nodes → 64-dim hidden → 32-dim output
+
+mlp_config = {
+    "layers": [
+        {"type": "linear", "size": 512, "activation": "relu"},
+        {"type": "linear", "size": 256, "activation": "relu"},
+        {"type": "linear", "size": 10,  "activation": "softmax"},
+    ]
+}
+cnn_config = {
+    "layers": [
+        {"type": "conv2d",  "size": 64, "activation": "relu"},
+        {"type": "pooling", "size": 64},
+        {"type": "linear",  "size": 10, "activation": "softmax"},
+    ],
+    "skip_connections": [[0, 2]]           # optional: adds an edge from layer 0 to layer 2
+}
+
+# Embed a single architecture → (32,) unit vector
+vec = embedder.embed(mlp_config)
+
+# Cosine similarity between two architectures
+sim = embedder.similarity(mlp_config, cnn_config)      # float in [-1, 1]
+
+# Ranked retrieval over a candidate pool
+candidates = [mlp_config, cnn_config, ...]
+results = embedder.find_similar_architectures(mlp_config, candidates, top_k=3)
+# → [(config, score), ...]  sorted by score descending
+
+# Direct graph inspection
+graph = ArchitectureGraph.from_model_config(mlp_config)
+# graph.node_features  shape (3, 16)  — one row per layer
+# graph.edge_index     shape (2, 2)   — two sequential edges
+# graph.graph_features shape (3,)     — [log1p(778), 3.0, log1p(512)]
+```
 
 #### `orcanet.transfer` — Transfer Strategies (planned)
 
@@ -1576,7 +1676,7 @@ All sensitive values use `${oc.env:VAR}` (required) or `${oc.env:VAR,default}` (
 
 ### Test Infrastructure (`tests/`)
 
-Five unit test files across two directories, plus two empty `__init__.py` placeholders for future integration tests.
+Six unit test files across two directories, plus two empty `__init__.py` placeholders for future integration tests.
 
 | File | Tests | Covers |
 |---|---|---|
@@ -1585,6 +1685,7 @@ Five unit test files across two directories, plus two empty `__init__.py` placeh
 | `tests/unit/test_config.py` | 10 | Root config key presence, retrieval defaults, LLM defaults, hybrid retriever YAML, cross-domain embedder dimensions, OpenAI LLM YAML, all `.yaml` files parseable by OmegaConf |
 | `tests/unit/embeddings/test_cross_domain.py` | 15 | `GradientReversalLayer` gradient negation, alpha scaling, forward identity, zero-alpha passthrough; `CrossDomainEmbedder` output shape, L2 normalisation, eval/training mode preservation across `embed()` calls; DANN task-loss convergence over 20 epochs; domain invariance geometric dispersion (within- vs. cross-domain cosine distance std ratio); `save`/`load` roundtrip embedding equality; config attribute round-trip fidelity |
 | `tests/unit/embeddings/test_text_features.py` | 16 | `TextTaskEmbedder` shape and L2-normalisation for `embed_from_description`; invalid fusion `ValueError`; `embed_with_stats` output shape for all three fusion strategies and the no-labels regression path; output L2-normalisation for fused vectors; custom `output_dim` via the `add` fusion; semantic similarity ordering (image tasks cluster closer together than they do to financial tasks); identical descriptions produce dot-product 1.0; batch shape `(N, 384)`, row-wise normalisation, and exact numerical match against individual `embed_from_description` calls |
+| `tests/unit/embeddings/test_architecture_embedder.py` | 45 | `ArchitectureGraph` node counts for MLP, CNN, single-layer, and empty configs; node feature shape `(n, 16)` and dtype float32; one-hot correctness for all layer types and all activation types; log-size encoding against `_LOG_SIZE_SCALE`; unknown-type zero-out; sequential and skip-connection edge counts; edge dtype int64; global features shape, dtype, depth equality, log-total-size sign, log-max-width value; `ArchitectureEmbedder.embed` shape `(32,)`, L2 norm, numpy dtype float32, custom `output_dim`, training-mode preservation (both directions), single-layer and empty-config edge cases, determinism across two calls; similarity — identical configs → 1.0, self-similarity exceeds cross-architecture similarity (seeded), return type float, symmetry; retrieval — `top_k` count, fewer-candidates-than-k, descending sort, tuple types, identical query is top result, default `top_k=5`, `top_k=0` returns `[]`, negative `top_k` raises `ValueError` |
 
 **Notable patterns introduced in the OrcaNet test suite:**
 
@@ -1594,3 +1695,5 @@ Five unit test files across two directories, plus two empty `__init__.py` placeh
 - *Training-mode preservation testing* — `test_embed_preserves_training_mode` and `test_embed_preserves_eval_mode` verify that `embed()` does not permanently mutate the model's training state, asserting correctness in both directions (model in `.train()` stays in training mode after `embed()` returns; model already in `.eval()` stays in eval mode). This matters because `embed()` is commonly called from inside a training loop for online evaluation.
 - *Domain invariance as a geometric assertion* — `TestDomainInvariance.test_within_vs_cross_domain_spread` quantifies the invariance property by computing the standard deviation of cosine distances within each domain and across domains on domain-shifted synthetic data, then asserting the ratio lies in [0.3, 3.0]. This avoids testing exact cluster assignments (which would be brittle) while still enforcing the geometric property that the retrieval layer depends on.
 - *Offline SentenceTransformer stub* — `tests/unit/embeddings/conftest.py` patches `orcanet.embeddings.text_features.SentenceTransformer` with `_DeterministicSentenceTransformer`, a session-scoped autouse fixture that never downloads model weights. The stub maps a 36-keyword domain vocabulary (vision, financial, medical, NLP, general ML) to fixed dimensions and fills the remaining 348 dimensions with low-amplitude deterministic noise (σ = 0.05, seeded by `hash(text)`). This design guarantees that semantic ordering tests — e.g. image tasks cluster closer to each other than to financial tasks — hold without a network connection or a local model cache.
+- *Relative similarity assertion over fixed thresholds* — `test_similarity_mlp_vs_cnn_less_than_self_similarity` asserts that `embedder.similarity(mlp, mlp) > embedder.similarity(mlp, cnn)` rather than checking `sim < 0.9`. The relative comparison holds for any valid embedder regardless of the random weight initialisation or which message-passing backend is active, avoiding the fragility of a hardcoded cosine cutoff that can shift across seeds or optional dependencies.
+- *Boundary tests for public API contracts* — `test_find_similar_top_k_zero_returns_empty` and `test_find_similar_negative_top_k_raises` pin the `find_similar_architectures` boundary behaviour. Without the explicit `ValueError` guard, Python's negative-slice semantics (`scored[:-1]`) would silently return a near-full list instead of raising, making the contract invisible to callers. The boundary tests lock this in so future refactors cannot regress it.
