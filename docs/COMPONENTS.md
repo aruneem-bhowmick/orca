@@ -1298,13 +1298,109 @@ orcanet/
 
 ### Module Namespaces
 
-#### `orcanet.embeddings` — Domain-Invariant Embedders (planned)
+#### `orcanet.embeddings` — Domain-Invariant Embedders
 
-The embeddings namespace will house three complementary embedders that encode tasks and model architectures into a shared latent space that is invariant to the source domain:
+The embeddings namespace houses the implemented DANN-based embedder and reserves slots for two planned additions.
 
-- **`CrossDomainEmbedder`** — Domain-Adversarial Neural Network (Ganin et al. 2016). Takes the 25-dim statistical meta-feature vector from `StatisticalEmbedder` as input and projects it to a 64-dim domain-invariant representation. Input/output dimensions (`input_dim=25`, `embedding_dim=64`) and domain/task-type counts (`n_domains=10`, `n_task_types=3`) are Hydra-configurable. The adversarial discriminator is trained jointly with the feature extractor to maximise task-type classification accuracy while minimising domain discriminability.
-- **`TextStatsFusion`** — Combines the 64-dim DANN embedding with a sentence-transformers (`all-MiniLM-L6-v2`) encoding of the free-text task description via a learned gating mechanism. When no text description is provided, the gate collapses to the statistical embedding.
-- **`ArchitectureGraphEmbedder`** — Encodes model computation graphs as attributed graphs (node = layer operation, edge = data flow) and produces a fixed-size graph embedding for architecture similarity scoring.
+##### `CrossDomainEmbedder` (implemented)
+
+A Domain-Adversarial Neural Network (Ganin et al. 2016) that learns 64-dimensional task representations invariant to the domain the data was drawn from. It is the embedding backbone that the OrcaNet retrieval and transfer layers consume. All defaults match `config/embedder/cross_domain.yaml` so Hydra-constructed and in-code instances are identical.
+
+**Architecture:**
+
+```
+Statistical meta-features (25-dim)
+              ↓
+    _FeatureMLP  [Linear → BatchNorm1d → ReLU] × n_hidden  +  Linear
+              ↓
+        64-dim features (unnormalised)
+         ↙                      ↘
+task_classifier           domain_classifier
+Linear(64 → 3)            GRL → Linear(64,64) → ReLU → Linear(64, 10)
+```
+
+**Classes:**
+
+| Class | Role |
+|---|---|
+| `GradientReversalFunction` | Custom `torch.autograd.Function`: identity in the forward pass; returns `−alpha × grad_output` in the backward pass so upstream gradients are negated and scaled |
+| `GradientReversalLayer` | `nn.Module` wrapper around `GradientReversalFunction` with a mutable `alpha` attribute. Stored as `self._grl` on the embedder so the training loop can update `alpha` in-place; the `domain_classifier` Sequential holds a reference to the same object, so updates propagate automatically |
+| `_FeatureMLP` | Private feed-forward backbone: `Linear → BatchNorm1d → ReLU` per hidden layer, final `Linear`. Deliberately omits L2 normalisation — that step is applied externally by `embed()` so that `task_classifier` and `domain_classifier` receive raw, unnormalised features |
+| `CrossDomainEmbedder` | Main model; wires together `_FeatureMLP`, the task-type classification head, and the adversarial domain head |
+
+**Constructor:**
+
+```python
+CrossDomainEmbedder(
+    input_dim: int = 25,               # StatisticalEmbedder output dimensionality
+    embedding_dim: int = 64,           # Shared feature space dimensionality
+    n_domains: int = 10,               # Domain classifier output classes
+    n_task_types: int = 3,             # Task-type classifier output classes
+    hidden_dims: list[int] | None = None,  # Defaults to [128, 64]
+)
+```
+
+**Public API:**
+
+| Method | Signature | Description |
+|---|---|---|
+| `forward` | `(x: Tensor) → tuple[Tensor, Tensor, Tensor]` | Returns `(features, task_logits, domain_logits)` — raw, unnormalised. Use during training only. |
+| `embed` | `(x: Tensor) → Tensor` | Returns L2-normalised feature embeddings for cosine-similarity retrieval. Temporarily switches to eval mode and disables gradients, then restores the caller's original training state in a `finally` block so the method is safe to call from inside a training loop. |
+| `fit` | `(x, task_labels, domain_labels, epochs=20, lr=1e-3, domain_lambda=1.0) → dict[str, list[float]]` | Trains with the DANN objective using Adam and the Ganin et al. progressive alpha schedule. Returns `{"task_loss": [...], "domain_loss": [...]}` with one float per epoch. |
+| `save` | `(path: str \| Path) → None` | Serialises constructor config and `state_dict()` via `torch.save`. Checkpoint contains only Python primitives and tensors, safe to load with `weights_only=True`. |
+| `load` | `(path: str \| Path) → CrossDomainEmbedder` *(classmethod)* | Reconstructs the model from a checkpoint and returns it in eval mode. |
+
+**Training details — `fit()` :**
+
+The DANN objective combines two cross-entropy losses in a single forward pass:
+
+```
+L_total = L_task + λ · L_domain
+```
+
+`L_task` supervises the task-type head normally. `L_domain` is computed through the GRL, so its gradient arrives at the feature extractor with the sign reversed — the extractor is penalised for *successfully* predicting domain, which is what drives domain invariance.
+
+GRL alpha increases from 0 to 1 following the schedule from Ganin et al.:
+
+```
+p  = (epoch − 1) / max(epochs − 1, 1)   # training progress ∈ [0, 1]
+α  = 2 / (1 + exp(−10p)) − 1            # sigmoid-shaped ramp
+```
+
+At epoch 1, α ≈ 0, giving the task head time to establish useful representations before adversarial pressure builds. By the final epoch α = 1.0 and the domain discriminator is fully engaged.
+
+**Usage example:**
+
+```python
+from orcanet.embeddings import CrossDomainEmbedder
+import torch
+
+model = CrossDomainEmbedder()                     # defaults: 25→64 dim, 10 domains, 3 task types
+
+# Training
+x             = torch.randn(128, 25)              # N × input_dim
+task_labels   = torch.randint(0, 3, (128,))       # 0=classification, 1=regression, 2=time_series
+domain_labels = torch.randint(0, 10, (128,))      # source domain index
+
+history = model.fit(x, task_labels, domain_labels, epochs=50, lr=1e-3)
+# history = {"task_loss": [...50 floats], "domain_loss": [...50 floats]}
+
+# Inference — L2-normalised, eval mode, no gradient tracking
+embeddings = model.embed(x)                       # shape (128, 64), unit vectors
+
+# Persistence
+model.save("/data/models/cross_domain_embedder.pt")
+restored = CrossDomainEmbedder.load("/data/models/cross_domain_embedder.pt")
+```
+
+**Lazy import pattern:**
+
+`orcanet.embeddings.__init__` uses a module-level `__getattr__` shim to defer `import torch` until `CrossDomainEmbedder` or `GradientReversalLayer` is accessed by name. Importing the namespace (`import orcanet.embeddings`) carries zero PyTorch startup cost, which keeps the service importability test and cold-start time unaffected.
+
+**Planned additions:**
+
+- **`TextStatsFusion`** *(planned)* — Combines the 64-dim DANN embedding with a sentence-transformers (`all-MiniLM-L6-v2`) encoding of the free-text task description via a learned gating mechanism. When no text description is provided the gate collapses to the statistical embedding.
+- **`ArchitectureGraphEmbedder`** *(planned)* — Encodes model computation graphs as attributed graphs (node = layer operation, edge = data flow) and produces a fixed-size graph embedding for architecture similarity scoring.
 
 #### `orcanet.transfer` — Transfer Strategies (planned)
 
