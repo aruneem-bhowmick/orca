@@ -1287,7 +1287,7 @@ OrcaNet is the third component of the Orca ecosystem. It orchestrates OrcaMind a
 
 ```text
 orcanet/
-├── embeddings/    # Domain-adversarial embedder (DANN), text/stats fusion, architecture graph embedder
+├── embeddings/    # CrossDomainEmbedder (DANN, implemented), TextTaskEmbedder (sentence-transformers + stats fusion, implemented), ArchitectureGraphEmbedder (planned)
 ├── transfer/      # CKA feature transfer, weight transfer, architecture adaptation, multi-task training
 ├── retrieval/     # Three-stage hybrid retrieval (FAISS → PostgreSQL metadata filter → LLM re-ranking)
 ├── reasoning/     # LangChain ReAct agent, Pydantic response models, retry logic
@@ -1300,7 +1300,7 @@ orcanet/
 
 #### `orcanet.embeddings` — Domain-Invariant Embedders
 
-The embeddings namespace houses the implemented DANN-based embedder and reserves slots for two planned additions.
+The embeddings namespace houses two implemented embedders ? the DANN-based cross-domain embedder and the text-based task description embedder ? and one planned addition.
 
 ##### `CrossDomainEmbedder` (implemented)
 
@@ -1395,11 +1395,94 @@ restored = CrossDomainEmbedder.load("/data/models/cross_domain_embedder.pt")
 
 **Lazy import pattern:**
 
-`orcanet.embeddings.__init__` uses a module-level `__getattr__` shim to defer `import torch` until `CrossDomainEmbedder` or `GradientReversalLayer` is accessed by name. Importing the namespace (`import orcanet.embeddings`) carries zero PyTorch startup cost, which keeps the service importability test and cold-start time unaffected.
+`orcanet.embeddings.__init__` uses a module-level `__getattr__` shim to defer `import torch` until `CrossDomainEmbedder`, `GradientReversalLayer`, or `TextTaskEmbedder` is accessed by name. Importing the namespace (`import orcanet.embeddings`) carries zero PyTorch startup cost, which keeps the service importability test and cold-start time unaffected.
+
+
+##### `TextTaskEmbedder` (implemented)
+
+A plain Python (non-`nn.Module`) class that encodes natural language task descriptions into 384-dim semantic vectors via `sentence-transformers` and optionally fuses them with 25-dim statistical meta-features from `StatisticalEmbedder`. The fused embedding serves as a richer task fingerprint for retrieval and transfer scoring when a text description of the target task is available.
+
+**Architecture:**
+
+```
+Natural language description (string)
+              |
+    SentenceTransformer (all-MiniLM-L6-v2)
+              |
+       384-dim text vector (L2-normalised)
+              |
+     +---------+----------+
+     |                    |
+text_vec (384)       stat_vec (25)
+     |          <-- StatisticalEmbedder
+     +-----------+--------+
+                 |
+    Fusion  (concat / add / attention)
+                 |
+      output_dim-dim fused vector (L2-normalised)
+```
+
+**Fusion strategies:**
+
+| Strategy | Module | Mechanism |
+|---|---|---|
+| `"concat"` | `nn.Sequential` | Concatenates the 384-dim text vector and 25-dim stat vector into a 409-dim input; passes through `Linear(409, 256) → ReLU → Linear(256, output_dim)` |
+| `"add"` | `_AddFusion` | Two independent linear projections (`text_proj` and `stat_proj`, both `Linear(·, output_dim)`) summed element-wise |
+| `"attention"` | `_AttentionFusion` | Same two independent projections; gating weights computed via `softmax(Linear(2·output_dim, 2))` applied to the concatenation; weighted sum |
+
+All fusion networks are initialised with random weights and placed in eval mode. They are not pre-trained — the embedder is designed for use as a feature extractor whose fusion weights can be fine-tuned downstream by OrcaNet’s training pipeline.
+
+**Constructor:**
+
+```python
+TextTaskEmbedder(
+    model_name: str = "all-MiniLM-L6-v2",                # SentenceTransformer model identifier
+    statistical_embedder: StatisticalEmbedder | None = None,  # instantiated fresh if None
+    fusion: str = "concat",                               # "concat", "add", or "attention"
+    output_dim: int = 128,                                # fused embedding dimensionality
+)
+```
+
+Raises `ValueError` (message: `"fusion must be one of ..."`) if `fusion` is not one of the three supported values.
+
+**Public API:**
+
+| Method | Signature | Description |
+|---|---|---|
+| `embed_from_description` | `(description: str) → np.ndarray` | Encodes *description* via SentenceTransformer; L2-normalises; returns shape `(384,)`. No statistical features consumed. |
+| `embed_with_stats` | `(description: str, dataset: pd.DataFrame, labels: pd.Series \| None = None) → np.ndarray` | Fuses text and statistical embeddings via the configured fusion net inside a `torch.no_grad()` context; L2-normalises; returns shape `(output_dim,)`. |
+| `embed_batch_descriptions` | `(descriptions: list[str]) → np.ndarray` | Encodes all descriptions in a single batched SentenceTransformer call (`batch_size=32`); row-wise L2-normalises; returns shape `(N, 384)`. |
+
+**Usage example:**
+
+```python
+from orcanet.embeddings import TextTaskEmbedder
+import pandas as pd
+import numpy as np
+
+embedder = TextTaskEmbedder(fusion="concat", output_dim=128)
+
+# Text-only embedding
+vec = embedder.embed_from_description("binary image classification with augmented training set")
+# vec.shape == (384,), L2-normalised
+
+# Fused embedding with dataset statistics
+X = pd.DataFrame({"feature_1": [1.0, 2.0], "feature_2": [3.0, 4.0]})
+y = pd.Series([0, 1])
+fused = embedder.embed_with_stats("binary classification", X, y)
+# fused.shape == (128,), L2-normalised
+
+# Batch encoding
+descriptions = ["image classification", "time series regression", "NLP sentence similarity"]
+matrix = embedder.embed_batch_descriptions(descriptions)
+# matrix.shape == (3, 384)
+
+# Cosine similarity (L2-normalised vectors → dot product == cosine)
+similarity = float(np.dot(matrix[0], matrix[1]))
+```
 
 **Planned additions:**
 
-- **`TextStatsFusion`** *(planned)* — Combines the 64-dim DANN embedding with a sentence-transformers (`all-MiniLM-L6-v2`) encoding of the free-text task description via a learned gating mechanism. When no text description is provided the gate collapses to the statistical embedding.
 - **`ArchitectureGraphEmbedder`** *(planned)* — Encodes model computation graphs as attributed graphs (node = layer operation, edge = data flow) and produces a fixed-size graph embedding for architecture similarity scoring.
 
 #### `orcanet.transfer` — Transfer Strategies (planned)
@@ -1493,7 +1576,7 @@ All sensitive values use `${oc.env:VAR}` (required) or `${oc.env:VAR,default}` (
 
 ### Test Infrastructure (`tests/`)
 
-Four unit test files across two directories, plus two empty `__init__.py` placeholders for future integration tests.
+Five unit test files across two directories, plus two empty `__init__.py` placeholders for future integration tests.
 
 | File | Tests | Covers |
 |---|---|---|
@@ -1501,6 +1584,7 @@ Four unit test files across two directories, plus two empty `__init__.py` placeh
 | `tests/unit/test_cli.py` | 4 | `version` output matches `__version__`, `--help` exit 0, `serve --help` shows `--host`/`--port`/`--reload`, `no_args_is_help=True` shows both commands |
 | `tests/unit/test_config.py` | 10 | Root config key presence, retrieval defaults, LLM defaults, hybrid retriever YAML, cross-domain embedder dimensions, OpenAI LLM YAML, all `.yaml` files parseable by OmegaConf |
 | `tests/unit/embeddings/test_cross_domain.py` | 15 | `GradientReversalLayer` gradient negation, alpha scaling, forward identity, zero-alpha passthrough; `CrossDomainEmbedder` output shape, L2 normalisation, eval/training mode preservation across `embed()` calls; DANN task-loss convergence over 20 epochs; domain invariance geometric dispersion (within- vs. cross-domain cosine distance std ratio); `save`/`load` roundtrip embedding equality; config attribute round-trip fidelity |
+| `tests/unit/embeddings/test_text_features.py` | 16 | `TextTaskEmbedder` shape and L2-normalisation for `embed_from_description`; invalid fusion `ValueError`; `embed_with_stats` output shape for all three fusion strategies and the no-labels regression path; output L2-normalisation for fused vectors; custom `output_dim` via the `add` fusion; semantic similarity ordering (image tasks cluster closer together than they do to financial tasks); identical descriptions produce dot-product 1.0; batch shape `(N, 384)`, row-wise normalisation, and exact numerical match against individual `embed_from_description` calls |
 
 **Notable patterns introduced in the OrcaNet test suite:**
 
@@ -1509,3 +1593,4 @@ Four unit test files across two directories, plus two empty `__init__.py` placeh
 - *pyproject.toml anchor path resolution* — `test_config.py` locates `config/` by walking ancestor directories until a `pyproject.toml` is found. This is robust to test file moves and avoids the fragile `parents[N]` depth index that breaks when the file is relocated.
 - *Training-mode preservation testing* — `test_embed_preserves_training_mode` and `test_embed_preserves_eval_mode` verify that `embed()` does not permanently mutate the model's training state, asserting correctness in both directions (model in `.train()` stays in training mode after `embed()` returns; model already in `.eval()` stays in eval mode). This matters because `embed()` is commonly called from inside a training loop for online evaluation.
 - *Domain invariance as a geometric assertion* — `TestDomainInvariance.test_within_vs_cross_domain_spread` quantifies the invariance property by computing the standard deviation of cosine distances within each domain and across domains on domain-shifted synthetic data, then asserting the ratio lies in [0.3, 3.0]. This avoids testing exact cluster assignments (which would be brittle) while still enforcing the geometric property that the retrieval layer depends on.
+- *Offline SentenceTransformer stub* — `tests/unit/embeddings/conftest.py` patches `orcanet.embeddings.text_features.SentenceTransformer` with `_DeterministicSentenceTransformer`, a session-scoped autouse fixture that never downloads model weights. The stub maps a 36-keyword domain vocabulary (vision, financial, medical, NLP, general ML) to fixed dimensions and fills the remaining 348 dimensions with low-amplitude deterministic noise (σ = 0.05, seeded by `hash(text)`). This design guarantees that semantic ordering tests — e.g. image tasks cluster closer to each other than to financial tasks — hold without a network connection or a local model cache.
