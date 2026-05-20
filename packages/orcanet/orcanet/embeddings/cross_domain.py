@@ -19,13 +19,17 @@ logger = logging.getLogger(__name__)
 
 
 class GradientReversalFunction(torch.autograd.Function):
+    """Custom autograd primitive: identity in the forward pass, gradient negation in backward."""
+
     @staticmethod
     def forward(ctx: Any, x: Tensor, alpha: float) -> Tensor:  # type: ignore[override]
+        """Store *alpha* for backward and return *x* unchanged."""
         ctx.alpha = alpha
         return x.clone()
 
     @staticmethod
     def backward(ctx: Any, grad_output: Tensor) -> tuple[Tensor, None]:  # type: ignore[override]
+        """Return ``-alpha * grad_output`` so downstream gradients are negated and scaled."""
         return -ctx.alpha * grad_output, None
 
 
@@ -33,10 +37,12 @@ class GradientReversalLayer(nn.Module):
     """Passes input unchanged in the forward pass; negates and scales gradients in backward."""
 
     def __init__(self, alpha: float = 1.0) -> None:
+        """Initialise with gradient reversal scale factor *alpha* (default 1.0)."""
         super().__init__()
         self.alpha = alpha
 
     def forward(self, x: Tensor) -> Tensor:
+        """Apply gradient reversal: identity forward, ``-alpha``-scaled backward."""
         return GradientReversalFunction.apply(x, self.alpha)
 
 
@@ -44,6 +50,7 @@ class _FeatureMLP(nn.Module):
     """Feed-forward MLP: input_dim → hidden_dims → output_dim, without output normalisation."""
 
     def __init__(self, input_dim: int, hidden_dims: list[int], output_dim: int) -> None:
+        """Build layer stack: ``Linear → BatchNorm1d → ReLU`` per hidden dim, then final Linear."""
         super().__init__()
         layers: list[nn.Module] = []
         prev = input_dim
@@ -54,6 +61,7 @@ class _FeatureMLP(nn.Module):
         self.net = nn.Sequential(*layers)
 
     def forward(self, x: Tensor) -> Tensor:
+        """Run *x* through the MLP and return unnormalised output features."""
         return self.net(x)
 
 
@@ -80,6 +88,7 @@ class CrossDomainEmbedder(nn.Module):
         n_task_types: int = 3,
         hidden_dims: list[int] | None = None,
     ) -> None:
+        """Construct the shared feature extractor, task classifier, and adversarial domain head."""
         super().__init__()
         if hidden_dims is None:
             hidden_dims = [128, 64]
