@@ -62,6 +62,18 @@ class TestShapeAndNormalisation:
         out = model.embed(x)
         assert not out.requires_grad
 
+    def test_embed_preserves_training_mode(self) -> None:
+        model = CrossDomainEmbedder()
+        model.train()
+        model.embed(torch.randn(4, 25))
+        assert model.training, "embed() must restore training mode after execution"
+
+    def test_embed_preserves_eval_mode(self) -> None:
+        model = CrossDomainEmbedder()
+        model.eval()
+        model.embed(torch.randn(4, 25))
+        assert not model.training, "embed() must not flip a model that was already in eval mode"
+
 
 # ---------------------------------------------------------------------------
 # Test 2: GRL gradient negation (using register_hook per spec)

@@ -112,9 +112,14 @@ class CrossDomainEmbedder(nn.Module):
 
     def embed(self, x: Tensor) -> Tensor:
         """Return L2-normalised feature embeddings (eval mode, no gradient tracking)."""
+        was_training = self.training
         self.eval()
-        with torch.no_grad():
-            features = self.feature_extractor(x)
+        try:
+            with torch.no_grad():
+                features = self.feature_extractor(x)
+        finally:
+            if was_training:
+                self.train()
         return F.normalize(features, p=2, dim=1)
 
     def fit(
