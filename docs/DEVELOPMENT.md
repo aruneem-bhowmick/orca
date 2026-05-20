@@ -57,6 +57,9 @@ pytest packages/orcanet/tests/unit/test_cli.py -v
 
 # OrcaNet — Hydra config validation
 pytest packages/orcanet/tests/unit/test_config.py -v
+
+# OrcaNet — CrossDomainEmbedder and GRL unit tests (no services required)
+pytest packages/orcanet/tests/unit/embeddings/ -v
 ```
 
 The test suite has 80+ test files across unit, integration, performance, and deployment-validation categories.
@@ -74,6 +77,8 @@ OrcaMind integration tests auto-skip when their target service port is unreachab
 - *Parametrized submodule imports* — `test_package.py` collapses six structurally identical submodule import assertions into a single `@pytest.mark.parametrize("submodule", [...])` test. Adding a new submodule requires only a new entry in the parameter list.
 - *Per-test CLI runner fixture* — `test_cli.py` exposes the Typer `CliRunner` as a pytest fixture (`scope="function"`) rather than a module-level variable, preventing any runner state from leaking between tests.
 - *pyproject.toml anchor path resolution* — `test_config.py` locates the `config/` directory by walking ancestor directories until a `pyproject.toml` is found, rather than using a hard-coded `parents[N]` depth index. This remains correct regardless of where the test file moves within the repository tree.
+- *Training-mode preservation testing* — `test_cross_domain.py` explicitly tests that `CrossDomainEmbedder.embed()` does not permanently mutate the model's training state. Two complementary assertions cover both directions: a model in `.train()` mode returns to training mode after `embed()` finishes, and a model already in `.eval()` stays in eval mode. This matters because `embed()` is commonly called from inside a training loop for online evaluation, and a silent mode flip would corrupt subsequent gradient computation.
+- *Domain invariance as a geometric assertion* — `TestDomainInvariance.test_within_vs_cross_domain_spread` quantifies domain invariance by comparing the standard deviation of cosine distances within each domain against the standard deviation of cross-domain distances, asserting a ratio in [0.3, 3.0]. This avoids the brittleness of testing exact cluster assignments while still enforcing the geometric property — the absence of domain clustering — that the OrcaNet retrieval layer relies on.
 
 The performance benchmark tests in `tests/performance/` make executable compute-efficiency assertions that cannot be expressed as ordinary unit tests. They drive deterministic synthetic sweeps — no external services, no randomness — and enforce measurable invariants about algorithm behaviour at scale. Currently the tier contains `TestASHAPruningSavings`, which simulates 20-trial hyperparameter sweeps on a concave-quadratic learning-curve objective and asserts that ASHA executes ≤60% of the steps an unpruned baseline would require (≥40% compute savings). The scaling test additionally runs a 27-trial cohort and asserts that savings for the larger cohort are at least as good as for the 20-trial baseline, enforcing the monotonicity property directly.
 

@@ -140,12 +140,14 @@ orca/
 │
 │   └── orcanet/                      # Cross-domain knowledge transfer agent (port 8002)
 │       ├── orcanet/
-│       │   ├── embeddings/           # Domain-adversarial embedder (DANN), text/stats fusion, architecture graph embedder
-│       │   ├── transfer/             # CKA feature transfer, weight transfer, architecture adaptation, multi-task training
-│       │   ├── retrieval/            # Three-stage hybrid retrieval (FAISS → PostgreSQL metadata filter → LLM re-ranking)
-│       │   ├── reasoning/            # LangChain ReAct agent, Pydantic-validated response models, retry logic
+│       │   ├── embeddings/           # CrossDomainEmbedder (DANN, implemented); TextStatsFusion, ArchitectureGraphEmbedder (planned)
+│       │   │   ├── __init__.py       # Lazy __getattr__ shim — defers import torch until first access
+│       │   │   └── cross_domain.py   # GradientReversalFunction, GradientReversalLayer, _FeatureMLP, CrossDomainEmbedder
+│       │   ├── transfer/             # CKA feature transfer, weight transfer, architecture adaptation, multi-task training (planned)
+│       │   ├── retrieval/            # Three-stage hybrid retrieval (FAISS → PostgreSQL metadata filter → LLM re-ranking) (planned)
+│       │   ├── reasoning/            # LangChain ReAct agent, Pydantic-validated response models, retry logic (planned)
 │       │   │   └── prompts/          # Transfer explanation, task similarity, architecture recommendation templates
-│       │   ├── api/                  # FastAPI service (8 endpoints) — port 8002
+│       │   ├── api/                  # FastAPI service (8 endpoints) — port 8002 (planned)
 │       │   └── cli.py                # Typer CLI — serve and version commands
 │       ├── config/                   # Hydra YAML configs
 │       │   ├── config.yaml           # Root: llm, retrieval thresholds, orcamind/orcalab URLs
@@ -155,7 +157,9 @@ orca/
 │       ├── notebooks/
 │       │   └── cross_domain_transfer_demo.ipynb  # Interactive end-to-end pipeline notebook
 │       └── tests/
-│           ├── unit/                 # Package structure, CLI smoke tests, config validation
+│           ├── unit/
+│           │   ├── embeddings/       # CrossDomainEmbedder and GRL unit tests — 15 tests
+│           │   └── *.py              # Package structure, CLI smoke tests, config validation — 18 tests
 │           └── integration/          # API integration tests (planned)
 │
 ├── scripts/
