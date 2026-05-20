@@ -5,12 +5,16 @@ Reference: Ganin et al., "Domain-Adversarial Training of Neural Networks", JMLR 
 
 from __future__ import annotations
 
+import logging
+import math
 from typing import Any
 
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
+
+logger = logging.getLogger(__name__)
 
 
 class GradientReversalFunction(torch.autograd.Function):
@@ -111,3 +115,57 @@ class CrossDomainEmbedder(nn.Module):
         with torch.no_grad():
             features = self.feature_extractor(x)
         return F.normalize(features, p=2, dim=1)
+
+    def fit(
+        self,
+        x: Tensor,
+        task_labels: Tensor,
+        domain_labels: Tensor,
+        epochs: int = 20,
+        lr: float = 1e-3,
+        domain_lambda: float = 1.0,
+    ) -> dict[str, list[float]]:
+        """Train with the DANN objective using progressive GRL alpha scheduling.
+
+        Alpha follows the Ganin et al. schedule: α(p) = 2/(1+exp(−10p))−1 where
+        p goes from 0 to 1 over training, so the domain adversary strengthens gradually.
+
+        Args:
+            x:              Input tensor of shape (N, input_dim).
+            task_labels:    Long tensor of shape (N,) with task-type class indices.
+            domain_labels:  Long tensor of shape (N,) with domain indices.
+            epochs:         Number of training epochs.
+            lr:             Adam learning rate.
+            domain_lambda:  Weight λ for the domain adversarial loss term.
+
+        Returns:
+            Dict with keys ``"task_loss"`` and ``"domain_loss"``, each a list of
+            per-epoch scalar losses.
+        """
+        optimizer = torch.optim.Adam(self.parameters(), lr=lr)
+        task_loss_history: list[float] = []
+        domain_loss_history: list[float] = []
+
+        for epoch in range(1, epochs + 1):
+            self.train()
+
+            p = (epoch - 1) / max(epochs - 1, 1)
+            self._grl.alpha = 2.0 / (1.0 + math.exp(-10.0 * p)) - 1.0
+
+            optimizer.zero_grad()
+            features, task_logits, domain_logits = self(x)
+
+            l_task = F.cross_entropy(task_logits, task_labels)
+            l_domain = F.cross_entropy(domain_logits, domain_labels)
+            (l_task + domain_lambda * l_domain).backward()
+            optimizer.step()
+
+            task_loss_history.append(float(l_task))
+            domain_loss_history.append(float(l_domain))
+
+            logger.debug(
+                "epoch %d/%d  alpha=%.4f  task_loss=%.4f  domain_loss=%.4f",
+                epoch, epochs, self._grl.alpha, float(l_task), float(l_domain),
+            )
+
+        return {"task_loss": task_loss_history, "domain_loss": domain_loss_history}
