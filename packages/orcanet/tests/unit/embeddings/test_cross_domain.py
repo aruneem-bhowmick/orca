@@ -105,3 +105,131 @@ class TestGradientReversal:
         grl(x).sum().backward()
 
         assert torch.allclose(captured[0], torch.zeros_like(x))
+
+
+# ---------------------------------------------------------------------------
+# Test 3: Training convergence
+# ---------------------------------------------------------------------------
+
+
+class TestTrainingConvergence:
+    def test_task_loss_decreases_over_epochs(self) -> None:
+        torch.manual_seed(42)
+        model = CrossDomainEmbedder(
+            input_dim=25, embedding_dim=64, n_domains=5, n_task_types=3
+        )
+        x, task_labels, domain_labels = _make_batch(n_samples=60, n_domains=5, n_task_types=3)
+        history = model.fit(x, task_labels, domain_labels, epochs=20, lr=1e-3)
+
+        task_losses = history["task_loss"]
+        assert len(task_losses) == 20
+        assert task_losses[-1] < task_losses[0], (
+            f"Task loss did not decrease: first={task_losses[0]:.4f}, last={task_losses[-1]:.4f}"
+        )
+
+    def test_fit_returns_correct_structure(self) -> None:
+        model = CrossDomainEmbedder()
+        x, task_labels, domain_labels = _make_batch()
+        history = model.fit(x, task_labels, domain_labels, epochs=5)
+
+        assert set(history.keys()) == {"task_loss", "domain_loss"}
+        assert len(history["task_loss"]) == 5
+        assert len(history["domain_loss"]) == 5
+        assert all(isinstance(v, float) for v in history["task_loss"])
+
+
+# ---------------------------------------------------------------------------
+# Test 4: Domain invariance
+# ---------------------------------------------------------------------------
+
+
+class TestDomainInvariance:
+    def test_within_vs_cross_domain_spread(self) -> None:
+        """After training, within-domain and cross-domain cosine distance spreads should
+        be of similar magnitude (ratio between 0.3 and 3.0), demonstrating that the
+        embedder is not trivially clustering by domain identity.
+        """
+        torch.manual_seed(7)
+        n_domains = 4
+        samples_per_domain = 15
+        input_dim = 25
+
+        # Domain-shifted data: each domain has a distinct mean offset
+        x_parts = []
+        domain_labels_list: list[int] = []
+        task_labels_list: list[int] = []
+        for d in range(n_domains):
+            domain_x = torch.randn(samples_per_domain, input_dim) + d * 0.5
+            x_parts.append(domain_x)
+            domain_labels_list.extend([d] * samples_per_domain)
+            task_labels_list.extend([d % 3] * samples_per_domain)
+
+        x = torch.cat(x_parts, dim=0)
+        domain_labels = torch.tensor(domain_labels_list)
+        task_labels = torch.tensor(task_labels_list)
+
+        model = CrossDomainEmbedder(
+            input_dim=input_dim, embedding_dim=64, n_domains=n_domains, n_task_types=3
+        )
+        model.fit(x, task_labels, domain_labels, epochs=20, lr=1e-3)
+
+        embeddings = model.embed(x)  # (N, 64), L2-normalised
+        n_samples = embeddings.shape[0]
+        sim_matrix = embeddings @ embeddings.T  # cosine similarities
+
+        within_dists: list[float] = []
+        cross_dists: list[float] = []
+        for i in range(n_samples):
+            for j in range(i + 1, n_samples):
+                dist = float(1.0 - sim_matrix[i, j].item())
+                if domain_labels[i] == domain_labels[j]:
+                    within_dists.append(dist)
+                else:
+                    cross_dists.append(dist)
+
+        within_std = float(torch.tensor(within_dists).std())
+        cross_std = float(torch.tensor(cross_dists).std())
+        ratio = within_std / (cross_std + 1e-8)
+
+        assert 0.3 <= ratio <= 3.0, (
+            f"Domain invariance check failed: within_std={within_std:.4f}, "
+            f"cross_std={cross_std:.4f}, ratio={ratio:.4f}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Test 5: Save / load persistence
+# ---------------------------------------------------------------------------
+
+
+class TestPersistence:
+    def test_save_load_roundtrip(self, tmp_path: pytest.TempPathFactory) -> None:
+        torch.manual_seed(0)
+        model = CrossDomainEmbedder(input_dim=25, embedding_dim=64, n_domains=5, n_task_types=3)
+        x, task_labels, domain_labels = _make_batch(n_samples=30, n_domains=5, n_task_types=3)
+        model.fit(x, task_labels, domain_labels, epochs=3)
+
+        path = tmp_path / "embedder.pt"  # type: ignore[operator]
+        model.save(path)
+
+        loaded = CrossDomainEmbedder.load(path)
+        x_test = torch.randn(8, 25)
+        original_out = model.embed(x_test)
+        loaded_out = loaded.embed(x_test)
+        assert torch.allclose(original_out, loaded_out, atol=1e-5), (
+            "Loaded model embeddings do not match saved model embeddings"
+        )
+
+    def test_load_preserves_config(self, tmp_path: pytest.TempPathFactory) -> None:
+        model = CrossDomainEmbedder(
+            input_dim=20, embedding_dim=32, n_domains=6, n_task_types=4, hidden_dims=[64, 32]
+        )
+        path = tmp_path / "embedder_cfg.pt"  # type: ignore[operator]
+        model.save(path)
+
+        loaded = CrossDomainEmbedder.load(path)
+        assert loaded._input_dim == 20
+        assert loaded._embedding_dim == 32
+        assert loaded._n_domains == 6
+        assert loaded._n_task_types == 4
+        assert loaded._hidden_dims == [64, 32]
