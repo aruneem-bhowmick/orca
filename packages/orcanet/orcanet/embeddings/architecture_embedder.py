@@ -46,6 +46,10 @@ _ACTIVATION_TYPES: tuple[str, ...] = (
 _NODE_DIM: int = 16
 _GLOBAL_DIM: int = 3  # log(total_params), depth, log(max_width)
 
+# Normalise log1p(size) to ~[0, 1] so it doesn't dominate the one-hot features
+# in cosine-similarity calculations.  log1p(4096) ≈ 8.32 serves as the upper bound.
+_LOG_SIZE_SCALE: float = float(np.log1p(4096.0))
+
 
 @dataclass
 class ArchitectureGraph:
@@ -100,7 +104,7 @@ class ArchitectureGraph:
             if layer_type in _LAYER_TYPES:
                 node_features[i, _LAYER_TYPES.index(layer_type)] = 1.0
 
-            node_features[i, len(_LAYER_TYPES)] = float(np.log1p(layer_size))
+            node_features[i, len(_LAYER_TYPES)] = float(np.log1p(layer_size) / _LOG_SIZE_SCALE)
 
             if activation in _ACTIVATION_TYPES:
                 node_features[i, len(_LAYER_TYPES) + 1 + _ACTIVATION_TYPES.index(activation)] = 1.0
@@ -269,11 +273,15 @@ class ArchitectureEmbedder(nn.Module):
 
         if self._use_gcnconv:
             for conv in self.message_passing:  # type: ignore[union-attr]
-                h = F.relu(conv(h, edge_index))
+                h = h + F.relu(conv(h, edge_index))
         else:
+            # Residual message passing: each round adds a correction to the existing
+            # representation so nodes retain their original identity after smoothing.
+            # Without residuals, repeated adjacency averaging collapses all sequential-graph
+            # embeddings towards a common direction regardless of layer types.
             adj_norm = self._build_adj_norm(n_nodes, edge_index)
             for linear in self.message_passing:  # type: ignore[union-attr]
-                h = F.relu(linear(adj_norm @ h))
+                h = h + linear(adj_norm @ h)
 
         graph_emb = h.mean(dim=0)  # (hidden_dim,)
         return self.readout(graph_emb)  # (output_dim,)
