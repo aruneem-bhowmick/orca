@@ -15,7 +15,7 @@ class _DeterministicSentenceTransformer:
     similarity tests remain valid without a network connection.
     """
 
-    _KEYWORDS: list[str] = [
+    _KEYWORDS: tuple[str, ...] = (
         # vision / image tasks (indices 0-5)
         "image", "visual", "classification", "recognition", "photo", "picture",
         # financial / time-series tasks (indices 6-11)
@@ -27,7 +27,7 @@ class _DeterministicSentenceTransformer:
         # general ML qualifiers (indices 24-35)
         "binary", "multi", "class", "label", "category", "predict",
         "task", "model", "neural", "deep", "learning", "train",
-    ]
+    )
 
     def __init__(self, model_name: str | None = None, **kwargs: object) -> None:
         self._dim = 384
