@@ -325,3 +325,57 @@ class TestTransferScoreStructure:
         score = transfer.score_transfer(source, target)
         for name in score.recommended_layers:
             assert score.layer_scores[name] > 0.5
+
+
+# ---------------------------------------------------------------------------
+# TestExecuteTransfer
+# ---------------------------------------------------------------------------
+
+
+class TestExecuteTransfer:
+    """execute_transfer patches source weights into a clone of the target model."""
+
+    def _setup(self) -> tuple[FeatureTransfer, Task, Task, nn.Module, nn.Module]:
+        probe = np.random.default_rng(42).standard_normal((100, 10)).astype(np.float32)
+        transfer = FeatureTransfer(probe_data=probe, cka_threshold=0.0)
+        source = _make_task()
+        target = _make_task()
+        torch.manual_seed(1)
+        source_model = _make_mlp()
+        torch.manual_seed(2)
+        target_model = _make_mlp()
+        transfer.register_model(str(source.task_id), source_model)
+        transfer.register_model(str(target.task_id), target_model)
+        return transfer, source, target, source_model, target_model
+
+    def test_returns_nn_module(self) -> None:
+        transfer, source, target, source_model, _ = self._setup()
+        result = transfer.execute_transfer(source, target, source_model)
+        assert isinstance(result, nn.Module)
+
+    def test_does_not_mutate_source_model(self) -> None:
+        transfer, source, target, source_model, _ = self._setup()
+        original_params = {k: v.clone() for k, v in source_model.state_dict().items()}
+        transfer.execute_transfer(source, target, source_model)
+        for k, v in source_model.state_dict().items():
+            assert torch.equal(v, original_params[k]), f"Source param '{k}' was mutated"
+
+    def test_result_differs_from_unmodified_target(self) -> None:
+        transfer, source, target, source_model, target_model = self._setup()
+        adapted = transfer.execute_transfer(source, target, source_model)
+        target_params = target_model.state_dict()
+        adapted_params = adapted.state_dict()
+        any_changed = any(
+            not torch.equal(adapted_params[k], target_params[k])
+            for k in target_params
+        )
+        assert any_changed, "execute_transfer made no changes to the target clone"
+
+    def test_raises_when_target_not_registered(self) -> None:
+        probe = np.zeros((10, 10), dtype=np.float32)
+        transfer = FeatureTransfer(probe_data=probe)
+        source = _make_task()
+        target = _make_task()
+        transfer.register_model(str(source.task_id), _make_mlp())
+        with pytest.raises(ValueError, match="No model registered for target task"):
+            transfer.execute_transfer(source, target, _make_mlp())
