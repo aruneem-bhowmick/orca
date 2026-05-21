@@ -157,7 +157,7 @@ class FeatureTransfer(TransferStrategy):
         weights = np.array([1.0 / (i + 1) for i in range(len(names))])
         weights /= weights.sum()
         scores = np.array([layer_scores[n] for n in names])
-        overall = float(np.dot(weights, scores))
+        overall = float(np.clip(np.dot(weights, scores), 0.0, 1.0))
 
         recommended_layers = [n for n, s in layer_scores.items() if s > self.cka_threshold]
 
