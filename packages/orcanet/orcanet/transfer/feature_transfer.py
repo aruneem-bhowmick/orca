@@ -92,12 +92,13 @@ class FeatureTransfer(TransferStrategy):
 
         was_training = model.training
         model.eval()
-        with torch.no_grad():
-            model(data)
-        model.train(was_training)
-
-        for h in hooks:
-            h.remove()
+        try:
+            with torch.no_grad():
+                model(data)
+        finally:
+            model.train(was_training)
+            for h in hooks:
+                h.remove()
 
         return activations
 
