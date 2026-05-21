@@ -665,7 +665,7 @@ The OrcaMind health endpoint reports `faiss: false` when the FAISS index has not
 
 ## OrcaNet Transfer Python API
 
-The transfer subpackage provides a pure-Python API for CKA-based feature transfer scoring and weight patching. It does not expose an HTTP endpoint in the current release — the classes are consumed directly by OrcaNet's internal recommendation pipeline.
+The transfer subpackage provides a pure-Python API for two concrete transfer strategies: CKA-based feature-level scoring (`FeatureTransfer`) and direct parameter-tensor transfer with selective layer matching (`WeightTransfer`). Neither strategy exposes an HTTP endpoint in the current release — they are consumed directly by OrcaNet's internal recommendation pipeline.
 
 ### `linear_cka(X, Y) -> float`
 
@@ -706,10 +706,10 @@ Dataclass returned by `score_transfer`. **Note:** this is the internal rich type
 
 | Field | Type | Description |
 |---|---|---|
-| `overall` | `float` | Depth-weighted mean CKA across all scored layers, clipped to [0, 1] |
-| `layer_scores` | `dict[str, float]` | Per-named-layer CKA value |
-| `recommended_layers` | `list[str]` | Layers with CKA exceeding the configured threshold |
-| `reasoning` | `str` | Human-readable summary, e.g. `"CKA analysis: 3/4 layers exceed threshold 0.5. Weighted overall CKA: 0.921."` |
+| `overall` | `float` | Aggregate transferability score in [0, 1]. `FeatureTransfer`: depth-weighted mean CKA. `WeightTransfer`: `n_matched / n_total` parameter ratio. |
+| `layer_scores` | `dict[str, float]` | Per-named-layer score. `FeatureTransfer`: CKA similarity value. `WeightTransfer`: `1.0` (matched) or `0.0` (unmatched) per parameter tensor. |
+| `recommended_layers` | `list[str]` | Layers selected for transfer. `FeatureTransfer`: layers whose CKA exceeds `cka_threshold`. `WeightTransfer`: all matched parameter names. |
+| `reasoning` | `str` | Human-readable summary, e.g. `"CKA analysis: 3/4 layers exceed threshold 0.5."` or `"Matched 4/4 layers by name"`. |
 
 ### `FeatureTransfer`
 
@@ -774,6 +774,117 @@ if score.overall > 0.4:
     adapted = transfer.execute_transfer(source_task, target_task, source_model)
     # adapted is ready for fine-tuning on the target task
 ```
+
+### `WeightTransfer`
+
+```python
+from orcanet.transfer import WeightTransfer
+```
+
+Concrete `TransferStrategy` that transfers model weights by matching parameter tensors between a source and target model. Matching can be performed by parameter name, tensor shape, or both. Unmatched tensors are reinitialised in the returned model. Pairs with `get_optimizer_with_layer_lr` to apply decayed learning rates to transferred layers during fine-tuning.
+
+#### Constructor
+
+```python
+WeightTransfer(
+    match_by: str = "name",        # "name" | "shape" | "both"
+    frozen_epochs: int = 5,
+    layer_lr_decay: float = 0.1,
+)
+```
+
+| Parameter | Default | Description |
+|---|---|---|
+| `match_by` | `"name"` | Matching criterion. `"name"`: match if the parameter name exists in the source state dict (regardless of shape). `"shape"`: match if any source parameter has the same tensor shape. `"both"`: match only when name exists **and** shapes agree — the strictest mode, safe for cross-architecture transfer. |
+| `frozen_epochs` | `5` | Number of epochs to freeze transferred layers after transfer. Stored for downstream use; not enforced internally by this class. |
+| `layer_lr_decay` | `0.1` | Default decay factor for `get_optimizer_with_layer_lr`. Transferred layers receive `base_lr * layer_lr_decay`; new layers receive `base_lr`. |
+
+Raises `ValueError` on construction if `match_by` is not one of `"name"`, `"shape"`, `"both"`.
+
+#### Methods
+
+**`register_model(task_id: str, model: nn.Module) -> None`**
+
+Register an `nn.Module` under `task_id`. Must be called for both source and target tasks before `score_transfer`.
+
+**`score_transfer(source: Task, target: Task) -> TransferScore`**
+
+Iterate the target model's `state_dict()`, call `_matches` for each parameter tensor, and return a `TransferScore` with:
+
+- `overall` = `n_matched / n_total`
+- `layer_scores` = `{param_name: 1.0 | 0.0}`
+- `recommended_layers` = all matched parameter names
+- `reasoning` = `f"Matched {n_matched}/{n_total} layers by {match_by}"`
+
+Raises `ValueError` if either model is not registered.
+
+**`execute_transfer(source: Task, target: Task, source_model: nn.Module) -> tuple[nn.Module, list[str]]`**
+
+Deep-copy `source_model` to create the base target model, then for each parameter tensor:
+
+- If a safe source tensor can be resolved (name match + shape agreement, or shape-first scan for `match_by="shape"`): copy it in-place via `tensor.copy_()`.
+- Otherwise: reinitialise with `kaiming_uniform_` (2-D+ tensors, e.g. weight matrices) or `zeros_` (1-D tensors, e.g. bias vectors).
+
+Returns `(adapted_model, transferred_names)`. Pass `transferred_names` directly to `get_optimizer_with_layer_lr`.
+
+Shape mismatches are always handled silently — `copy_` is never called with incompatible shapes.
+
+**`get_transfer_metadata() -> dict`**
+
+Return `{"strategy": "weight_transfer", "match_by": str, "frozen_epochs": int, "layer_lr_decay": float}`.
+
+#### Example
+
+```python
+import torch.nn as nn
+from orcanet.transfer import WeightTransfer, get_optimizer_with_layer_lr
+
+transfer = WeightTransfer(match_by="both", layer_lr_decay=0.1)
+
+transfer.register_model(str(source_task.task_id), source_model)
+transfer.register_model(str(target_task.task_id), target_model)
+
+score = transfer.score_transfer(source_task, target_task)
+print(score.overall)            # e.g. 0.5 (2/4 params matched for different out_dim)
+print(score.recommended_layers) # e.g. ['0.weight', '0.bias']
+
+adapted, transferred = transfer.execute_transfer(source_task, target_task, source_model)
+# adapted: nn.Module — source architecture with unmatched params reinitialised
+# transferred: list[str] — e.g. ['0.weight', '0.bias', '2.weight', '2.bias']
+
+optimizer = get_optimizer_with_layer_lr(
+    adapted,
+    transferred_layers=transferred,
+    base_lr=1e-3,
+    decay=0.1,  # transferred layers get lr=1e-4; new layers get lr=1e-3
+)
+```
+
+### `get_optimizer_with_layer_lr`
+
+```python
+from orcanet.transfer import get_optimizer_with_layer_lr
+```
+
+Module-level utility that builds a `torch.optim.Adam` optimizer with per-parameter learning-rate groups. Transferred layers receive a decayed rate to allow fine adjustment of already-learned features; new or reinitialised layers receive the full base rate to learn from scratch.
+
+```python
+get_optimizer_with_layer_lr(
+    model: nn.Module,
+    transferred_layers: list[str],
+    base_lr: float,
+    decay: float = 0.1,
+) -> torch.optim.Adam
+```
+
+| Parameter | Description |
+|---|---|
+| `model` | The adapted model returned by `WeightTransfer.execute_transfer`. |
+| `transferred_layers` | Parameter names (as returned by `model.named_parameters()`) that were copied from the source. Typically the second element of the `execute_transfer` return tuple. |
+| `base_lr` | Learning rate for non-transferred (new / reinitialised) parameters. |
+| `decay` | Multiplicative factor applied to `base_lr` for transferred parameters. Default `0.1`. |
+
+**Returns** `torch.optim.Adam` with one parameter group per `named_parameters()` entry.
 
 ---
 
