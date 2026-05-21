@@ -107,7 +107,7 @@ class TestLinearCKAReturnType:
         assert 0.0 <= val <= 1.0 + 1e-6
 
     def test_different_feature_dims_allowed(self) -> None:
-        """CKA is defined for X (n×p) and Y (n×q) with p ≠ q."""
+        """CKA is defined for X (n x p) and Y (n x q) with p != q."""
         rng = np.random.default_rng(4)
         X = rng.standard_normal((50, 8))
         Y = rng.standard_normal((50, 20))
