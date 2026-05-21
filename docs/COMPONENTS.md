@@ -1587,7 +1587,10 @@ graph = ArchitectureGraph.from_model_config(mlp_config)
 
 #### `orcanet.transfer` — Transfer Strategies
 
-The transfer subpackage provides the machinery for quantifying and executing feature-level knowledge transfer between tasks using Centered Kernel Alignment.
+The transfer subpackage provides two concrete transfer strategies sharing a common ABC and return type:
+
+- **`FeatureTransfer`** — scores transferability via per-layer linear Centered Kernel Alignment (Kornblith et al. 2019) computed over forward-hook activations on shared probe data; selectively patches weights for high-CKA layers.
+- **`WeightTransfer`** — matches parameter tensors directly by name, shape, or both; deep-copies the source architecture as the transfer base and reinitialises unmatched tensors; pairs with `get_optimizer_with_layer_lr` for layer-wise learning-rate decay.
 
 ##### `TransferStrategy` (`base.py`)
 
@@ -1657,7 +1660,56 @@ adapted = transfer.execute_transfer(source_task, target_task, source_model)
 # adapted is a clone of the registered target model with source weights patched in
 ```
 
-The remaining transfer components (`WeightTransfer`, `ArchitectureAdapter`, `MultiTaskTrainer`) are planned.
+##### `WeightTransfer` / `get_optimizer_with_layer_lr` (`weight_transfer.py`)
+
+`WeightTransfer` — concrete `TransferStrategy` that transfers parameter tensors directly, without requiring probe data or forward passes.
+
+**Workflow:**
+
+1. Register source and target `nn.Module` instances via `register_model(task_id, model)`.
+2. Call `score_transfer(source, target)` to compute per-parameter match flags and an overall ratio.
+3. Call `execute_transfer(source, target, source_model)` to produce the adapted model; transferred parameter names are stored in `last_transferred`.
+4. Pass `transfer.last_transferred` to `get_optimizer_with_layer_lr` to build a learning-rate–stratified Adam optimizer.
+
+**`match_by` modes:**
+
+| Mode | Match condition | Use case |
+|---|---|---|
+| `"name"` (default) | Parameter name exists in source state dict | Same architecture, different initialisation |
+| `"shape"` | Any source tensor has the same shape | Architecture families with shared tensor dimensions |
+| `"both"` | Name present **and** shapes agree | Cross-architecture transfer where last-layer sizes differ |
+
+**Key implementation details:**
+
+- **Deepcopy base** — `execute_transfer` starts from `deepcopy(self._model_registry[target_id])`, so the result preserves the target architecture and capacity. The source weights are copied in on top for matched layers only.
+- **Shape-safe copy resolution** — `_find_source_tensor` is the sole entry point for resolving which source tensor to copy. It always verifies shape compatibility before returning, so `copy_()` is never called with mismatched shapes regardless of `match_by` mode. A `None` return triggers reinitialisation.
+- **Safe reinitialisation** — `_safe_reinit` applies `nn.init.kaiming_uniform_` to 2-D+ tensors (weight matrices, convolutional kernels) and `nn.init.zeros_` to 1-D tensors (bias vectors). This avoids the `ValueError` that `kaiming_uniform_` raises on 1-D inputs.
+- **`last_transferred` attribute** — `execute_transfer` returns `nn.Module` and stores the list of transferred parameter names in `self.last_transferred`. Pass this list to `get_optimizer_with_layer_lr` without needing to re-run `score_transfer`.
+- **Binary scoring** — `score_transfer` produces `layer_scores = {name: 1.0 | 0.0}` rather than a continuous similarity value. The `overall` field is the exact matched-parameter ratio: `n_matched / n_total`.
+
+`get_optimizer_with_layer_lr(model, transferred_layers, base_lr, decay=0.1)` — module-level function that creates one `{"params": [p], "lr": ...}` group per named parameter. Transferred parameters receive `base_lr * decay`; all others receive `base_lr`. Returns a `torch.optim.Adam` ready for training.
+
+```python
+from orcanet.transfer import WeightTransfer, get_optimizer_with_layer_lr
+
+transfer = WeightTransfer(match_by="both", layer_lr_decay=0.1)
+transfer.register_model(str(source_task.task_id), source_model)
+transfer.register_model(str(target_task.task_id), target_model)
+
+score: TransferScore = transfer.score_transfer(source_task, target_task)
+# score.overall       — matched / total (float in [0, 1])
+# score.layer_scores  — {'0.weight': 1.0, '0.bias': 1.0, '2.weight': 0.0, '2.bias': 0.0}
+# score.recommended_layers — ['0.weight', '0.bias']
+
+adapted = transfer.execute_transfer(source_task, target_task, source_model)
+# adapted — deepcopy of registered target model with source weights patched in
+# transfer.last_transferred — ['0.weight', '0.bias']  (parameter names that were copied)
+
+optimizer = get_optimizer_with_layer_lr(adapted, transfer.last_transferred, base_lr=1e-3, decay=0.1)
+# transferred params get lr=1e-4; reinitialised params get lr=1e-3
+```
+
+The remaining transfer components (`ArchitectureAdapter`, `MultiTaskTrainer`) are planned.
 
 #### `orcanet.retrieval` — Hybrid Retrieval (planned)
 
@@ -1754,6 +1806,7 @@ Seven unit test files across three directories, plus two empty `__init__.py` pla
 | `tests/unit/embeddings/test_text_features.py` | 16 | `TextTaskEmbedder` shape and L2-normalisation for `embed_from_description`; invalid fusion `ValueError`; `embed_with_stats` output shape for all three fusion strategies and the no-labels regression path; output L2-normalisation for fused vectors; custom `output_dim` via the `add` fusion; semantic similarity ordering (image tasks cluster closer together than they do to financial tasks); identical descriptions produce dot-product 1.0; batch shape `(N, 384)`, row-wise normalisation, and exact numerical match against individual `embed_from_description` calls |
 | `tests/unit/embeddings/test_architecture_embedder.py` | 45 | `ArchitectureGraph` node counts for MLP, CNN, single-layer, and empty configs; node feature shape `(n, 16)` and dtype float32; one-hot correctness for all layer types and all activation types; log-size encoding against `_LOG_SIZE_SCALE`; unknown-type zero-out; sequential and skip-connection edge counts; edge dtype int64; global features shape, dtype, depth equality, log-total-size sign, log-max-width value; `ArchitectureEmbedder.embed` shape `(32,)`, L2 norm, numpy dtype float32, custom `output_dim`, training-mode preservation (both directions), single-layer and empty-config edge cases, determinism across two calls; similarity — identical configs → 1.0, self-similarity exceeds cross-architecture similarity (seeded), return type float, symmetry; retrieval — `top_k` count, fewer-candidates-than-k, descending sort, tuple types, identical query is top result, default `top_k=5`, `top_k=0` returns `[]`, negative `top_k` raises `ValueError` |
 | `tests/unit/transfer/test_feature_transfer.py` | 37 | `linear_cka` — self-similarity equals 1.0 (square, tall, wide); orthogonal subspace pair near zero; CKA symmetry; value always in [0, 1]; different feature dimensions allowed; return type float. `FeatureTransfer` — identical models produce overall > 0.9; all layer scores near 1.0; all layers recommended; `TransferScore` instance returned; random-init models score well below identical; reasoning non-empty; layer scores populated. Guards — `ValueError` when source/target not registered; `ValueError` when `probe_data` absent; mock `OrcaMindClient` stored but not called during scoring. Metadata — strategy name, threshold, probe-data presence flag, registered model count. Structural invariants — overall in [0, 1]; `layer_scores` is dict; `recommended_layers` is list; reasoning non-empty string; recommended layers are a subset of layer_scores keys; recommended layers all exceed threshold. `execute_transfer` — returns `nn.Module`; does not mutate source model; result differs from unmodified target; `ValueError` when target not registered |
+| `tests/unit/transfer/test_weight_transfer.py` | 34 | `WeightTransfer` score — identical models produce `overall == 1.0`; all layer scores are 1.0; all params in `recommended_layers`. Match-by semantics — `"name"` mode scores 1.0 for all params even when last-layer shapes differ; `"both"` mode excludes shape-mismatched params and drops `overall` below 1.0; first-layer params remain 1.0 in `"both"` mode; `"shape"` mode score is a float in [0, 1]. Structural invariants — `overall` in [0, 1]; `layer_scores` is dict; `recommended_layers` is list and subset of `layer_scores` keys; all recommended layers have score 1.0; reasoning non-empty string. `execute_transfer` — returns `(nn.Module, list[str])` tuple; transferred-layer weights equal source weights after transfer; all params transferred for identical architecture; source model not mutated; no exception for any `match_by` mode; `_safe_reinit` handles 1-D bias and 2-D+ weight tensors without raising. `get_optimizer_with_layer_lr` — returns `torch.optim.Adam`; transferred params get `base_lr * decay`; non-transferred params get `base_lr`; `decay=0.0` produces zero LR for transferred layers; empty transferred list gives all-base-lr groups. Guards — `ValueError` when source/target not registered; `ValueError` on invalid `match_by`. Metadata — `strategy == "weight_transfer"`; `match_by`, `frozen_epochs`, `layer_lr_decay` reflected; defaults verified. |
 
 **Notable patterns introduced in the OrcaNet test suite:**
 
@@ -1768,3 +1821,6 @@ Seven unit test files across three directories, plus two empty `__init__.py` pla
 - *Relaxed threshold for shallow-network CKA* — `TestFeatureTransferRandomModels.test_overall_below_identical` asserts `score.overall < 0.8` rather than the intuitively tighter `< 0.5`. Two independently initialised shallow MLPs (10→20→5) produce CKA ≈ 0.60 even with no shared training because the shared input distribution induces a consistent covariance structure. The threshold 0.8 is still a meaningful gap from the ≈1.0 of identical models; it just reflects the minimum distinguishable signal for networks at this scale.
 - *execute_transfer mutability assertion* — `test_does_not_mutate_source_model` clones every source parameter before the call and asserts exact tensor equality afterwards. Weight-patching operations that mistakenly modify an in-place buffer on the source would be caught here even if the adapted model looks correct.
 - *Orthogonal subspace pair construction* — `TestLinearCKAOrthogonal._orthogonal_pair` draws columns from a QR-factored random square matrix rather than generating two independent random matrices. This guarantees `col(X) ⊥ col(Y)` exactly by construction, so the CKA near-zero assertion is a precise geometric claim rather than a probabilistic one.
+- *Deepcopy semantics for WeightTransfer* — `test_weight_transfer.py` explicitly documents that `execute_transfer` starts from `deepcopy(source_model)`, so shape mismatches between source and target cannot arise within `execute_transfer` itself. The `test_shape_mismatch_skipped_without_exception` test verifies the no-raise guarantee across all three `match_by` modes; the shape-safety of `_find_source_tensor` is covered separately via `test_safe_reinit_handles_1d_and_2d_tensors`, which calls `_safe_reinit` directly on 1-D (bias) and 2-D+ (weight) tensors and confirms no exception is raised. This split makes the test intent explicit rather than hiding it behind an architecture-mismatch fixture that would not actually exercise the code path.
+- *Binary score assertions for WeightTransfer* — `TestWeightTransferScoreMatchBy` uses two model architectures with identical first layers but different `out_dim` to assert the three `match_by` semantics precisely: `"name"` matches all four parameters (all names exist regardless of shape), `"both"` excludes the two last-layer parameters (shape mismatch), and `"shape"` produces a float in [0, 1] without asserting a specific value (shape-indexed matching on random architectures is deterministic but architecturally coupled). Testing each mode independently makes it easy to add a fourth mode without adjusting existing assertions.
+- *Per-parameter optimizer group verification* — `TestGetOptimizerWithLayerLR.test_transferred_params_get_decayed_lr` iterates every `param_groups` entry, resolves the parameter back to its name via `model.named_parameters()`, and asserts the learning rate equals `base_lr * decay` for transferred names and `base_lr` for all others. This catches silent bugs where a group contains the wrong parameter or the LR formula is applied to the wrong set — possible when `param_groups` is built by list comprehension over `named_parameters()` and the index mapping drifts.
