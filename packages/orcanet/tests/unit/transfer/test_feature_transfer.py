@@ -192,3 +192,55 @@ class TestFeatureTransferRandomModels:
         transfer, source, target = self._setup()
         score = transfer.score_transfer(source, target)
         assert len(score.layer_scores) > 0
+
+
+# ---------------------------------------------------------------------------
+# TestFeatureTransferGuards — error conditions
+# ---------------------------------------------------------------------------
+
+
+class TestFeatureTransferGuards:
+    def test_raises_when_source_not_registered(self) -> None:
+        transfer = FeatureTransfer(probe_data=np.zeros((10, 5), dtype=np.float32))
+        source = _make_task()
+        target = _make_task()
+        model = _make_mlp(in_dim=5)
+        transfer.register_model(str(target.task_id), model)
+        with pytest.raises(ValueError, match="Models not registered"):
+            transfer.score_transfer(source, target)
+
+    def test_raises_when_target_not_registered(self) -> None:
+        transfer = FeatureTransfer(probe_data=np.zeros((10, 5), dtype=np.float32))
+        source = _make_task()
+        target = _make_task()
+        model = _make_mlp(in_dim=5)
+        transfer.register_model(str(source.task_id), model)
+        with pytest.raises(ValueError, match="Models not registered"):
+            transfer.score_transfer(source, target)
+
+    def test_raises_when_probe_data_missing(self) -> None:
+        transfer = FeatureTransfer()
+        source = _make_task()
+        target = _make_task()
+        model = _make_mlp()
+        transfer.register_model(str(source.task_id), model)
+        transfer.register_model(str(target.task_id), model)
+        with pytest.raises(ValueError, match="probe_data"):
+            transfer.score_transfer(source, target)
+
+    def test_mock_orcamind_client_is_stored(self) -> None:
+        mock_client = MagicMock()
+        transfer = FeatureTransfer(orcamind_client=mock_client)
+        assert transfer.orcamind_client is mock_client
+
+    def test_mock_client_not_called_during_score(self) -> None:
+        mock_client = MagicMock()
+        probe = np.random.default_rng(5).standard_normal((50, 10)).astype(np.float32)
+        transfer = FeatureTransfer(orcamind_client=mock_client, probe_data=probe)
+        source = _make_task()
+        target = _make_task()
+        model = _make_mlp()
+        transfer.register_model(str(source.task_id), model)
+        transfer.register_model(str(target.task_id), model)
+        transfer.score_transfer(source, target)
+        mock_client.assert_not_called()
