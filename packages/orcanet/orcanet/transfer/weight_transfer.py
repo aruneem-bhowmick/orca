@@ -12,6 +12,11 @@ from copy import deepcopy
 import torch
 import torch.nn as nn
 
+from orca_shared.schemas.task import Task
+
+from .base import TransferStrategy
+from .types import TransferScore
+
 
 def _safe_reinit(t: torch.Tensor) -> None:
     """Reinitialise *t* in-place: kaiming_uniform_ for 2-D+, zeros_ for 1-D."""
@@ -50,11 +55,6 @@ def get_optimizer_with_layer_lr(
     ]
     return torch.optim.Adam(param_groups)
 
-from orca_shared.schemas.task import Task
-
-from .base import TransferStrategy
-from .types import TransferScore
-
 
 class WeightTransfer(TransferStrategy):
     """Transfer strategy that copies matched parameter tensors from source to target.
@@ -65,8 +65,8 @@ class WeightTransfer(TransferStrategy):
        :meth:`register_model` (keyed by ``str(task_id)``).
     2. Call :meth:`score_transfer` to obtain a :class:`TransferScore` with
        per-parameter match flags and an overall match ratio.
-    3. Call :meth:`execute_transfer` to produce an adapted model; the second
-       return value is the list of transferred parameter names, which can be
+    3. Call :meth:`execute_transfer` to produce an adapted model; the names of
+       transferred parameters are stored in :attr:`last_transferred` and can be
        passed directly to :func:`get_optimizer_with_layer_lr`.
     """
 
@@ -96,6 +96,7 @@ class WeightTransfer(TransferStrategy):
         self.frozen_epochs = frozen_epochs
         self.layer_lr_decay = layer_lr_decay
         self._model_registry: dict[str, nn.Module] = {}
+        self.last_transferred: list[str] = []
 
     def register_model(self, task_id: str, model: nn.Module) -> None:
         """Register an ``nn.Module`` for weight scoring under *task_id*."""
@@ -174,19 +175,31 @@ class WeightTransfer(TransferStrategy):
         source: Task,
         target: Task,
         source_model: nn.Module,
-    ) -> tuple[nn.Module, list[str]]:  # type: ignore[override]
-        """Copy matched weights from *source_model* into a deep-copied target model.
+    ) -> nn.Module:
+        """Copy matched weights from *source_model* into the registered target model.
 
-        Unmatched or shape-incompatible parameters are reinitialised with
-        ``kaiming_uniform_`` (2-D+) or ``zeros_`` (1-D, e.g. biases).
+        The registered target model is deep-copied as the starting point so the
+        registry entry is never mutated.  Unmatched or shape-incompatible
+        parameters are reinitialised with ``kaiming_uniform_`` (2-D+) or
+        ``zeros_`` (1-D, e.g. biases).
 
-        Returns
-        -------
-        tuple[nn.Module, list[str]]
-            The adapted model and the list of parameter names that were copied.
-            Pass the latter directly to :func:`get_optimizer_with_layer_lr`.
+        The names of transferred parameters are stored in
+        :attr:`last_transferred` after the call and can be passed directly to
+        :func:`get_optimizer_with_layer_lr`.
+
+        Raises
+        ------
+        ValueError
+            If a model has not been registered for *target*.
         """
-        target_model = deepcopy(source_model)
+        target_id = str(target.task_id)
+        if target_id not in self._model_registry:
+            raise ValueError(
+                f"Model not registered for target task '{target_id}'. "
+                "Call register_model() before execute_transfer()."
+            )
+
+        target_model = deepcopy(self._model_registry[target_id])
         source_state = source_model.state_dict()
         target_state = target_model.state_dict()
 
@@ -200,7 +213,8 @@ class WeightTransfer(TransferStrategy):
                 _safe_reinit(target_state[name])
 
         target_model.load_state_dict(target_state)
-        return target_model, transferred
+        self.last_transferred = transferred
+        return target_model
 
     def get_transfer_metadata(self) -> dict:
         """Return a dict of strategy configuration for logging and inspection."""
