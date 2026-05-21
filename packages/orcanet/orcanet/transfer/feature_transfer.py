@@ -80,7 +80,7 @@ class FeatureTransfer(TransferStrategy):
         hooks: list = []
 
         def _make_hook(name: str):
-            def _hook(module, input, output):  # noqa: ARG001
+            def _hook(module, _hook_input, output):  # noqa: ARG001
                 if isinstance(output, torch.Tensor) and output.ndim >= 2:
                     activations[name] = output.detach().cpu().numpy()
 
