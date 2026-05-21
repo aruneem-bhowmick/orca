@@ -663,6 +663,120 @@ The OrcaMind health endpoint reports `faiss: false` when the FAISS index has not
 
 ---
 
+## OrcaNet Transfer Python API
+
+The transfer subpackage provides a pure-Python API for CKA-based feature transfer scoring and weight patching. It does not expose an HTTP endpoint in the current release — the classes are consumed directly by OrcaNet's internal recommendation pipeline.
+
+### `linear_cka(X, Y) -> float`
+
+```python
+from orcanet.transfer import linear_cka
+```
+
+Compute linear Centered Kernel Alignment (Kornblith et al. 2019) between two activation matrices.
+
+| Parameter | Type | Description |
+|---|---|---|
+| `X` | `np.ndarray (n, p)` | Activation matrix for one model; `n` samples, `p` features |
+| `Y` | `np.ndarray (n, q)` | Activation matrix for the other model; same `n` samples, `q` features |
+
+**Returns** `float` in [0, 1]. A value of 1.0 indicates identical representational geometry; 0.0 indicates orthogonal representations.
+
+### `TransferStrategy` (ABC)
+
+```python
+from orcanet.transfer import TransferStrategy
+```
+
+Abstract base class for all transfer strategies. Subclasses must implement:
+
+| Method | Signature | Description |
+|---|---|---|
+| `score_transfer` | `(source: Task, target: Task) -> TransferScore` | Compute transfer score between two registered models |
+| `execute_transfer` | `(source: Task, target: Task, source_model: nn.Module) -> nn.Module` | Apply transfer to produce an adapted model |
+| `get_transfer_metadata` | `() -> dict` | Return strategy configuration for logging |
+
+### `TransferScore`
+
+```python
+from orcanet.transfer import TransferScore
+```
+
+Dataclass returned by `score_transfer`. **Note:** this is the internal rich type; `orca_shared.schemas.transfer.TransferScore` is the lightweight API schema for inter-service exchange.
+
+| Field | Type | Description |
+|---|---|---|
+| `overall` | `float` | Depth-weighted mean CKA across all scored layers, clipped to [0, 1] |
+| `layer_scores` | `dict[str, float]` | Per-named-layer CKA value |
+| `recommended_layers` | `list[str]` | Layers with CKA exceeding the configured threshold |
+| `reasoning` | `str` | Human-readable summary, e.g. `"CKA analysis: 3/4 layers exceed threshold 0.5. Weighted overall CKA: 0.921."` |
+
+### `FeatureTransfer`
+
+```python
+from orcanet.transfer import FeatureTransfer
+```
+
+Concrete `TransferStrategy` using per-layer linear CKA to score transferability and selectively patch weights.
+
+#### Constructor
+
+```python
+FeatureTransfer(
+    orcamind_client: OrcaMindClient | None = None,
+    probe_data: np.ndarray | None = None,
+    cka_threshold: float = 0.5,
+)
+```
+
+| Parameter | Default | Description |
+|---|---|---|
+| `orcamind_client` | `None` | Optional client stored for future registry-backed model resolution; not used in the current scoring path |
+| `probe_data` | `None` | Shared input array `(n_samples, input_dim)` passed through both models to collect activations. Required before calling `score_transfer`. |
+| `cka_threshold` | `0.5` | Minimum per-layer CKA for a layer to appear in `recommended_layers` |
+
+#### Methods
+
+**`register_model(task_id: str, model: nn.Module) -> None`**
+
+Register an `nn.Module` under `task_id`. Must be called for both source and target tasks before `score_transfer`.
+
+**`score_transfer(source: Task, target: Task) -> TransferScore`**
+
+Collect activations from both registered models on `probe_data`, compute per-layer CKA, and return a `TransferScore`. Raises `ValueError` if either model is not registered or if `probe_data` is `None`.
+
+**`execute_transfer(source: Task, target: Task, source_model: nn.Module) -> nn.Module`**
+
+Clone the registered target model and patch in weights from `source_model` for all `recommended_layers`. Non-recommended layers retain the target model's initialisation. Raises `ValueError` if the target task has no registered model.
+
+**`get_transfer_metadata() -> dict`**
+
+Return `{"strategy": "feature_cka", "cka_threshold": float, "n_registered_models": int, "has_probe_data": bool}`.
+
+#### Example
+
+```python
+import numpy as np
+import torch.nn as nn
+from orcanet.transfer import FeatureTransfer
+
+probe = np.random.default_rng(0).standard_normal((100, 10)).astype("float32")
+transfer = FeatureTransfer(probe_data=probe, cka_threshold=0.6)
+
+transfer.register_model(str(source_task.task_id), source_model)
+transfer.register_model(str(target_task.task_id), target_model)
+
+score = transfer.score_transfer(source_task, target_task)
+print(score.overall)           # e.g. 0.87
+print(score.recommended_layers)  # e.g. ['0', '0.0', '0.2']
+
+if score.overall > 0.4:
+    adapted = transfer.execute_transfer(source_task, target_task, source_model)
+    # adapted is ready for fine-tuning on the target task
+```
+
+---
+
 ## Shared Schema Types
 
 All Pydantic models live in `packages/orca-shared/orca_shared/schemas/`.
