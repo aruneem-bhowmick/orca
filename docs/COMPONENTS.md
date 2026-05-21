@@ -1668,8 +1668,8 @@ adapted = transfer.execute_transfer(source_task, target_task, source_model)
 
 1. Register source and target `nn.Module` instances via `register_model(task_id, model)`.
 2. Call `score_transfer(source, target)` to compute per-parameter match flags and an overall ratio.
-3. Call `execute_transfer(source, target, source_model)` to produce the adapted model and the list of transferred parameter names.
-4. Pass the returned name list to `get_optimizer_with_layer_lr` to build a learning-rate–stratified Adam optimizer.
+3. Call `execute_transfer(source, target, source_model)` to produce the adapted model; transferred parameter names are stored in `last_transferred`.
+4. Pass `transfer.last_transferred` to `get_optimizer_with_layer_lr` to build a learning-rate–stratified Adam optimizer.
 
 **`match_by` modes:**
 
@@ -1681,10 +1681,10 @@ adapted = transfer.execute_transfer(source_task, target_task, source_model)
 
 **Key implementation details:**
 
-- **Deepcopy base** — `execute_transfer` always starts from `deepcopy(source_model)`, so the result has the source architecture. The registered target model is used only for `score_transfer`.
+- **Deepcopy base** — `execute_transfer` starts from `deepcopy(self._model_registry[target_id])`, so the result preserves the target architecture and capacity. The source weights are copied in on top for matched layers only.
 - **Shape-safe copy resolution** — `_find_source_tensor` is the sole entry point for resolving which source tensor to copy. It always verifies shape compatibility before returning, so `copy_()` is never called with mismatched shapes regardless of `match_by` mode. A `None` return triggers reinitialisation.
 - **Safe reinitialisation** — `_safe_reinit` applies `nn.init.kaiming_uniform_` to 2-D+ tensors (weight matrices, convolutional kernels) and `nn.init.zeros_` to 1-D tensors (bias vectors). This avoids the `ValueError` that `kaiming_uniform_` raises on 1-D inputs.
-- **Tuple return** — `execute_transfer` returns `(adapted_model, transferred_names)` rather than just the model. The name list is required by `get_optimizer_with_layer_lr` and avoids forcing callers to re-run `score_transfer` to recover it. This overrides the ABC's `-> nn.Module` annotation (`# type: ignore[override]`).
+- **`last_transferred` attribute** — `execute_transfer` returns `nn.Module` and stores the list of transferred parameter names in `self.last_transferred`. Pass this list to `get_optimizer_with_layer_lr` without needing to re-run `score_transfer`.
 - **Binary scoring** — `score_transfer` produces `layer_scores = {name: 1.0 | 0.0}` rather than a continuous similarity value. The `overall` field is the exact matched-parameter ratio: `n_matched / n_total`.
 
 `get_optimizer_with_layer_lr(model, transferred_layers, base_lr, decay=0.1)` — module-level function that creates one `{"params": [p], "lr": ...}` group per named parameter. Transferred parameters receive `base_lr * decay`; all others receive `base_lr`. Returns a `torch.optim.Adam` ready for training.
@@ -1701,11 +1701,11 @@ score: TransferScore = transfer.score_transfer(source_task, target_task)
 # score.layer_scores  — {'0.weight': 1.0, '0.bias': 1.0, '2.weight': 0.0, '2.bias': 0.0}
 # score.recommended_layers — ['0.weight', '0.bias']
 
-adapted, transferred = transfer.execute_transfer(source_task, target_task, source_model)
-# adapted    — deepcopy of source_model with unmatched params reinitialised
-# transferred — ['0.weight', '0.bias']  (parameter names that were copied)
+adapted = transfer.execute_transfer(source_task, target_task, source_model)
+# adapted — deepcopy of registered target model with source weights patched in
+# transfer.last_transferred — ['0.weight', '0.bias']  (parameter names that were copied)
 
-optimizer = get_optimizer_with_layer_lr(adapted, transferred, base_lr=1e-3, decay=0.1)
+optimizer = get_optimizer_with_layer_lr(adapted, transfer.last_transferred, base_lr=1e-3, decay=0.1)
 # transferred params get lr=1e-4; reinitialised params get lr=1e-3
 ```
 

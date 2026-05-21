@@ -818,14 +818,14 @@ Iterate the target model's `state_dict()`, call `_matches` for each parameter te
 
 Raises `ValueError` if either model is not registered.
 
-**`execute_transfer(source: Task, target: Task, source_model: nn.Module) -> tuple[nn.Module, list[str]]`**
+**`execute_transfer(source: Task, target: Task, source_model: nn.Module) -> nn.Module`**
 
-Deep-copy `source_model` to create the base target model, then for each parameter tensor:
+Deep-copy the registered target model to create the adapted base, then for each parameter tensor:
 
 - If a safe source tensor can be resolved (name match + shape agreement, or shape-first scan for `match_by="shape"`): copy it in-place via `tensor.copy_()`.
 - Otherwise: reinitialise with `kaiming_uniform_` (2-D+ tensors, e.g. weight matrices) or `zeros_` (1-D tensors, e.g. bias vectors).
 
-Returns `(adapted_model, transferred_names)`. Pass `transferred_names` directly to `get_optimizer_with_layer_lr`.
+Returns the adapted `nn.Module`. The names of transferred parameters are stored in `transfer.last_transferred` after the call; pass this list directly to `get_optimizer_with_layer_lr`. Raises `ValueError` if the target task has no registered model.
 
 Shape mismatches are always handled silently — `copy_` is never called with incompatible shapes.
 
@@ -848,13 +848,13 @@ score = transfer.score_transfer(source_task, target_task)
 print(score.overall)            # e.g. 0.5 (2/4 params matched for different out_dim)
 print(score.recommended_layers) # e.g. ['0.weight', '0.bias']
 
-adapted, transferred = transfer.execute_transfer(source_task, target_task, source_model)
-# adapted: nn.Module — source architecture with unmatched params reinitialised
-# transferred: list[str] — e.g. ['0.weight', '0.bias', '2.weight', '2.bias']
+adapted = transfer.execute_transfer(source_task, target_task, source_model)
+# adapted: nn.Module — registered target architecture with source weights patched in
+# transfer.last_transferred: list[str] — e.g. ['0.weight', '0.bias', '2.weight', '2.bias']
 
 optimizer = get_optimizer_with_layer_lr(
     adapted,
-    transferred_layers=transferred,
+    transferred_layers=transfer.last_transferred,
     base_lr=1e-3,
     decay=0.1,  # transferred layers get lr=1e-4; new layers get lr=1e-3
 )
@@ -880,7 +880,7 @@ get_optimizer_with_layer_lr(
 | Parameter | Description |
 |---|---|
 | `model` | The adapted model returned by `WeightTransfer.execute_transfer`. |
-| `transferred_layers` | Parameter names (as returned by `model.named_parameters()`) that were copied from the source. Typically the second element of the `execute_transfer` return tuple. |
+| `transferred_layers` | Parameter names (as returned by `model.named_parameters()`) that were copied from the source. Use `WeightTransfer.last_transferred` set by the preceding `execute_transfer` call. |
 | `base_lr` | Learning rate for non-transferred (new / reinitialised) parameters. |
 | `decay` | Multiplicative factor applied to `base_lr` for transferred parameters. Default `0.1`. |
 
