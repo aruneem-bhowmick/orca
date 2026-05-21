@@ -173,3 +173,98 @@ class TestWeightTransferScoreStructure:
         score = self._score()
         for name in score.recommended_layers:
             assert score.layer_scores[name] == 1.0
+
+
+# ---------------------------------------------------------------------------
+# TestWeightTransferExecute
+# ---------------------------------------------------------------------------
+
+
+class TestWeightTransferExecute:
+    """execute_transfer copies matched weights and reinitialises unmatched ones."""
+
+    def _setup_identical(self) -> tuple[WeightTransfer, Task, Task, nn.Module]:
+        """Same architecture: all params should be transferred."""
+        wt = WeightTransfer(match_by="name")
+        source = _make_task()
+        target = _make_task()
+        torch.manual_seed(10)
+        source_model = _make_mlp()
+        torch.manual_seed(20)
+        target_model = _make_mlp()
+        wt.register_model(str(source.task_id), source_model)
+        wt.register_model(str(target.task_id), target_model)
+        return wt, source, target, source_model
+
+    def _setup_mismatched(self) -> tuple[WeightTransfer, Task, Task, nn.Module]:
+        """Different out_dim: last-layer params have shape mismatch."""
+        wt = WeightTransfer(match_by="both")
+        source = _make_task()
+        target = _make_task()
+        torch.manual_seed(30)
+        source_model = _make_mlp(out_dim=5)
+        torch.manual_seed(40)
+        target_model = _make_mlp(out_dim=3)
+        wt.register_model(str(source.task_id), source_model)
+        wt.register_model(str(target.task_id), target_model)
+        return wt, source, target, source_model
+
+    def test_returns_tuple_of_module_and_list(self) -> None:
+        wt, source, target, source_model = self._setup_identical()
+        result = wt.execute_transfer(source, target, source_model)
+        assert isinstance(result, tuple) and len(result) == 2
+        model, transferred = result
+        assert isinstance(model, nn.Module)
+        assert isinstance(transferred, list)
+
+    def test_transferred_weights_equal_source(self) -> None:
+        wt, source, target, source_model = self._setup_identical()
+        adapted, transferred = wt.execute_transfer(source, target, source_model)
+        source_state = source_model.state_dict()
+        adapted_state = adapted.state_dict()
+        for name in transferred:
+            assert torch.equal(adapted_state[name], source_state[name]), (
+                f"Transferred param '{name}' does not match source after execute_transfer"
+            )
+
+    def test_all_params_transferred_for_identical_architecture(self) -> None:
+        wt, source, target, source_model = self._setup_identical()
+        _, transferred = wt.execute_transfer(source, target, source_model)
+        expected = list(source_model.state_dict().keys())
+        assert set(transferred) == set(expected)
+
+    def test_source_model_not_mutated(self) -> None:
+        wt, source, target, source_model = self._setup_identical()
+        original = {k: v.clone() for k, v in source_model.state_dict().items()}
+        wt.execute_transfer(source, target, source_model)
+        for k, v in source_model.state_dict().items():
+            assert torch.equal(v, original[k]), f"Source param '{k}' was mutated"
+
+    def test_shape_mismatch_skipped_without_exception(self) -> None:
+        """Using match_by='both', shape-mismatched params are silently reinitialized."""
+        wt, source, target, source_model = self._setup_mismatched()
+        adapted, transferred = wt.execute_transfer(source, target, source_model)
+        # Should not raise; last-layer params must NOT appear in transferred
+        assert "2.weight" not in transferred
+        assert "2.bias" not in transferred
+
+    def test_matched_params_transferred_shape_mismatch_case(self) -> None:
+        """With match_by='both', first-layer params still transfer."""
+        wt, source, target, source_model = self._setup_mismatched()
+        adapted, transferred = wt.execute_transfer(source, target, source_model)
+        assert "0.weight" in transferred
+        assert "0.bias" in transferred
+
+    def test_unmatched_params_differ_from_source(self) -> None:
+        """Reinitialized params should not equal source values (with overwhelming probability)."""
+        wt, source, target, source_model = self._setup_mismatched()
+        adapted, transferred = wt.execute_transfer(source, target, source_model)
+        source_state = source_model.state_dict()
+        adapted_state = adapted.state_dict()
+        unmatched = [n for n in adapted_state if n not in transferred]
+        # At least one unmatched weight tensor should differ from source
+        assert any(
+            not torch.equal(adapted_state[n], source_state.get(n, torch.zeros(1)))
+            for n in unmatched
+            if adapted_state[n].ndim >= 2
+        )
