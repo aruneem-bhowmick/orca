@@ -134,7 +134,10 @@ class FeatureTransfer(TransferStrategy):
         source_acts = self._collect_activations(source_model, probe_tensor.to(source_device))
         target_acts = self._collect_activations(target_model, probe_tensor.to(target_device))
 
-        common_layers = sorted(set(source_acts.keys()) & set(target_acts.keys()))
+        common_layers = sorted(
+            set(source_acts.keys()) & set(target_acts.keys()),
+            key=lambda n: (n.count("."), n),
+        )
 
         layer_scores: dict[str, float] = {}
         for name in common_layers:
