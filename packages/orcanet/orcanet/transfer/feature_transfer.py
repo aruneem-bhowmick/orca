@@ -63,6 +63,21 @@ class FeatureTransfer(TransferStrategy):
         probe_data: np.ndarray | None = None,
         cka_threshold: float = 0.5,
     ) -> None:
+        """Initialise a FeatureTransfer strategy.
+
+        Parameters
+        ----------
+        orcamind_client:
+            Optional client for registry-backed model resolution (stored but
+            not used in the current local scoring path).
+        probe_data:
+            Shared input array (``n_samples × input_dim``) passed through both
+            models to collect activations.  Must be provided before calling
+            :meth:`score_transfer`.
+        cka_threshold:
+            Minimum per-layer CKA score for a layer to be included in
+            ``recommended_layers``.  Default ``0.5``.
+        """
         self.orcamind_client = orcamind_client
         self.probe_data = probe_data
         self.cka_threshold = cka_threshold
@@ -185,26 +200,44 @@ class FeatureTransfer(TransferStrategy):
     def execute_transfer(
         self, source: Task, target: Task, source_model: nn.Module
     ) -> nn.Module:
-        """Copy weights from CKA-recommended layers into a clone of *source_model*."""
-        score = self.score_transfer(source, target)
-        target_model = deepcopy(source_model)
-        source_state = source_model.state_dict()
-        target_state = target_model.state_dict()
+        """Initialise a clone of the registered target model with source weights.
 
-        for param_name, param in target_state.items():
-            # Derive the layer name by stripping the trailing ".weight" / ".bias"
+        For every layer in ``score.recommended_layers``, the corresponding
+        parameters from *source_model* are copied into the target clone,
+        provided the shapes match.  Layers not recommended retain their
+        original target initialisation, preserving task-specific capacity.
+
+        Raises
+        ------
+        ValueError
+            If the target task has no registered model.
+        """
+        target_id = str(target.task_id)
+        if target_id not in self._model_registry:
+            raise ValueError(
+                f"No model registered for target task '{target_id}'. "
+                "Call register_model() before execute_transfer()."
+            )
+
+        score = self.score_transfer(source, target)
+        adapted = deepcopy(self._model_registry[target_id])
+        source_state = source_model.state_dict()
+        adapted_state = adapted.state_dict()
+
+        for param_name, param in adapted_state.items():
             layer_name = ".".join(param_name.split(".")[:-1])
             if (
                 layer_name in score.recommended_layers
                 and param_name in source_state
                 and source_state[param_name].shape == param.shape
             ):
-                target_state[param_name].copy_(source_state[param_name])
+                adapted_state[param_name].copy_(source_state[param_name])
 
-        target_model.load_state_dict(target_state)
-        return target_model
+        adapted.load_state_dict(adapted_state)
+        return adapted
 
     def get_transfer_metadata(self) -> dict:
+        """Return a dict of strategy configuration for logging and inspection."""
         return {
             "strategy": "feature_cka",
             "cka_threshold": self.cka_threshold,
