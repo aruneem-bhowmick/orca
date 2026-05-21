@@ -128,8 +128,11 @@ class FeatureTransfer(TransferStrategy):
         target_model = self._model_registry[target_id]
         probe_tensor = torch.tensor(self.probe_data, dtype=torch.float32)
 
-        source_acts = self._collect_activations(source_model, probe_tensor)
-        target_acts = self._collect_activations(target_model, probe_tensor)
+        source_device = next(source_model.parameters()).device
+        target_device = next(target_model.parameters()).device
+
+        source_acts = self._collect_activations(source_model, probe_tensor.to(source_device))
+        target_acts = self._collect_activations(target_model, probe_tensor.to(target_device))
 
         common_layers = sorted(set(source_acts.keys()) & set(target_acts.keys()))
 
