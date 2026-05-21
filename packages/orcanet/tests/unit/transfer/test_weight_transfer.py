@@ -268,3 +268,122 @@ class TestWeightTransferExecute:
             for n in unmatched
             if adapted_state[n].ndim >= 2
         )
+
+
+# ---------------------------------------------------------------------------
+# TestGetOptimizerWithLayerLR
+# ---------------------------------------------------------------------------
+
+
+class TestGetOptimizerWithLayerLR:
+    """get_optimizer_with_layer_lr assigns decayed LR to transferred layers."""
+
+    def _model_and_transferred(self) -> tuple[nn.Module, list[str]]:
+        torch.manual_seed(0)
+        model = _make_mlp()
+        # Treat first-layer params as "transferred", leave last-layer params at base LR
+        transferred = ["0.weight", "0.bias"]
+        return model, transferred
+
+    def test_returns_adam_optimizer(self) -> None:
+        model, transferred = self._model_and_transferred()
+        opt = get_optimizer_with_layer_lr(model, transferred, base_lr=0.01)
+        assert isinstance(opt, torch.optim.Adam)
+
+    def test_transferred_params_get_decayed_lr(self) -> None:
+        model, transferred = self._model_and_transferred()
+        base_lr = 0.01
+        decay = 0.1
+        opt = get_optimizer_with_layer_lr(model, transferred, base_lr=base_lr, decay=decay)
+        for group in opt.param_groups:
+            for param in group["params"]:
+                name = next(
+                    n for n, p in model.named_parameters() if p is param
+                )
+                expected = base_lr * decay if name in transferred else base_lr
+                assert abs(group["lr"] - expected) < 1e-9, (
+                    f"Param '{name}': expected lr={expected}, got {group['lr']}"
+                )
+
+    def test_non_transferred_params_get_base_lr(self) -> None:
+        model, transferred = self._model_and_transferred()
+        base_lr = 0.05
+        opt = get_optimizer_with_layer_lr(model, transferred, base_lr=base_lr, decay=0.1)
+        non_transferred = [n for n, _ in model.named_parameters() if n not in transferred]
+        assert len(non_transferred) > 0
+        for group in opt.param_groups:
+            for param in group["params"]:
+                name = next(n for n, p in model.named_parameters() if p is param)
+                if name in non_transferred:
+                    assert abs(group["lr"] - base_lr) < 1e-9
+
+    def test_decay_zero_gives_zero_lr_for_transferred(self) -> None:
+        model, transferred = self._model_and_transferred()
+        opt = get_optimizer_with_layer_lr(model, transferred, base_lr=0.01, decay=0.0)
+        for group in opt.param_groups:
+            for param in group["params"]:
+                name = next(n for n, p in model.named_parameters() if p is param)
+                if name in transferred:
+                    assert group["lr"] == 0.0
+
+    def test_empty_transferred_all_base_lr(self) -> None:
+        torch.manual_seed(0)
+        model = _make_mlp()
+        base_lr = 0.02
+        opt = get_optimizer_with_layer_lr(model, [], base_lr=base_lr, decay=0.1)
+        for group in opt.param_groups:
+            assert abs(group["lr"] - base_lr) < 1e-9
+
+
+# ---------------------------------------------------------------------------
+# TestWeightTransferGuards
+# ---------------------------------------------------------------------------
+
+
+class TestWeightTransferGuards:
+    def test_raises_when_source_not_registered(self) -> None:
+        wt = WeightTransfer()
+        source = _make_task()
+        target = _make_task()
+        wt.register_model(str(target.task_id), _make_mlp())
+        with pytest.raises(ValueError, match="Models not registered"):
+            wt.score_transfer(source, target)
+
+    def test_raises_when_target_not_registered(self) -> None:
+        wt = WeightTransfer()
+        source = _make_task()
+        target = _make_task()
+        wt.register_model(str(source.task_id), _make_mlp())
+        with pytest.raises(ValueError, match="Models not registered"):
+            wt.score_transfer(source, target)
+
+    def test_raises_on_invalid_match_by(self) -> None:
+        with pytest.raises(ValueError, match="match_by"):
+            WeightTransfer(match_by="invalid")
+
+
+# ---------------------------------------------------------------------------
+# TestWeightTransferMetadata
+# ---------------------------------------------------------------------------
+
+
+class TestWeightTransferMetadata:
+    def test_strategy_name(self) -> None:
+        assert WeightTransfer().get_transfer_metadata()["strategy"] == "weight_transfer"
+
+    def test_match_by_reflected(self) -> None:
+        assert WeightTransfer(match_by="both").get_transfer_metadata()["match_by"] == "both"
+
+    def test_frozen_epochs_reflected(self) -> None:
+        assert WeightTransfer(frozen_epochs=10).get_transfer_metadata()["frozen_epochs"] == 10
+
+    def test_layer_lr_decay_reflected(self) -> None:
+        assert (
+            WeightTransfer(layer_lr_decay=0.5).get_transfer_metadata()["layer_lr_decay"] == 0.5
+        )
+
+    def test_default_values(self) -> None:
+        meta = WeightTransfer().get_transfer_metadata()
+        assert meta["match_by"] == "name"
+        assert meta["frozen_epochs"] == 5
+        assert meta["layer_lr_decay"] == 0.1
