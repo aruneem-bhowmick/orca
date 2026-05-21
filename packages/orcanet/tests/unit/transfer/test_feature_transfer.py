@@ -244,3 +244,84 @@ class TestFeatureTransferGuards:
         transfer.register_model(str(target.task_id), model)
         transfer.score_transfer(source, target)
         mock_client.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# TestFeatureTransferMetadata
+# ---------------------------------------------------------------------------
+
+
+class TestFeatureTransferMetadata:
+    def test_strategy_name(self) -> None:
+        meta = FeatureTransfer().get_transfer_metadata()
+        assert meta["strategy"] == "feature_cka"
+
+    def test_threshold_reflected(self) -> None:
+        meta = FeatureTransfer(cka_threshold=0.75).get_transfer_metadata()
+        assert meta["cka_threshold"] == 0.75
+
+    def test_no_probe_data_reported(self) -> None:
+        meta = FeatureTransfer().get_transfer_metadata()
+        assert meta["has_probe_data"] is False
+
+    def test_probe_data_reported(self) -> None:
+        meta = FeatureTransfer(probe_data=np.zeros((10, 3))).get_transfer_metadata()
+        assert meta["has_probe_data"] is True
+
+    def test_registered_model_count(self) -> None:
+        transfer = FeatureTransfer()
+        assert transfer.get_transfer_metadata()["n_registered_models"] == 0
+        transfer.register_model("t1", _make_mlp())
+        assert transfer.get_transfer_metadata()["n_registered_models"] == 1
+        transfer.register_model("t2", _make_mlp())
+        assert transfer.get_transfer_metadata()["n_registered_models"] == 2
+
+
+# ---------------------------------------------------------------------------
+# TestTransferScoreStructure
+# ---------------------------------------------------------------------------
+
+
+class TestTransferScoreStructure:
+    """Structural invariants of TransferScore returned by FeatureTransfer."""
+
+    def _score(self) -> TransferScore:
+        probe = np.random.default_rng(99).standard_normal((80, 10)).astype(np.float32)
+        transfer = FeatureTransfer(probe_data=probe, cka_threshold=0.5)
+        source = _make_task()
+        target = _make_task()
+        model = _make_mlp()
+        transfer.register_model(str(source.task_id), model)
+        transfer.register_model(str(target.task_id), model)
+        return transfer.score_transfer(source, target)
+
+    def test_overall_in_unit_interval(self) -> None:
+        score = self._score()
+        assert 0.0 <= score.overall <= 1.0
+
+    def test_layer_scores_is_dict(self) -> None:
+        assert isinstance(self._score().layer_scores, dict)
+
+    def test_recommended_layers_is_list(self) -> None:
+        assert isinstance(self._score().recommended_layers, list)
+
+    def test_reasoning_is_non_empty_string(self) -> None:
+        score = self._score()
+        assert isinstance(score.reasoning, str)
+        assert len(score.reasoning) > 0
+
+    def test_recommended_layers_subset_of_layer_scores(self) -> None:
+        score = self._score()
+        assert set(score.recommended_layers).issubset(set(score.layer_scores.keys()))
+
+    def test_recommended_layers_above_threshold(self) -> None:
+        probe = np.random.default_rng(77).standard_normal((80, 10)).astype(np.float32)
+        transfer = FeatureTransfer(probe_data=probe, cka_threshold=0.5)
+        source = _make_task()
+        target = _make_task()
+        model = _make_mlp()
+        transfer.register_model(str(source.task_id), model)
+        transfer.register_model(str(target.task_id), model)
+        score = transfer.score_transfer(source, target)
+        for name in score.recommended_layers:
+            assert score.layer_scores[name] > 0.5
