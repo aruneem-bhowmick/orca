@@ -1,0 +1,381 @@
+"""Unit tests for linear_cka and FeatureTransfer."""
+
+from __future__ import annotations
+
+from datetime import datetime, timezone
+from unittest.mock import MagicMock
+from uuid import uuid4
+
+import numpy as np
+import pytest
+import torch
+import torch.nn as nn
+
+from orcanet.transfer.feature_transfer import FeatureTransfer, linear_cka
+from orcanet.transfer.types import TransferScore
+from orca_shared.schemas.task import Task
+
+
+# ---------------------------------------------------------------------------
+# Helpers shared by FeatureTransfer tests
+# ---------------------------------------------------------------------------
+
+
+def _make_task(task_id=None) -> Task:
+    now = datetime.now(timezone.utc)
+    return Task(
+        task_id=task_id or uuid4(),
+        name="test_task",
+        task_type="classification",
+        created_at=now,
+        updated_at=now,
+    )
+
+
+def _make_mlp(in_dim: int = 10, hidden: int = 20, out_dim: int = 5) -> nn.Module:
+    return nn.Sequential(
+        nn.Linear(in_dim, hidden),
+        nn.ReLU(),
+        nn.Linear(hidden, out_dim),
+    )
+
+
+# ---------------------------------------------------------------------------
+# TestLinearCKA
+# ---------------------------------------------------------------------------
+
+
+class TestLinearCKAIdentical:
+    """CKA of a matrix with itself must equal 1.0."""
+
+    def test_square_identical(self) -> None:
+        rng = np.random.default_rng(0)
+        X = rng.standard_normal((50, 10))
+        assert abs(linear_cka(X, X) - 1.0) < 1e-6
+
+    def test_tall_identical(self) -> None:
+        rng = np.random.default_rng(7)
+        X = rng.standard_normal((100, 5))
+        assert abs(linear_cka(X, X) - 1.0) < 1e-6
+
+    def test_wide_identical(self) -> None:
+        rng = np.random.default_rng(13)
+        X = rng.standard_normal((30, 20))
+        assert abs(linear_cka(X, X) - 1.0) < 1e-6
+
+
+class TestLinearCKAOrthogonal:
+    """CKA of two matrices spanning orthogonal subspaces must be near zero."""
+
+    def _orthogonal_pair(self, n: int = 80, p: int = 6) -> tuple[np.ndarray, np.ndarray]:
+        """Return two (n, p) submatrices drawn from non-overlapping columns of a
+        random orthonormal basis so that col(X) ⊥ col(Y) exactly."""
+        rng = np.random.default_rng(42)
+        Q, _ = np.linalg.qr(rng.standard_normal((n, n)))
+        return Q[:, :p], Q[:, p : 2 * p]
+
+    def test_orthogonal_subspaces_near_zero(self) -> None:
+        X, Y = self._orthogonal_pair()
+        assert linear_cka(X, Y) < 0.1
+
+    def test_orthogonal_is_symmetric(self) -> None:
+        X, Y = self._orthogonal_pair()
+        assert abs(linear_cka(X, Y) - linear_cka(Y, X)) < 1e-10
+
+    def test_orthogonal_larger_n(self) -> None:
+        X, Y = self._orthogonal_pair(n=200, p=8)
+        assert linear_cka(X, Y) < 0.01
+
+
+class TestLinearCKAReturnType:
+    def test_returns_float(self) -> None:
+        rng = np.random.default_rng(1)
+        X = rng.standard_normal((40, 8))
+        assert isinstance(linear_cka(X, X), float)
+
+    def test_value_in_unit_interval_identical(self) -> None:
+        rng = np.random.default_rng(2)
+        X = rng.standard_normal((40, 8))
+        val = linear_cka(X, X)
+        assert 0.0 <= val <= 1.0 + 1e-6
+
+    def test_value_in_unit_interval_random(self) -> None:
+        rng = np.random.default_rng(3)
+        X = rng.standard_normal((60, 10))
+        Y = rng.standard_normal((60, 15))
+        val = linear_cka(X, Y)
+        assert 0.0 <= val <= 1.0 + 1e-6
+
+    def test_different_feature_dims_allowed(self) -> None:
+        """CKA is defined for X (n x p) and Y (n x q) with p != q."""
+        rng = np.random.default_rng(4)
+        X = rng.standard_normal((50, 8))
+        Y = rng.standard_normal((50, 20))
+        val = linear_cka(X, Y)
+        assert isinstance(val, float)
+
+
+# ---------------------------------------------------------------------------
+# TestFeatureTransferScoring — identical vs. random models
+# ---------------------------------------------------------------------------
+
+
+class TestFeatureTransferIdenticalModels:
+    """score_transfer with the same model registered for both tasks must return overall ≈ 1."""
+
+    def _setup(self) -> tuple[FeatureTransfer, Task, Task]:
+        probe = np.random.default_rng(0).standard_normal((100, 10)).astype(np.float32)
+        transfer = FeatureTransfer(probe_data=probe, cka_threshold=0.5)
+        source = _make_task()
+        target = _make_task()
+        model = _make_mlp()
+        transfer.register_model(str(source.task_id), model)
+        transfer.register_model(str(target.task_id), model)
+        return transfer, source, target
+
+    def test_overall_near_one(self) -> None:
+        transfer, source, target = self._setup()
+        score = transfer.score_transfer(source, target)
+        assert score.overall > 0.9
+
+    def test_returns_transfer_score_instance(self) -> None:
+        transfer, source, target = self._setup()
+        score = transfer.score_transfer(source, target)
+        assert isinstance(score, TransferScore)
+
+    def test_all_layers_recommended(self) -> None:
+        transfer, source, target = self._setup()
+        score = transfer.score_transfer(source, target)
+        assert len(score.recommended_layers) == len(score.layer_scores)
+
+    def test_all_layer_scores_near_one(self) -> None:
+        transfer, source, target = self._setup()
+        score = transfer.score_transfer(source, target)
+        for name, s in score.layer_scores.items():
+            assert s > 0.9, f"Layer '{name}' CKA {s:.4f} unexpectedly low for identical models"
+
+
+class TestFeatureTransferRandomModels:
+    """score_transfer with two independently initialised models must score well below identical.
+
+    Identical models produce overall ≈ 1.0.  Two different random initialisations
+    share no learned structure, so their overall CKA should be substantially lower.
+    """
+
+    def _setup(self) -> tuple[FeatureTransfer, Task, Task]:
+        probe = np.random.default_rng(1).standard_normal((100, 10)).astype(np.float32)
+        transfer = FeatureTransfer(probe_data=probe, cka_threshold=0.5)
+        source = _make_task()
+        target = _make_task()
+        torch.manual_seed(0)
+        model_a = _make_mlp()
+        torch.manual_seed(9999)
+        model_b = _make_mlp()
+        transfer.register_model(str(source.task_id), model_a)
+        transfer.register_model(str(target.task_id), model_b)
+        return transfer, source, target
+
+    def test_overall_below_identical(self) -> None:
+        transfer, source, target = self._setup()
+        score = transfer.score_transfer(source, target)
+        # Random initialisations share no learned structure; shallow networks
+        # still exhibit moderate CKA due to the shared input distribution, but
+        # the score should remain well below the ≈1.0 of identical models.
+        assert score.overall < 0.8
+
+    def test_reasoning_non_empty(self) -> None:
+        transfer, source, target = self._setup()
+        score = transfer.score_transfer(source, target)
+        assert len(score.reasoning) > 0
+
+    def test_layer_scores_populated(self) -> None:
+        transfer, source, target = self._setup()
+        score = transfer.score_transfer(source, target)
+        assert len(score.layer_scores) > 0
+
+
+# ---------------------------------------------------------------------------
+# TestFeatureTransferGuards — error conditions
+# ---------------------------------------------------------------------------
+
+
+class TestFeatureTransferGuards:
+    def test_raises_when_source_not_registered(self) -> None:
+        transfer = FeatureTransfer(probe_data=np.zeros((10, 5), dtype=np.float32))
+        source = _make_task()
+        target = _make_task()
+        model = _make_mlp(in_dim=5)
+        transfer.register_model(str(target.task_id), model)
+        with pytest.raises(ValueError, match="Models not registered"):
+            transfer.score_transfer(source, target)
+
+    def test_raises_when_target_not_registered(self) -> None:
+        transfer = FeatureTransfer(probe_data=np.zeros((10, 5), dtype=np.float32))
+        source = _make_task()
+        target = _make_task()
+        model = _make_mlp(in_dim=5)
+        transfer.register_model(str(source.task_id), model)
+        with pytest.raises(ValueError, match="Models not registered"):
+            transfer.score_transfer(source, target)
+
+    def test_raises_when_probe_data_missing(self) -> None:
+        transfer = FeatureTransfer()
+        source = _make_task()
+        target = _make_task()
+        model = _make_mlp()
+        transfer.register_model(str(source.task_id), model)
+        transfer.register_model(str(target.task_id), model)
+        with pytest.raises(ValueError, match="probe_data"):
+            transfer.score_transfer(source, target)
+
+    def test_mock_orcamind_client_is_stored(self) -> None:
+        mock_client = MagicMock()
+        transfer = FeatureTransfer(orcamind_client=mock_client)
+        assert transfer.orcamind_client is mock_client
+
+    def test_mock_client_not_called_during_score(self) -> None:
+        mock_client = MagicMock()
+        probe = np.random.default_rng(5).standard_normal((50, 10)).astype(np.float32)
+        transfer = FeatureTransfer(orcamind_client=mock_client, probe_data=probe)
+        source = _make_task()
+        target = _make_task()
+        model = _make_mlp()
+        transfer.register_model(str(source.task_id), model)
+        transfer.register_model(str(target.task_id), model)
+        transfer.score_transfer(source, target)
+        mock_client.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# TestFeatureTransferMetadata
+# ---------------------------------------------------------------------------
+
+
+class TestFeatureTransferMetadata:
+    def test_strategy_name(self) -> None:
+        meta = FeatureTransfer().get_transfer_metadata()
+        assert meta["strategy"] == "feature_cka"
+
+    def test_threshold_reflected(self) -> None:
+        meta = FeatureTransfer(cka_threshold=0.75).get_transfer_metadata()
+        assert meta["cka_threshold"] == 0.75
+
+    def test_no_probe_data_reported(self) -> None:
+        meta = FeatureTransfer().get_transfer_metadata()
+        assert meta["has_probe_data"] is False
+
+    def test_probe_data_reported(self) -> None:
+        meta = FeatureTransfer(probe_data=np.zeros((10, 3))).get_transfer_metadata()
+        assert meta["has_probe_data"] is True
+
+    def test_registered_model_count(self) -> None:
+        transfer = FeatureTransfer()
+        assert transfer.get_transfer_metadata()["n_registered_models"] == 0
+        transfer.register_model("t1", _make_mlp())
+        assert transfer.get_transfer_metadata()["n_registered_models"] == 1
+        transfer.register_model("t2", _make_mlp())
+        assert transfer.get_transfer_metadata()["n_registered_models"] == 2
+
+
+# ---------------------------------------------------------------------------
+# TestTransferScoreStructure
+# ---------------------------------------------------------------------------
+
+
+class TestTransferScoreStructure:
+    """Structural invariants of TransferScore returned by FeatureTransfer."""
+
+    def _score(self) -> TransferScore:
+        probe = np.random.default_rng(99).standard_normal((80, 10)).astype(np.float32)
+        transfer = FeatureTransfer(probe_data=probe, cka_threshold=0.5)
+        source = _make_task()
+        target = _make_task()
+        model = _make_mlp()
+        transfer.register_model(str(source.task_id), model)
+        transfer.register_model(str(target.task_id), model)
+        return transfer.score_transfer(source, target)
+
+    def test_overall_in_unit_interval(self) -> None:
+        score = self._score()
+        assert 0.0 <= score.overall <= 1.0
+
+    def test_layer_scores_is_dict(self) -> None:
+        assert isinstance(self._score().layer_scores, dict)
+
+    def test_recommended_layers_is_list(self) -> None:
+        assert isinstance(self._score().recommended_layers, list)
+
+    def test_reasoning_is_non_empty_string(self) -> None:
+        score = self._score()
+        assert isinstance(score.reasoning, str)
+        assert len(score.reasoning) > 0
+
+    def test_recommended_layers_subset_of_layer_scores(self) -> None:
+        score = self._score()
+        assert set(score.recommended_layers).issubset(set(score.layer_scores.keys()))
+
+    def test_recommended_layers_above_threshold(self) -> None:
+        probe = np.random.default_rng(77).standard_normal((80, 10)).astype(np.float32)
+        transfer = FeatureTransfer(probe_data=probe, cka_threshold=0.5)
+        source = _make_task()
+        target = _make_task()
+        model = _make_mlp()
+        transfer.register_model(str(source.task_id), model)
+        transfer.register_model(str(target.task_id), model)
+        score = transfer.score_transfer(source, target)
+        for name in score.recommended_layers:
+            assert score.layer_scores[name] > 0.5
+
+
+# ---------------------------------------------------------------------------
+# TestExecuteTransfer
+# ---------------------------------------------------------------------------
+
+
+class TestExecuteTransfer:
+    """execute_transfer patches source weights into a clone of the target model."""
+
+    def _setup(self) -> tuple[FeatureTransfer, Task, Task, nn.Module, nn.Module]:
+        probe = np.random.default_rng(42).standard_normal((100, 10)).astype(np.float32)
+        transfer = FeatureTransfer(probe_data=probe, cka_threshold=0.0)
+        source = _make_task()
+        target = _make_task()
+        torch.manual_seed(1)
+        source_model = _make_mlp()
+        torch.manual_seed(2)
+        target_model = _make_mlp()
+        transfer.register_model(str(source.task_id), source_model)
+        transfer.register_model(str(target.task_id), target_model)
+        return transfer, source, target, source_model, target_model
+
+    def test_returns_nn_module(self) -> None:
+        transfer, source, target, source_model, _ = self._setup()
+        result = transfer.execute_transfer(source, target, source_model)
+        assert isinstance(result, nn.Module)
+
+    def test_does_not_mutate_source_model(self) -> None:
+        transfer, source, target, source_model, _ = self._setup()
+        original_params = {k: v.clone() for k, v in source_model.state_dict().items()}
+        transfer.execute_transfer(source, target, source_model)
+        for k, v in source_model.state_dict().items():
+            assert torch.equal(v, original_params[k]), f"Source param '{k}' was mutated"
+
+    def test_result_differs_from_unmodified_target(self) -> None:
+        transfer, source, target, source_model, target_model = self._setup()
+        adapted = transfer.execute_transfer(source, target, source_model)
+        target_params = target_model.state_dict()
+        adapted_params = adapted.state_dict()
+        any_changed = any(
+            not torch.equal(adapted_params[k], target_params[k])
+            for k in target_params
+        )
+        assert any_changed, "execute_transfer made no changes to the target clone"
+
+    def test_raises_when_target_not_registered(self) -> None:
+        probe = np.zeros((10, 10), dtype=np.float32)
+        transfer = FeatureTransfer(probe_data=probe)
+        source = _make_task()
+        target = _make_task()
+        transfer.register_model(str(source.task_id), _make_mlp())
+        with pytest.raises(ValueError, match="No model registered for target task"):
+            transfer.execute_transfer(source, target, _make_mlp())

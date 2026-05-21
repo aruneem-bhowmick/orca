@@ -1585,12 +1585,79 @@ graph = ArchitectureGraph.from_model_config(mlp_config)
 # graph.graph_features shape (3,)     — [log1p(778), 3.0, log1p(512)]
 ```
 
-#### `orcanet.transfer` — Transfer Strategies (planned)
+#### `orcanet.transfer` — Transfer Strategies
 
-- **`CKATransferScorer`** — Centered Kernel Alignment (Kornblith et al. 2019). Computes the normalised Hilbert-Schmidt Independence Criterion between hidden activation matrices from the source and target domains, producing a scalar transfer score ∈ [0, 1]. Scores above `min_transfer_score` (default 0.4) are candidates for OrcaLab validation dispatch.
-- **`WeightTransfer`** — Layer-selective weight copying with architecture compatibility checking. Matches source and target layers by name and shape, skipping mismatched layers rather than raising.
-- **`ArchitectureAdapter`** — Adjusts input/output dimensions (first and last layer) of a source architecture to match target task requirements (number of classes, input channels) while preserving the intermediate layers.
-- **`MultiTaskTrainer`** — Jointly optimises shared trunk parameters across source and target tasks with task-specific head networks and a gradient-balancing loss weighting scheme.
+The transfer subpackage provides the machinery for quantifying and executing feature-level knowledge transfer between tasks using Centered Kernel Alignment.
+
+##### `TransferStrategy` (`base.py`)
+
+Abstract base class that every transfer strategy must implement.
+
+```python
+class TransferStrategy(ABC):
+    @abstractmethod
+    def score_transfer(self, source: Task, target: Task) -> TransferScore: ...
+    @abstractmethod
+    def execute_transfer(self, source: Task, target: Task, source_model: nn.Module) -> nn.Module: ...
+    @abstractmethod
+    def get_transfer_metadata(self) -> dict: ...
+```
+
+##### `TransferScore` (`types.py`)
+
+Rich internal dataclass representing the output of a scoring run. Distinct from `orca_shared.schemas.transfer.TransferScore`, which is the lightweight API schema for inter-service exchange.
+
+| Field | Type | Description |
+|---|---|---|
+| `overall` | `float` | Depth-weighted mean CKA across all scored layers, clipped to [0, 1] |
+| `layer_scores` | `dict[str, float]` | Per-named-layer CKA value |
+| `recommended_layers` | `list[str]` | Layers with CKA above `cka_threshold` |
+| `reasoning` | `str` | Human-readable summary for logging and agent consumption |
+
+##### `linear_cka` / `FeatureTransfer` (`feature_transfer.py`)
+
+`linear_cka(X, Y)` — pure-numpy function implementing the Kornblith et al. 2019 linear CKA formula:
+
+```
+CKA = ||Y_c^T X_c||_F^2 / (||X_c^T X_c||_F * ||Y_c^T Y_c||_F)
+```
+
+where the subscript *c* denotes column-mean centering. Returns a float in [0, 1], clamped via `min(..., 1.0)` to absorb floating-point noise.
+
+`FeatureTransfer` — concrete `TransferStrategy` implementing CKA-based scoring and selective weight patching.
+
+**Workflow:**
+
+1. Register source and target `nn.Module` instances via `register_model(task_id, model)`.
+2. Provide `probe_data` — an `(n_samples, input_dim)` float32 array shared by both models.
+3. Call `score_transfer(source, target)` to collect per-layer activations via PyTorch forward hooks, compute layer-wise CKA, and return a `TransferScore`.
+4. Optionally call `execute_transfer(source, target, source_model)` to clone the registered target model and patch weights from recommended layers.
+
+**Key implementation details:**
+
+- **Forward hook collection** — `register_forward_hook` is attached to every named submodule (root wrapper excluded). Hooks capture `output.detach().cpu().numpy()` for any tensor output with `ndim >= 2`. Hooks and training mode are always restored in a `try/finally` block.
+- **Device handling** — the probe tensor is moved to each model's device (`next(model.parameters()).device`) before the forward pass, supporting CPU, CUDA, and MPS models.
+- **Depth-ordered scoring** — common layers are sorted by `(name.count("."), name)` so shallower layers (fewer dots = closer to model root) appear first, consistent with the depth-weighted averaging step.
+- **Depth-weighted averaging** — layer at index `i` receives weight `1/(i+1)`, normalised to sum 1. Shallower layers get higher weight because they encode more broadly transferable features.
+- **Weight patching** — `execute_transfer` clones the registered target model (not the source), then copies matching-shape parameters from `source_model` for every `recommended_layers` entry, preserving target-specific capacity in non-recommended layers.
+
+```python
+from orcanet.transfer import FeatureTransfer, TransferScore
+
+transfer = FeatureTransfer(probe_data=probe, cka_threshold=0.5)
+transfer.register_model(str(source_task.task_id), source_model)
+transfer.register_model(str(target_task.task_id), target_model)
+
+score: TransferScore = transfer.score_transfer(source_task, target_task)
+# score.overall       — depth-weighted mean CKA (float in [0, 1])
+# score.layer_scores  — {'0': 0.94, '1': 0.87, ...}
+# score.recommended_layers  — layers above cka_threshold=0.5
+
+adapted = transfer.execute_transfer(source_task, target_task, source_model)
+# adapted is a clone of the registered target model with source weights patched in
+```
+
+The remaining transfer components (`WeightTransfer`, `ArchitectureAdapter`, `MultiTaskTrainer`) are planned.
 
 #### `orcanet.retrieval` — Hybrid Retrieval (planned)
 
@@ -1676,7 +1743,7 @@ All sensitive values use `${oc.env:VAR}` (required) or `${oc.env:VAR,default}` (
 
 ### Test Infrastructure (`tests/`)
 
-Six unit test files across two directories, plus two empty `__init__.py` placeholders for future integration tests.
+Seven unit test files across three directories, plus two empty `__init__.py` placeholders for future integration tests.
 
 | File | Tests | Covers |
 |---|---|---|
@@ -1686,6 +1753,7 @@ Six unit test files across two directories, plus two empty `__init__.py` placeho
 | `tests/unit/embeddings/test_cross_domain.py` | 15 | `GradientReversalLayer` gradient negation, alpha scaling, forward identity, zero-alpha passthrough; `CrossDomainEmbedder` output shape, L2 normalisation, eval/training mode preservation across `embed()` calls; DANN task-loss convergence over 20 epochs; domain invariance geometric dispersion (within- vs. cross-domain cosine distance std ratio); `save`/`load` roundtrip embedding equality; config attribute round-trip fidelity |
 | `tests/unit/embeddings/test_text_features.py` | 16 | `TextTaskEmbedder` shape and L2-normalisation for `embed_from_description`; invalid fusion `ValueError`; `embed_with_stats` output shape for all three fusion strategies and the no-labels regression path; output L2-normalisation for fused vectors; custom `output_dim` via the `add` fusion; semantic similarity ordering (image tasks cluster closer together than they do to financial tasks); identical descriptions produce dot-product 1.0; batch shape `(N, 384)`, row-wise normalisation, and exact numerical match against individual `embed_from_description` calls |
 | `tests/unit/embeddings/test_architecture_embedder.py` | 45 | `ArchitectureGraph` node counts for MLP, CNN, single-layer, and empty configs; node feature shape `(n, 16)` and dtype float32; one-hot correctness for all layer types and all activation types; log-size encoding against `_LOG_SIZE_SCALE`; unknown-type zero-out; sequential and skip-connection edge counts; edge dtype int64; global features shape, dtype, depth equality, log-total-size sign, log-max-width value; `ArchitectureEmbedder.embed` shape `(32,)`, L2 norm, numpy dtype float32, custom `output_dim`, training-mode preservation (both directions), single-layer and empty-config edge cases, determinism across two calls; similarity — identical configs → 1.0, self-similarity exceeds cross-architecture similarity (seeded), return type float, symmetry; retrieval — `top_k` count, fewer-candidates-than-k, descending sort, tuple types, identical query is top result, default `top_k=5`, `top_k=0` returns `[]`, negative `top_k` raises `ValueError` |
+| `tests/unit/transfer/test_feature_transfer.py` | 37 | `linear_cka` — self-similarity equals 1.0 (square, tall, wide); orthogonal subspace pair near zero; CKA symmetry; value always in [0, 1]; different feature dimensions allowed; return type float. `FeatureTransfer` — identical models produce overall > 0.9; all layer scores near 1.0; all layers recommended; `TransferScore` instance returned; random-init models score well below identical; reasoning non-empty; layer scores populated. Guards — `ValueError` when source/target not registered; `ValueError` when `probe_data` absent; mock `OrcaMindClient` stored but not called during scoring. Metadata — strategy name, threshold, probe-data presence flag, registered model count. Structural invariants — overall in [0, 1]; `layer_scores` is dict; `recommended_layers` is list; reasoning non-empty string; recommended layers are a subset of layer_scores keys; recommended layers all exceed threshold. `execute_transfer` — returns `nn.Module`; does not mutate source model; result differs from unmodified target; `ValueError` when target not registered |
 
 **Notable patterns introduced in the OrcaNet test suite:**
 
@@ -1697,3 +1765,6 @@ Six unit test files across two directories, plus two empty `__init__.py` placeho
 - *Offline SentenceTransformer stub* — `tests/unit/embeddings/conftest.py` patches `orcanet.embeddings.text_features.SentenceTransformer` with `_DeterministicSentenceTransformer`, a session-scoped autouse fixture that never downloads model weights. The stub maps a 36-keyword domain vocabulary (vision, financial, medical, NLP, general ML) to fixed dimensions and fills the remaining 348 dimensions with low-amplitude deterministic noise (σ = 0.05, seeded by `hash(text)`). This design guarantees that semantic ordering tests — e.g. image tasks cluster closer to each other than to financial tasks — hold without a network connection or a local model cache.
 - *Relative similarity assertion over fixed thresholds* — `test_similarity_mlp_vs_cnn_less_than_self_similarity` asserts that `embedder.similarity(mlp, mlp) > embedder.similarity(mlp, cnn)` rather than checking `sim < 0.9`. The relative comparison holds for any valid embedder regardless of the random weight initialisation or which message-passing backend is active, avoiding the fragility of a hardcoded cosine cutoff that can shift across seeds or optional dependencies.
 - *Boundary tests for public API contracts* — `test_find_similar_top_k_zero_returns_empty` and `test_find_similar_negative_top_k_raises` pin the `find_similar_architectures` boundary behaviour. Without the explicit `ValueError` guard, Python's negative-slice semantics (`scored[:-1]`) would silently return a near-full list instead of raising, making the contract invisible to callers. The boundary tests lock this in so future refactors cannot regress it.
+- *Relaxed threshold for shallow-network CKA* — `TestFeatureTransferRandomModels.test_overall_below_identical` asserts `score.overall < 0.8` rather than the intuitively tighter `< 0.5`. Two independently initialised shallow MLPs (10→20→5) produce CKA ≈ 0.60 even with no shared training because the shared input distribution induces a consistent covariance structure. The threshold 0.8 is still a meaningful gap from the ≈1.0 of identical models; it just reflects the minimum distinguishable signal for networks at this scale.
+- *execute_transfer mutability assertion* — `test_does_not_mutate_source_model` clones every source parameter before the call and asserts exact tensor equality afterwards. Weight-patching operations that mistakenly modify an in-place buffer on the source would be caught here even if the adapted model looks correct.
+- *Orthogonal subspace pair construction* — `TestLinearCKAOrthogonal._orthogonal_pair` draws columns from a QR-factored random square matrix rather than generating two independent random matrices. This guarantees `col(X) ⊥ col(Y)` exactly by construction, so the CKA near-zero assertion is a precise geometric claim rather than a probabilistic one.

@@ -66,6 +66,15 @@ pytest packages/orcanet/tests/unit/embeddings/test_text_features.py -v
 
 # OrcaNet — ArchitectureGraph and ArchitectureEmbedder unit tests only
 pytest packages/orcanet/tests/unit/embeddings/test_architecture_embedder.py -v
+
+# OrcaNet — transfer module unit tests only (linear_cka + FeatureTransfer)
+pytest packages/orcanet/tests/unit/transfer/ -v
+
+# OrcaNet — linear_cka correctness tests only
+pytest packages/orcanet/tests/unit/transfer/test_feature_transfer.py -v -k "TestLinearCKA"
+
+# OrcaNet — FeatureTransfer scoring, guards, metadata, and execute_transfer tests only
+pytest packages/orcanet/tests/unit/transfer/test_feature_transfer.py -v -k "TestFeatureTransfer or TestTransferScore or TestExecuteTransfer"
 ```
 
 The test suite has 80+ test files across unit, integration, performance, and deployment-validation categories.
@@ -88,6 +97,9 @@ OrcaMind integration tests auto-skip when their target service port is unreachab
 - *Offline SentenceTransformer stub* — `tests/unit/embeddings/conftest.py` patches `orcanet.embeddings.text_features.SentenceTransformer` with `_DeterministicSentenceTransformer` via a session-scoped autouse fixture. The stub never downloads model weights: it maps a 36-keyword domain vocabulary (vision, financial, medical, NLP, general ML) to fixed vector dimensions and fills the remaining 348 dimensions with low-amplitude deterministic noise (σ = 0.05, seeded by `hash(text)`). Semantic ordering is preserved by construction — image-domain keywords are orthogonal to financial-domain keywords — so similarity-ordering tests hold without a network connection or a local model cache.
 - *Relative similarity assertion over fixed thresholds* — `test_architecture_embedder.py` tests cross-architecture separation by asserting `embedder.similarity(a, a) > embedder.similarity(a, b)` rather than `similarity < 0.9`. Hardcoded cosine thresholds are fragile across random weight seeds and optional message-passing backends (dense adjacency vs. `GCNConv`); the relative ordering holds for any valid embedder, making the test robust without weakening the invariant it enforces.
 - *Boundary tests for public API contracts* — the architecture embedder test suite covers `top_k=0` (must return `[]`) and `top_k=-1` (must raise `ValueError`) explicitly. Without the `ValueError` guard, Python's negative-slice semantics would silently return a near-full result list. The boundary tests pin this contract so future refactors cannot regress it.
+- *Relaxed CKA threshold for shallow networks* — `TestFeatureTransferRandomModels.test_overall_below_identical` asserts `score.overall < 0.8` rather than `< 0.5`. Two independently initialised shallow MLPs share no learned structure, but the shared input distribution still induces a consistent covariance, producing CKA ≈ 0.60. The 0.8 threshold captures the meaningful gap from identical models (≈1.0) without over-specifying the exact value, which shifts with network depth and width.
+- *execute_transfer source-immutability guard* — `test_does_not_mutate_source_model` snapshots all source parameters before the call and asserts byte-level equality afterwards. This catches weight-patching bugs that corrupt the source model in-place even when the returned adapted model looks correct.
+- *Geometric CKA orthogonality assertion* — `TestLinearCKAOrthogonal._orthogonal_pair` builds the test pair from non-overlapping columns of a QR-factored random matrix, guaranteeing exact orthogonality by construction rather than relying on probabilistic near-orthogonality. The resulting CKA < 0.1 assertion is a precise algebraic claim, not a statistical threshold.
 
 The performance benchmark tests in `tests/performance/` make executable compute-efficiency assertions that cannot be expressed as ordinary unit tests. They drive deterministic synthetic sweeps — no external services, no randomness — and enforce measurable invariants about algorithm behaviour at scale. Currently the tier contains `TestASHAPruningSavings`, which simulates 20-trial hyperparameter sweeps on a concave-quadratic learning-curve objective and asserts that ASHA executes ≤60% of the steps an unpruned baseline would require (≥40% compute savings). The scaling test additionally runs a 27-trial cohort and asserts that savings for the larger cohort are at least as good as for the 20-trial baseline, enforcing the monotonicity property directly.
 
