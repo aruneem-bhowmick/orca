@@ -12,6 +12,44 @@ from copy import deepcopy
 import torch
 import torch.nn as nn
 
+
+def _safe_reinit(t: torch.Tensor) -> None:
+    """Reinitialise *t* in-place: kaiming_uniform_ for 2-D+, zeros_ for 1-D."""
+    if t.ndim >= 2:
+        nn.init.kaiming_uniform_(t)
+    else:
+        nn.init.zeros_(t)
+
+
+def get_optimizer_with_layer_lr(
+    model: nn.Module,
+    transferred_layers: list[str],
+    base_lr: float,
+    decay: float = 0.1,
+) -> torch.optim.Adam:
+    """Return an Adam optimizer with decayed LR for transferred parameter groups.
+
+    Parameters
+    ----------
+    model:
+        The model whose parameters are grouped.
+    transferred_layers:
+        Parameter names (as returned by ``model.named_parameters()``) that were
+        copied from a source model.  These receive ``base_lr * decay``.
+    base_lr:
+        Learning rate applied to non-transferred parameters.
+    decay:
+        Multiplicative factor applied to ``base_lr`` for transferred layers.
+    """
+    param_groups = [
+        {
+            "params": [param],
+            "lr": base_lr * decay if name in transferred_layers else base_lr,
+        }
+        for name, param in model.named_parameters()
+    ]
+    return torch.optim.Adam(param_groups)
+
 from orca_shared.schemas.task import Task
 
 from .base import TransferStrategy
@@ -136,9 +174,33 @@ class WeightTransfer(TransferStrategy):
         source: Task,
         target: Task,
         source_model: nn.Module,
-    ) -> nn.Module:
-        """Placeholder — implemented in the weight-execution commit."""
-        raise NotImplementedError
+    ) -> tuple[nn.Module, list[str]]:  # type: ignore[override]
+        """Copy matched weights from *source_model* into a deep-copied target model.
+
+        Unmatched or shape-incompatible parameters are reinitialised with
+        ``kaiming_uniform_`` (2-D+) or ``zeros_`` (1-D, e.g. biases).
+
+        Returns
+        -------
+        tuple[nn.Module, list[str]]
+            The adapted model and the list of parameter names that were copied.
+            Pass the latter directly to :func:`get_optimizer_with_layer_lr`.
+        """
+        target_model = deepcopy(source_model)
+        source_state = source_model.state_dict()
+        target_state = target_model.state_dict()
+
+        transferred: list[str] = []
+        for name, param in target_state.items():
+            src = self._find_source_tensor(name, param, source_state)
+            if src is not None:
+                target_state[name].copy_(src)
+                transferred.append(name)
+            else:
+                _safe_reinit(target_state[name])
+
+        target_model.load_state_dict(target_state)
+        return target_model, transferred
 
     def get_transfer_metadata(self) -> dict:
         """Return a dict of strategy configuration for logging and inspection."""
