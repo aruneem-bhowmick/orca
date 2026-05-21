@@ -36,7 +36,8 @@ def linear_cka(X: np.ndarray, Y: np.ndarray) -> float:
     hsic_xx = np.linalg.norm(X.T @ X, ord="fro")
     hsic_yy = np.linalg.norm(Y.T @ Y, ord="fro")
 
-    return float(hsic_xy / (hsic_xx * hsic_yy + 1e-8))
+    # Clamp to [0, 1] to absorb floating-point noise around the theoretical bounds
+    return float(min(hsic_xy / (hsic_xx * hsic_yy + 1e-8), 1.0))
 
 
 class FeatureTransfer(TransferStrategy):
