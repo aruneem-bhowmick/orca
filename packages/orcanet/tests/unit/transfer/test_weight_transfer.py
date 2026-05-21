@@ -209,17 +209,21 @@ class TestWeightTransferExecute:
         wt.register_model(str(target.task_id), target_model)
         return wt, source, target, source_model
 
-    def test_returns_tuple_of_module_and_list(self) -> None:
+    def test_returns_nn_module(self) -> None:
         wt, source, target, source_model = self._setup_identical()
         result = wt.execute_transfer(source, target, source_model)
-        assert isinstance(result, tuple) and len(result) == 2
-        model, transferred = result
-        assert isinstance(model, nn.Module)
-        assert isinstance(transferred, list)
+        assert isinstance(result, nn.Module)
+
+    def test_last_transferred_accessible_after_execute(self) -> None:
+        wt, source, target, source_model = self._setup_identical()
+        wt.execute_transfer(source, target, source_model)
+        assert isinstance(wt.last_transferred, list)
+        assert len(wt.last_transferred) > 0
 
     def test_transferred_weights_equal_source(self) -> None:
         wt, source, target, source_model = self._setup_identical()
-        adapted, transferred = wt.execute_transfer(source, target, source_model)
+        adapted = wt.execute_transfer(source, target, source_model)
+        transferred = wt.last_transferred
         source_state = source_model.state_dict()
         adapted_state = adapted.state_dict()
         for name in transferred:
@@ -229,9 +233,9 @@ class TestWeightTransferExecute:
 
     def test_all_params_transferred_for_identical_architecture(self) -> None:
         wt, source, target, source_model = self._setup_identical()
-        _, transferred = wt.execute_transfer(source, target, source_model)
+        wt.execute_transfer(source, target, source_model)
         expected = list(source_model.state_dict().keys())
-        assert set(transferred) == set(expected)
+        assert set(wt.last_transferred) == set(expected)
 
     def test_source_model_not_mutated(self) -> None:
         wt, source, target, source_model = self._setup_identical()
@@ -241,24 +245,22 @@ class TestWeightTransferExecute:
             assert torch.equal(v, original[k]), f"Source param '{k}' was mutated"
 
     def test_shape_mismatch_skipped_without_exception(self) -> None:
-        """execute_transfer with any match_by mode does not raise.
+        """Shape-mismatched last-layer params are skipped; no exception is raised.
 
-        Since execute_transfer starts from deepcopy(source_model), all params
-        share the source architecture and shape mismatches cannot occur in that
-        path.  The shape-safety of _find_source_tensor is verified here by
-        running all three matching modes — none should raise an exception.
+        execute_transfer starts from deepcopy(registered target), so when source
+        and target architectures differ in out_dim the last-layer params cannot
+        be transferred and must fall through to _safe_reinit.  The "both" mode
+        verifies this path explicitly.
         """
-        for mode in ("name", "shape", "both"):
-            wt = WeightTransfer(match_by=mode)
-            source = _make_task()
-            target = _make_task()
-            torch.manual_seed(50)
-            model = _make_mlp()
-            wt.register_model(str(source.task_id), model)
-            wt.register_model(str(target.task_id), model)
-            adapted, transferred = wt.execute_transfer(source, target, model)
-            assert isinstance(adapted, nn.Module)
-            assert len(transferred) > 0
+        wt, source, target, source_model = self._setup_mismatched()
+        adapted = wt.execute_transfer(source, target, source_model)
+        assert isinstance(adapted, nn.Module)
+        # Last-layer params shape-mismatched — they must NOT be in last_transferred
+        assert "2.weight" not in wt.last_transferred
+        assert "2.bias" not in wt.last_transferred
+        # First-layer params match — they must be transferred
+        assert "0.weight" in wt.last_transferred
+        assert "0.bias" in wt.last_transferred
 
     def test_safe_reinit_handles_1d_and_2d_tensors(self) -> None:
         """_safe_reinit applies kaiming_uniform_ to weight tensors without raising.
@@ -355,13 +357,23 @@ class TestWeightTransferGuards:
         with pytest.raises(ValueError, match="Models not registered"):
             wt.score_transfer(source, target)
 
-    def test_raises_when_target_not_registered(self) -> None:
+    def test_raises_when_target_not_registered_for_score(self) -> None:
         wt = WeightTransfer()
         source = _make_task()
         target = _make_task()
         wt.register_model(str(source.task_id), _make_mlp())
         with pytest.raises(ValueError, match="Models not registered"):
             wt.score_transfer(source, target)
+
+    def test_raises_when_target_not_registered_for_execute(self) -> None:
+        wt = WeightTransfer()
+        source = _make_task()
+        target = _make_task()
+        source_model = _make_mlp()
+        wt.register_model(str(source.task_id), source_model)
+        # target not registered — execute_transfer must raise
+        with pytest.raises(ValueError, match="not registered"):
+            wt.execute_transfer(source, target, source_model)
 
     def test_raises_on_invalid_match_by(self) -> None:
         with pytest.raises(ValueError, match="match_by"):
