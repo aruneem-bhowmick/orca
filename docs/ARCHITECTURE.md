@@ -145,11 +145,12 @@ orca/
 │       │   │   ├── cross_domain.py   # GradientReversalFunction, GradientReversalLayer, _FeatureMLP, CrossDomainEmbedder
 │       │   │   ├── text_features.py  # _AddFusion, _AttentionFusion, TextTaskEmbedder
 │       │   │   └── architecture_embedder.py  # ArchitectureGraph, ArchitectureEmbedder
-│       │   ├── transfer/             # TransferStrategy ABC, TransferScore dataclass, FeatureTransfer (linear CKA, implemented); weight transfer, architecture adaptation, multi-task training (planned)
-│       │   │   ├── __init__.py       # Public re-exports: FeatureTransfer, TransferScore, TransferStrategy, linear_cka
+│       │   ├── transfer/             # TransferStrategy ABC, TransferScore dataclass, FeatureTransfer (linear CKA, implemented), WeightTransfer (parameter matching + layer-lr optimizer, implemented); architecture adaptation, multi-task training (planned)
+│       │   │   ├── __init__.py       # Public re-exports: FeatureTransfer, WeightTransfer, TransferScore, TransferStrategy, get_optimizer_with_layer_lr, linear_cka
 │       │   │   ├── base.py           # TransferStrategy ABC — score_transfer, execute_transfer, get_transfer_metadata
 │       │   │   ├── types.py          # TransferScore dataclass — overall, layer_scores, recommended_layers, reasoning
-│       │   │   └── feature_transfer.py  # linear_cka (Kornblith et al. 2019), FeatureTransfer (forward-hook activation collection, depth-weighted CKA scoring, weight patching)
+│       │   │   ├── feature_transfer.py  # linear_cka (Kornblith et al. 2019), FeatureTransfer (forward-hook activation collection, depth-weighted CKA scoring, weight patching)
+│       │   │   └── weight_transfer.py   # WeightTransfer (name/shape/both parameter matching, kaiming reinit, deepcopy-based transfer), get_optimizer_with_layer_lr (per-parameter Adam with lr decay), _safe_reinit
 │       │   ├── retrieval/            # Three-stage hybrid retrieval (FAISS → PostgreSQL metadata filter → LLM re-ranking) (planned)
 │       │   ├── reasoning/            # LangChain ReAct agent, Pydantic-validated response models, retry logic (planned)
 │       │   │   └── prompts/          # Transfer explanation, task similarity, architecture recommendation templates
@@ -165,7 +166,7 @@ orca/
 │       └── tests/
 │           ├── unit/
 │           │   ├── embeddings/       # CrossDomainEmbedder, GRL, TextTaskEmbedder, and ArchitectureEmbedder unit tests — 76 tests
-│           │   ├── transfer/         # linear_cka correctness, FeatureTransfer scoring/guards/metadata/structural, execute_transfer — 37 tests
+│           │   ├── transfer/         # linear_cka correctness, FeatureTransfer scoring/guards/metadata/structural, execute_transfer — 37 tests; WeightTransfer scoring (name/shape/both), execute_transfer, optimizer LR groups, guards, metadata — 34 tests (71 total)
 │           │   └── *.py              # Package structure, CLI smoke tests, config validation — 18 tests
 │           └── integration/          # API integration tests (planned)
 │
