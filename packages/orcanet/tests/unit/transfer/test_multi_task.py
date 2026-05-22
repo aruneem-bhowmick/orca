@@ -294,3 +294,345 @@ class TestMultiTaskModelUncertaintyLoss:
         loss.backward()
         for tid, log_s in model.log_sigmas.items():
             assert log_s.grad is not None, f"log_sigma for '{tid}' has no gradient"
+
+
+# ---------------------------------------------------------------------------
+# TestAddTask
+# ---------------------------------------------------------------------------
+
+
+class TestAddTask:
+    def _strategy(self, weighting: str = "equal") -> MultiTaskTransfer:
+        return MultiTaskTransfer(
+            backbone=_make_backbone(in_dim=10, hidden=16),
+            task_weighting=weighting,
+            task_head_hidden_dim=8,
+        )
+
+    def test_head_output_dim_matches_argument(self) -> None:
+        """The last ``nn.Linear`` in the created head has ``out_features == head_output_dim``."""
+        mt = self._strategy()
+        task = _make_task(n_classes=5)
+        mt.add_task(task, head_output_dim=5)
+        head = mt._task_heads[str(task.task_id)]
+        linears = [m for m in head.modules() if isinstance(m, nn.Linear)]
+        assert linears[-1].out_features == 5
+
+    def test_head_input_dim_matches_backbone_out(self) -> None:
+        """The first ``nn.Linear`` in the head reads from the backbone's output dim."""
+        mt = self._strategy()
+        task = _make_task()
+        mt.add_task(task, head_output_dim=3)
+        head = mt._task_heads[str(task.task_id)]
+        linears = [m for m in head.modules() if isinstance(m, nn.Linear)]
+        assert linears[0].in_features == 16  # backbone hidden=16
+
+    def test_head_architecture_is_linear_relu_linear(self) -> None:
+        """The created head is ``nn.Sequential`` with Linear → ReLU → Linear."""
+        mt = self._strategy()
+        task = _make_task()
+        mt.add_task(task, head_output_dim=3)
+        head = mt._task_heads[str(task.task_id)]
+        assert isinstance(head, nn.Sequential)
+        modules = list(head.children())
+        assert isinstance(modules[0], nn.Linear)
+        assert isinstance(modules[1], nn.ReLU)
+        assert isinstance(modules[2], nn.Linear)
+
+    def test_equal_weights_after_single_task(self) -> None:
+        """After one ``add_task`` call, weight is 1.0 (= 1/1)."""
+        mt = self._strategy("equal")
+        task = _make_task()
+        mt.add_task(task, 3)
+        assert abs(mt.task_weights[str(task.task_id)] - 1.0) < 1e-9
+
+    def test_equal_weights_after_two_tasks(self) -> None:
+        """After two ``add_task`` calls, each weight is 0.5."""
+        mt = self._strategy("equal")
+        t1, t2 = _make_task(), _make_task()
+        mt.add_task(t1, 3)
+        mt.add_task(t2, 5)
+        weights = mt.task_weights
+        assert abs(weights[str(t1.task_id)] - 0.5) < 1e-9
+        assert abs(weights[str(t2.task_id)] - 0.5) < 1e-9
+
+    def test_uncertainty_creates_log_sigma_per_task(self) -> None:
+        """Uncertainty weighting creates one ``nn.Parameter`` in ``_log_sigmas`` per task."""
+        mt = self._strategy("uncertainty")
+        t1, t2 = _make_task(), _make_task()
+        mt.add_task(t1, 3)
+        mt.add_task(t2, 5)
+        assert str(t1.task_id) in mt._log_sigmas
+        assert str(t2.task_id) in mt._log_sigmas
+        assert isinstance(mt._log_sigmas[str(t1.task_id)], nn.Parameter)
+
+    def test_uncertainty_log_sigma_initialised_to_zero(self) -> None:
+        """Log-sigma parameters start at zero (sigma=1, equal initial weighting)."""
+        mt = self._strategy("uncertainty")
+        task = _make_task()
+        mt.add_task(task, 3)
+        log_s = mt._log_sigmas[str(task.task_id)]
+        assert torch.allclose(log_s, torch.zeros(1))
+
+    def test_task_id_stored_as_string(self) -> None:
+        """Task heads are keyed by ``str(task.task_id)``, not a UUID object."""
+        mt = self._strategy()
+        task = _make_task()
+        mt.add_task(task, 3)
+        assert str(task.task_id) in mt._task_heads
+
+    def test_raises_on_invalid_task_weighting(self) -> None:
+        """``ValueError`` is raised when an unsupported ``task_weighting`` is supplied."""
+        with pytest.raises(ValueError, match="task_weighting"):
+            MultiTaskTransfer(backbone=_make_backbone(), task_weighting="unknown")
+
+
+# ---------------------------------------------------------------------------
+# TestScoreTransfer
+# ---------------------------------------------------------------------------
+
+
+class TestScoreTransfer:
+    def _strategy(self) -> MultiTaskTransfer:
+        return MultiTaskTransfer(backbone=_make_backbone())
+
+    def test_returns_transfer_score_instance(self) -> None:
+        """``score_transfer`` always returns a ``TransferScore`` instance."""
+        mt = self._strategy()
+        score = mt.score_transfer(_make_task(), _make_task())
+        assert isinstance(score, TransferScore)
+
+    def test_no_features_returns_neutral_score(self) -> None:
+        """Without registered features, ``overall`` is the neutral value 0.5."""
+        mt = self._strategy()
+        score = mt.score_transfer(_make_task(), _make_task())
+        assert score.overall == 0.5
+
+    def test_no_features_reasoning_mentions_registration(self) -> None:
+        """The fallback reasoning string informs the caller to register features."""
+        mt = self._strategy()
+        score = mt.score_transfer(_make_task(), _make_task())
+        assert "No task features" in score.reasoning
+
+    def test_registered_features_produce_nonzero_score(self) -> None:
+        """After registering feature vectors, ``score_transfer`` computes a real similarity."""
+        mt = self._strategy()
+        t1, t2 = _make_task(), _make_task()
+        # Use 25-dim input to match CrossDomainEmbedder default input_dim.
+        torch.manual_seed(0)
+        mt.register_task_features(str(t1.task_id), torch.randn(1, 25))
+        mt.register_task_features(str(t2.task_id), torch.randn(1, 25))
+        score = mt.score_transfer(t1, t2)
+        assert isinstance(score.overall, float)
+        assert 0.0 <= score.overall <= 1.0
+
+    def test_identical_features_produce_score_one(self) -> None:
+        """Two identical feature vectors yield cosine similarity 1.0 (clamped)."""
+        mt = self._strategy()
+        t1, t2 = _make_task(), _make_task()
+        feat = torch.ones(1, 25)
+        mt.register_task_features(str(t1.task_id), feat)
+        mt.register_task_features(str(t2.task_id), feat)
+        score = mt.score_transfer(t1, t2)
+        assert abs(score.overall - 1.0) < 1e-5
+
+    def test_high_similarity_beneficial_reasoning(self) -> None:
+        """Similarity > 0.5 produces the exact spec reasoning string."""
+        mt = self._strategy()
+        t1, t2 = _make_task(), _make_task()
+        feat = torch.ones(1, 25)  # identical → similarity == 1.0
+        mt.register_task_features(str(t1.task_id), feat)
+        mt.register_task_features(str(t2.task_id), feat)
+        score = mt.score_transfer(t1, t2)
+        assert "Multi-task training beneficial" in score.reasoning
+        assert "> threshold 0.5" in score.reasoning
+
+    def test_overall_in_unit_interval(self) -> None:
+        """``overall`` is always in ``[0.0, 1.0]``."""
+        mt = self._strategy()
+        t1, t2 = _make_task(), _make_task()
+        mt.register_task_features(str(t1.task_id), torch.randn(1, 25))
+        mt.register_task_features(str(t2.task_id), torch.randn(1, 25))
+        score = mt.score_transfer(t1, t2)
+        assert 0.0 <= score.overall <= 1.0
+
+    def test_layer_scores_contains_cosine_similarity(self) -> None:
+        """When features are registered, ``layer_scores`` has a ``cosine_similarity`` key."""
+        mt = self._strategy()
+        t1, t2 = _make_task(), _make_task()
+        mt.register_task_features(str(t1.task_id), torch.ones(1, 25))
+        mt.register_task_features(str(t2.task_id), torch.ones(1, 25))
+        score = mt.score_transfer(t1, t2)
+        assert "cosine_similarity" in score.layer_scores
+
+
+# ---------------------------------------------------------------------------
+# TestExecuteTransfer
+# ---------------------------------------------------------------------------
+
+
+class TestExecuteTransfer:
+    def _setup(
+        self,
+        weighting: str = "equal",
+        n_classes_src: int = 3,
+        n_classes_tgt: int = 5,
+    ) -> tuple[MultiTaskTransfer, Task, Task]:
+        backbone = _make_backbone(in_dim=10, hidden=16)
+        mt = MultiTaskTransfer(backbone=backbone, task_weighting=weighting, task_head_hidden_dim=8)
+        source = _make_task(n_features=10, n_classes=n_classes_src)
+        target = _make_task(n_features=10, n_classes=n_classes_tgt)
+        return mt, source, target
+
+    def test_returns_multi_task_model_instance(self) -> None:
+        """``execute_transfer`` returns a ``MultiTaskModel``."""
+        mt, source, target = self._setup()
+        mt.add_task(source, 3)
+        mt.add_task(target, 5)
+        model = mt.execute_transfer(source, target, mt.backbone)
+        assert isinstance(model, MultiTaskModel)
+
+    def test_model_has_both_task_heads(self) -> None:
+        """The returned model has a head registered for both source and target."""
+        mt, source, target = self._setup()
+        mt.add_task(source, 3)
+        mt.add_task(target, 5)
+        model = mt.execute_transfer(source, target, mt.backbone)
+        assert str(source.task_id) in model.task_heads
+        assert str(target.task_id) in model.task_heads
+
+    def test_model_shares_backbone(self) -> None:
+        """The ``MultiTaskModel`` uses the same backbone passed to ``MultiTaskTransfer``."""
+        mt, source, target = self._setup()
+        mt.add_task(source, 3)
+        mt.add_task(target, 5)
+        model = mt.execute_transfer(source, target, mt.backbone)
+        assert model.backbone is mt.backbone
+
+    def test_auto_registers_tasks_from_n_classes(self) -> None:
+        """Unregistered tasks are auto-added using ``task.n_classes`` as head output dim."""
+        mt, source, target = self._setup(n_classes_src=3, n_classes_tgt=7)
+        # Do NOT pre-register; execute_transfer should auto-register.
+        model = mt.execute_transfer(source, target, mt.backbone)
+        assert str(source.task_id) in model.task_heads
+        assert str(target.task_id) in model.task_heads
+
+    def test_auto_registered_head_output_matches_n_classes(self) -> None:
+        """Auto-registered head has ``out_features == task.n_classes``."""
+        mt, source, target = self._setup(n_classes_tgt=7)
+        model = mt.execute_transfer(source, target, mt.backbone)
+        tgt_head = model.task_heads[str(target.task_id)]
+        linears = [m for m in tgt_head.modules() if isinstance(m, nn.Linear)]
+        assert linears[-1].out_features == 7
+
+    def test_forward_runs_on_returned_model(self) -> None:
+        """The returned ``MultiTaskModel`` can run a forward pass without error."""
+        mt, source, target = self._setup()
+        mt.add_task(source, 3)
+        mt.add_task(target, 5)
+        model = mt.execute_transfer(source, target, mt.backbone)
+        x = torch.randn(4, 10)
+        out = model(x, str(source.task_id))
+        assert out.shape == (4, 3)
+
+    def test_uncertainty_execute_passes_log_sigmas(self) -> None:
+        """With uncertainty weighting, ``MultiTaskModel.log_sigmas`` is populated."""
+        mt, source, target = self._setup(weighting="uncertainty")
+        mt.add_task(source, 3)
+        mt.add_task(target, 5)
+        model = mt.execute_transfer(source, target, mt.backbone)
+        assert len(model.log_sigmas) == 2
+        assert str(source.task_id) in model.log_sigmas
+        assert str(target.task_id) in model.log_sigmas
+
+
+# ---------------------------------------------------------------------------
+# TestTransferMetadata
+# ---------------------------------------------------------------------------
+
+
+class TestTransferMetadata:
+    def _strategy(self, **kwargs) -> MultiTaskTransfer:
+        return MultiTaskTransfer(backbone=_make_backbone(), **kwargs)
+
+    def test_strategy_name(self) -> None:
+        """``strategy`` key is ``"multi_task_transfer"``."""
+        assert self._strategy().get_transfer_metadata()["strategy"] == "multi_task_transfer"
+
+    def test_default_task_weighting(self) -> None:
+        """Default weighting is ``"equal"``."""
+        assert self._strategy().get_transfer_metadata()["task_weighting"] == "equal"
+
+    def test_custom_task_weighting_reflected(self) -> None:
+        """Custom ``task_weighting`` is reflected in metadata."""
+        meta = self._strategy(task_weighting="uncertainty").get_transfer_metadata()
+        assert meta["task_weighting"] == "uncertainty"
+
+    def test_task_head_hidden_dim_reflected(self) -> None:
+        """``task_head_hidden_dim`` value is reflected in metadata."""
+        meta = self._strategy(task_head_hidden_dim=128).get_transfer_metadata()
+        assert meta["task_head_hidden_dim"] == 128
+
+    def test_n_tasks_increments_with_add_task(self) -> None:
+        """``n_registered_tasks`` equals the number of ``add_task`` calls."""
+        mt = self._strategy()
+        assert mt.get_transfer_metadata()["n_registered_tasks"] == 0
+        mt.add_task(_make_task(), 3)
+        assert mt.get_transfer_metadata()["n_registered_tasks"] == 1
+        mt.add_task(_make_task(), 5)
+        assert mt.get_transfer_metadata()["n_registered_tasks"] == 2
+
+    def test_backbone_out_dim_in_metadata(self) -> None:
+        """``backbone_out_dim`` reflects the inferred backbone output dimension."""
+        meta = self._strategy().get_transfer_metadata()
+        assert meta["backbone_out_dim"] == 16  # _make_backbone hidden=16
+
+    def test_default_hidden_dim_is_64(self) -> None:
+        """Default ``task_head_hidden_dim`` is 64."""
+        assert self._strategy().get_transfer_metadata()["task_head_hidden_dim"] == 64
+
+
+# ---------------------------------------------------------------------------
+# TestGradnormWeighting
+# ---------------------------------------------------------------------------
+
+
+class TestGradnormWeighting:
+    def _strategy_with_two_tasks(self) -> tuple[MultiTaskTransfer, Task, Task]:
+        mt = MultiTaskTransfer(
+            backbone=_make_backbone(), task_weighting="gradnorm", task_head_hidden_dim=8
+        )
+        t1, t2 = _make_task(), _make_task()
+        mt.add_task(t1, 3)
+        mt.add_task(t2, 5)
+        return mt, t1, t2
+
+    def test_initial_weights_are_equal(self) -> None:
+        """GradNorm strategy initialises with uniform equal weights."""
+        mt, t1, t2 = self._strategy_with_two_tasks()
+        w = mt.task_weights
+        assert abs(w[str(t1.task_id)] - 0.5) < 1e-9
+        assert abs(w[str(t2.task_id)] - 0.5) < 1e-9
+
+    def test_update_gradnorm_weights_renormalises(self) -> None:
+        """After calling ``update_gradnorm_weights``, weights reflect gradient norms."""
+        mt, t1, t2 = self._strategy_with_two_tasks()
+        tid1, tid2 = str(t1.task_id), str(t2.task_id)
+        mt.update_gradnorm_weights({tid1: 1.0, tid2: 3.0})
+        # Higher gradient norm → higher weight target after normalisation.
+        w = mt.task_weights
+        assert w[tid2] > w[tid1]
+
+    def test_weights_sum_to_one_after_update(self) -> None:
+        """Updated gradnorm weights sum to 1.0."""
+        mt, t1, t2 = self._strategy_with_two_tasks()
+        tid1, tid2 = str(t1.task_id), str(t2.task_id)
+        mt.update_gradnorm_weights({tid1: 2.0, tid2: 5.0})
+        assert abs(sum(mt.task_weights.values()) - 1.0) < 1e-6
+
+    def test_empty_grad_norms_leaves_weights_unchanged(self) -> None:
+        """Calling with an empty dict does not alter the current weights."""
+        mt, t1, t2 = self._strategy_with_two_tasks()
+        before = dict(mt.task_weights)
+        mt.update_gradnorm_weights({})
+        assert mt.task_weights == before
