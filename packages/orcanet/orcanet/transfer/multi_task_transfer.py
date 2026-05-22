@@ -231,6 +231,8 @@ class MultiTaskTransfer(TransferStrategy):
             Number of output units in the task head (typically ``n_classes``).
         """
         task_id = str(task.task_id)
+        if task_id in self._task_heads:
+            raise ValueError(f"Task {task_id!r} is already registered.")
         head = nn.Sequential(
             nn.Linear(self._backbone_out_dim, self.task_head_hidden_dim),
             nn.ReLU(),

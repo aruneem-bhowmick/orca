@@ -381,6 +381,14 @@ class TestAddTask:
         mt.add_task(task, 3)
         assert str(task.task_id) in mt._task_heads
 
+    def test_raises_on_duplicate_task_id(self) -> None:
+        """Calling ``add_task`` twice with the same task raises ``ValueError``."""
+        mt = self._strategy()
+        task = _make_task()
+        mt.add_task(task, 3)
+        with pytest.raises(ValueError, match="already registered"):
+            mt.add_task(task, 3)
+
     def test_raises_on_invalid_task_weighting(self) -> None:
         """``ValueError`` is raised when an unsupported ``task_weighting`` is supplied."""
         with pytest.raises(ValueError, match="task_weighting"):
