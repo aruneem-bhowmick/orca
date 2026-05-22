@@ -636,3 +636,83 @@ class TestGradnormWeighting:
         before = dict(mt.task_weights)
         mt.update_gradnorm_weights({})
         assert mt.task_weights == before
+
+
+# ---------------------------------------------------------------------------
+# TestUncertaintyWeighting
+# ---------------------------------------------------------------------------
+
+
+class TestUncertaintyWeighting:
+    """Verify that uncertainty weighting learns higher log_sigma for noisier tasks."""
+
+    def _build(
+        self,
+        in_dim: int = 4,
+        hidden: int = 8,
+        out_dim: int = 2,
+    ) -> tuple[MultiTaskTransfer, MultiTaskModel, Task, Task]:
+        """Return a fully wired (strategy, model, task_easy, task_hard) tuple."""
+        backbone = nn.Sequential(nn.Linear(in_dim, hidden), nn.ReLU())
+        mt = MultiTaskTransfer(
+            backbone=backbone,
+            task_weighting="uncertainty",
+            task_head_hidden_dim=8,
+        )
+        task_easy = _make_task(n_features=in_dim, n_classes=out_dim)
+        task_hard = _make_task(n_features=in_dim, n_classes=out_dim)
+        mt.add_task(task_easy, out_dim)
+        mt.add_task(task_hard, out_dim)
+        model = mt.execute_transfer(task_easy, task_hard, backbone)
+        return mt, model, task_easy, task_hard
+
+    def test_log_sigma_gradients_nonzero_after_single_backward(self) -> None:
+        """Each log_sigma has a non-None, non-zero gradient after one backward pass."""
+        torch.manual_seed(7)
+        _, model, task_easy, task_hard = self._build()
+        tid_e = str(task_easy.task_id)
+        tid_h = str(task_hard.task_id)
+
+        x = torch.randn(8, 4)
+        batch = {
+            tid_e: (x, torch.zeros(8, dtype=torch.long)),   # easy: constant label
+            tid_h: (x, torch.randint(0, 2, (8,))),           # hard: random labels
+        }
+        loss = model.compute_uncertainty_loss(batch)
+        loss.backward()
+
+        for tid in (tid_e, tid_h):
+            log_s = model.log_sigmas[tid]
+            assert log_s.grad is not None, f"log_sigma['{tid}'] has no gradient"
+            assert log_s.grad.abs().item() > 0.0, f"log_sigma['{tid}'] gradient is zero"
+
+    def test_noisy_task_learns_higher_log_sigma(self) -> None:
+        """After training, the high-noise task accumulates a larger log_sigma value.
+
+        Setup: task_hard gets random (irreducible) labels → persistently high
+        cross-entropy; task_easy gets a fixed all-zero label → the model can
+        fit it and drive CE down.  After 10 Adam steps the Kendall objective
+        should push log_sigma_hard > log_sigma_easy.
+        """
+        torch.manual_seed(42)
+        _, model, task_easy, task_hard = self._build(in_dim=4, hidden=8, out_dim=2)
+        tid_e = str(task_easy.task_id)
+        tid_h = str(task_hard.task_id)
+
+        opt = torch.optim.Adam(model.parameters(), lr=0.05)
+
+        for _ in range(10):
+            opt.zero_grad()
+            x = torch.randn(16, 4)
+            y_easy = torch.zeros(16, dtype=torch.long)        # constant, learnable
+            y_hard = torch.randint(0, 2, (16,))               # random, irreducible noise
+            batch = {tid_e: (x, y_easy), tid_h: (x, y_hard)}
+            model.compute_uncertainty_loss(batch).backward()
+            opt.step()
+
+        log_s_easy = model.log_sigmas[tid_e].item()
+        log_s_hard = model.log_sigmas[tid_h].item()
+        assert log_s_hard > log_s_easy, (
+            f"Expected log_sigma_hard ({log_s_hard:.4f}) > log_sigma_easy ({log_s_easy:.4f}): "
+            "the noisy task should receive a larger learned variance"
+        )
