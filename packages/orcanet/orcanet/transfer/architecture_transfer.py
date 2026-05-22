@@ -163,6 +163,20 @@ class ArchitectureTransfer(TransferStrategy):
         orcamind_client: OrcaMindClient,
         top_k_candidates: int = 10,
     ) -> None:
+        """Initialise the strategy with an embedder, client, and optional top-k config.
+
+        Parameters
+        ----------
+        architecture_embedder:
+            ``ArchitectureEmbedder`` instance that computes cosine similarity
+            between two architecture config dicts via graph-embedding dot product.
+        orcamind_client:
+            Async ``OrcaMindClient`` used to resolve the source task's best model
+            name from the OrcaMind registry.
+        top_k_candidates:
+            Maximum number of candidates to report; stored for metadata only —
+            all registered configs are always scored and the best is selected.
+        """
         self.architecture_embedder = architecture_embedder
         self.orcamind_client = orcamind_client
         self.top_k_candidates = top_k_candidates
@@ -189,6 +203,29 @@ class ArchitectureTransfer(TransferStrategy):
     async def _score_transfer_async(
         self, source: Task, target: Task
     ) -> TransferScore:
+        """Async implementation delegated to by :meth:`score_transfer`.
+
+        Fetches the source task's best architecture name from OrcaMind, then
+        scores every registered candidate config against it using cosine
+        similarity from the architecture embedder.
+
+        Parameters
+        ----------
+        source:
+            Task whose best-known model architecture is looked up via OrcaMind.
+        target:
+            Target task; reserved for future task-conditioned similarity — not
+            used in the current scoring path.
+
+        Returns
+        -------
+        TransferScore
+            ``overall`` is the highest per-candidate cosine similarity (clamped
+            to 0); ``layer_scores`` maps each registered config name to its
+            similarity value; ``recommended_layers`` is always ``[]`` because
+            architecture transfer is a model-level rather than layer-level
+            decision.
+        """
         source_summary = await self.orcamind_client.get_best_model(source.task_id)
         source_config = self._config_registry.get(
             source_summary.name or "", {"layers": []}
