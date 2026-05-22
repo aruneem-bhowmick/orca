@@ -665,7 +665,7 @@ The OrcaMind health endpoint reports `faiss: false` when the FAISS index has not
 
 ## OrcaNet Transfer Python API
 
-The transfer subpackage provides a pure-Python API for two concrete transfer strategies: CKA-based feature-level scoring (`FeatureTransfer`) and direct parameter-tensor transfer with selective layer matching (`WeightTransfer`). Neither strategy exposes an HTTP endpoint in the current release — they are consumed directly by OrcaNet's internal recommendation pipeline.
+The transfer subpackage provides a pure-Python API for three concrete transfer strategies: CKA-based feature-level scoring (`FeatureTransfer`), direct parameter-tensor transfer with selective layer matching (`WeightTransfer`), and architecture graph-embedding similarity with config adaptation (`ArchitectureTransfer`). None of the strategies expose an HTTP endpoint in the current release — they are consumed directly by OrcaNet's internal recommendation pipeline.
 
 ### `linear_cka(X, Y) -> float`
 
@@ -706,10 +706,10 @@ Dataclass returned by `score_transfer`. **Note:** this is the internal rich type
 
 | Field | Type | Description |
 |---|---|---|
-| `overall` | `float` | Aggregate transferability score in [0, 1]. `FeatureTransfer`: depth-weighted mean CKA. `WeightTransfer`: `n_matched / n_total` parameter ratio. |
-| `layer_scores` | `dict[str, float]` | Per-named-layer score. `FeatureTransfer`: CKA similarity value. `WeightTransfer`: `1.0` (matched) or `0.0` (unmatched) per parameter tensor. |
-| `recommended_layers` | `list[str]` | Layers selected for transfer. `FeatureTransfer`: layers whose CKA exceeds `cka_threshold`. `WeightTransfer`: all matched parameter names. |
-| `reasoning` | `str` | Human-readable summary, e.g. `"CKA analysis: 3/4 layers exceed threshold 0.5."` or `"Matched 4/4 layers by name"`. |
+| `overall` | `float` | Aggregate transferability score in [0, 1]. `FeatureTransfer`: depth-weighted mean CKA. `WeightTransfer`: `n_matched / n_total` parameter ratio. `ArchitectureTransfer`: max cosine similarity across registered candidate configs. |
+| `layer_scores` | `dict[str, float]` | Per-named-layer score. `FeatureTransfer`: CKA similarity value. `WeightTransfer`: `1.0` (matched) or `0.0` (unmatched) per parameter tensor. `ArchitectureTransfer`: cosine similarity per registered candidate config name. |
+| `recommended_layers` | `list[str]` | Layers selected for transfer. `FeatureTransfer`: layers whose CKA exceeds `cka_threshold`. `WeightTransfer`: all matched parameter names. `ArchitectureTransfer`: always `[]` (architecture-level decision). |
+| `reasoning` | `str` | Human-readable summary, e.g. `"CKA analysis: 3/4 layers exceed threshold 0.5."`, `"Matched 4/4 layers by name"`, or `"Architecture mlp_128_64 is most similar to source architecture"`. |
 
 ### `FeatureTransfer`
 
@@ -885,6 +885,119 @@ get_optimizer_with_layer_lr(
 | `decay` | Multiplicative factor applied to `base_lr` for transferred parameters. Default `0.1`. |
 
 **Returns** `torch.optim.Adam` with one parameter group per `named_parameters()` entry.
+
+### `ArchitectureTransfer`
+
+```python
+from orcanet.transfer import ArchitectureTransfer
+```
+
+Concrete `TransferStrategy` that recommends and adapts model architectures for a target domain by comparing architecture graph embeddings. Uses the OrcaMind service to retrieve the source task's best-known architecture name, then scores all locally registered candidate configs by cosine similarity via `ArchitectureEmbedder` and returns the best match. Adapts the winning config to the target task's input/output dimensions and builds an `nn.Sequential` with middle-layer weights optionally copied from the source model.
+
+#### Constructor
+
+```python
+ArchitectureTransfer(
+    architecture_embedder: ArchitectureEmbedder,
+    orcamind_client: OrcaMindClient,
+    top_k_candidates: int = 10,
+)
+```
+
+| Parameter | Default | Description |
+|---|---|---|
+| `architecture_embedder` | — | `ArchitectureEmbedder` instance used to compute cosine similarity between architecture configs |
+| `orcamind_client` | — | Async `OrcaMindClient` that resolves the source task's best model name |
+| `top_k_candidates` | `10` | Stored for metadata reporting; all registered configs are always scored |
+
+#### Methods
+
+**`register_config(name: str, config: ArchConfig) -> None`**
+
+Register a named architecture config for similarity scoring. `ArchConfig` is `dict[str, Any]` with `"input_dim": int` and `"layers": list` keys. Re-registering an existing name overwrites it.
+
+**`score_transfer(source: Task, target: Task) -> TransferScore`**
+
+Fetch the source task's best architecture from OrcaMind, compute cosine similarity for every registered candidate, and return a `TransferScore` with:
+
+- `overall` = highest candidate similarity (clamped to 0)
+- `layer_scores` = `{candidate_name: similarity}` for every registered config
+- `recommended_layers` = `[]` (architecture-level decision — no per-layer concept)
+- `reasoning` = human-readable string naming the best candidate
+
+Returns `overall == 0.0` when no configs are registered.
+
+**`execute_transfer(source: Task, target: Task, source_model: nn.Module) -> nn.Module`**
+
+1. Calls `score_transfer` if it has not been called yet.
+2. Deep-copies the best candidate config and updates `input_dim` / last-layer `size` for the target task via `adapt_architecture`.
+3. Builds an `nn.Sequential` with `kaiming_uniform_` weight initialisation.
+4. Copies middle-layer weights from `source_model` where shapes match (first and last linear layers are never copied).
+
+Returns the adapted `nn.Module`. Does not mutate `source_model`.
+
+**`get_transfer_metadata() -> dict`**
+
+Returns `{"strategy": "architecture_transfer", "top_k_candidates": int, "n_registered_configs": int}`.
+
+### `adapt_architecture`
+
+```python
+from orcanet.transfer import adapt_architecture
+```
+
+Module-level pure function that returns a deep-copied architecture config with its boundary dimensions updated for a target task.
+
+```python
+adapt_architecture(
+    config: ArchConfig,
+    target_task: Task,
+) -> ArchConfig
+```
+
+| Parameter | Description |
+|---|---|
+| `config` | Source architecture config with `"input_dim"` and `"layers"` keys |
+| `target_task` | Task whose `n_features` (new input dim) and `n_classes` (new output size) are applied |
+
+Only `config["input_dim"]` and the last layer's `"size"` are modified; all hidden layers are preserved. If `target_task.n_features` or `target_task.n_classes` is `None`, the corresponding dimension is left unchanged.
+
+#### Example
+
+```python
+from orcanet.transfer import ArchitectureTransfer, adapt_architecture
+
+transfer = ArchitectureTransfer(
+    architecture_embedder=embedder,
+    orcamind_client=client,
+)
+
+transfer.register_config("mlp_128_64", {
+    "input_dim": 25,
+    "layers": [
+        {"type": "linear", "size": 128, "activation": "relu"},
+        {"type": "linear", "size": 64,  "activation": "relu"},
+        {"type": "linear", "size": 10,  "activation": "none"},
+    ]
+})
+
+score = transfer.score_transfer(source_task, target_task)
+print(score.overall)            # e.g. 0.87
+print(score.recommended_layers) # []  (architecture-level — no per-layer selection)
+
+if score.overall > 0.4:
+    adapted = transfer.execute_transfer(source_task, target_task, source_model)
+    # adapted: nn.Sequential with in_features == target_task.n_features
+    #           and out_features == target_task.n_classes
+
+# adapt_architecture can also be called standalone
+new_config = adapt_architecture(
+    {"input_dim": 25, "layers": [{"type": "linear", "size": 10, "activation": "none"}]},
+    target_task,   # n_features=50, n_classes=3
+)
+# new_config["input_dim"] == 50
+# new_config["layers"][-1]["size"] == 3
+```
 
 ---
 
