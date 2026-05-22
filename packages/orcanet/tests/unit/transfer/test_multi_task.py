@@ -94,7 +94,7 @@ class TestGetBackboneOutDim:
 
     def test_raises_when_no_linear(self) -> None:
         """Raises ``ValueError`` when the backbone contains no ``nn.Linear`` layer."""
-        with pytest.raises(ValueError, match="no nn.Linear"):
+        with pytest.raises(ValueError, match=r"no nn\.Linear"):
             _get_backbone_out_dim(nn.ReLU())
 
 
@@ -131,10 +131,12 @@ class TestMultiTaskModelForward:
             model(torch.randn(2, 10), "nonexistent_task")
 
     def test_backbone_shared_across_heads(self) -> None:
-        """Both heads share the same backbone parameter object."""
+        """Backbone gradients accumulate from both task heads, confirming it is shared."""
         model, task_ids = self._make_model()
-        # The backbone is the same nn.Module instance regardless of task_id.
-        assert model.backbone is model.backbone
+        x = torch.randn(2, 10)
+        loss = model(x, task_ids[0]).sum() + model(x, task_ids[1]).sum()
+        loss.backward()
+        assert any(p.grad is not None for p in model.backbone.parameters())
 
     def test_output_shape_matches_head_out_dim(self) -> None:
         """Output tensor has shape ``(batch, head_out_dim)``."""
