@@ -1288,7 +1288,7 @@ OrcaNet is the third component of the Orca ecosystem. It orchestrates OrcaMind a
 ```text
 orcanet/
 ├── embeddings/    # CrossDomainEmbedder (DANN, implemented), TextTaskEmbedder (sentence-transformers + stats fusion, implemented), ArchitectureEmbedder (GNN-based, implemented)
-├── transfer/      # CKA feature transfer, weight transfer, architecture adaptation, multi-task training
+├── transfer/      # CKA feature transfer, weight transfer, architecture transfer (all implemented); multi-task training (planned)
 ├── retrieval/     # Three-stage hybrid retrieval (FAISS → PostgreSQL metadata filter → LLM re-ranking)
 ├── reasoning/     # LangChain ReAct agent, Pydantic response models, retry logic
 │   └── prompts/   # Prompt templates: transfer explanation, task similarity, architecture recommendation
@@ -1587,10 +1587,11 @@ graph = ArchitectureGraph.from_model_config(mlp_config)
 
 #### `orcanet.transfer` — Transfer Strategies
 
-The transfer subpackage provides two concrete transfer strategies sharing a common ABC and return type:
+The transfer subpackage provides three concrete transfer strategies sharing a common ABC and return type:
 
 - **`FeatureTransfer`** — scores transferability via per-layer linear Centered Kernel Alignment (Kornblith et al. 2019) computed over forward-hook activations on shared probe data; selectively patches weights for high-CKA layers.
 - **`WeightTransfer`** — matches parameter tensors directly by name, shape, or both; deep-copies the source architecture as the transfer base and reinitialises unmatched tensors; pairs with `get_optimizer_with_layer_lr` for layer-wise learning-rate decay.
+- **`ArchitectureTransfer`** — recommends and adapts architectures for a target domain by comparing architecture graph embeddings; retrieves the source task's best-known architecture from OrcaMind, scores all locally registered candidate configs by cosine similarity, and builds an adapted `nn.Sequential` model with correct input/output dimensions.
 
 ##### `TransferStrategy` (`base.py`)
 
@@ -1709,7 +1710,90 @@ optimizer = get_optimizer_with_layer_lr(adapted, transfer.last_transferred, base
 # transferred params get lr=1e-4; reinitialised params get lr=1e-3
 ```
 
-The remaining transfer components (`ArchitectureAdapter`, `MultiTaskTrainer`) are planned.
+##### `ArchitectureTransfer` / `adapt_architecture` (`architecture_transfer.py`)
+
+`ArchitectureTransfer` — concrete `TransferStrategy` that recommends and adapts architectures for a target domain using architecture graph-embedding similarity instead of weight-level comparison.
+
+**Workflow:**
+
+1. Register candidate architecture configs with `register_config(name, config)`.
+2. Call `score_transfer(source, target)` to fetch the source task's best architecture from OrcaMind and score every registered candidate by cosine similarity.
+3. Call `execute_transfer(source, target, source_model)` to build and return an `nn.Sequential` adapted to the target task's input/output dimensions.
+
+**Config format (`ArchConfig`):**
+
+```python
+{
+    "input_dim": 128,
+    "layers": [
+        {"type": "linear", "size": 256, "activation": "relu"},
+        {"type": "linear", "size": 64,  "activation": "relu"},
+        {"type": "linear", "size": 10,  "activation": "none"},
+    ]
+}
+```
+
+Recognised activation values: `"relu"`, `"sigmoid"`, `"tanh"`, `"gelu"`, `"none"` (no activation module appended). Unknown activations are silently ignored.
+
+**Key implementation details:**
+
+- **OrcaMind lookup** — `score_transfer` calls `orcamind_client.get_best_model(source.task_id)` asynchronously to identify the source architecture name; the name is used to look up the source config from the local registry.
+- **Sync/async bridge** — `_run_coro()` handles the impedance mismatch between the synchronous `TransferStrategy` ABC and the async `OrcaMindClient`. When called from inside a running event loop it spawns a background `threading.Thread` with its own loop to avoid re-entrance.
+- **`adapt_architecture(config, target_task)`** — pure function that deep-copies the config and overwrites `input_dim` with `target_task.n_features` (if not `None`) and the last layer's `size` with `target_task.n_classes` (if not `None`). Hidden layers are untouched.
+- **Middle-layer weight copying** — `execute_transfer` copies parameters from `source_model` into matching middle positions (skipping the first input layer and the last output layer) where shapes agree. Shape mismatches are silently skipped; all linear layers are initialised with `kaiming_uniform_` (weights) and `zeros_` (biases) before the copy step.
+- **`recommended_layers` is always `[]`** — architecture transfer is a model-level decision; there is no per-layer selection concept.
+
+**Constructor:**
+
+```python
+ArchitectureTransfer(
+    architecture_embedder: ArchitectureEmbedder,
+    orcamind_client: OrcaMindClient,
+    top_k_candidates: int = 10,
+)
+```
+
+**Public API:**
+
+| Method | Signature | Description |
+|---|---|---|
+| `register_config` | `(name: str, config: ArchConfig) -> None` | Store a named architecture config in the local registry |
+| `score_transfer` | `(source: Task, target: Task) -> TransferScore` | Fetch source architecture from OrcaMind; score all registered candidates; return best match |
+| `execute_transfer` | `(source: Task, target: Task, source_model: nn.Module) -> nn.Module` | Adapt best config for target task; build `nn.Sequential`; copy middle-layer weights from source |
+| `get_transfer_metadata` | `() -> dict` | Return `{"strategy": "architecture_transfer", "top_k_candidates": int, "n_registered_configs": int}` |
+
+`adapt_architecture(config, target_task)` — module-level helper also exported from `orcanet.transfer`. Deep-copies the config and updates the boundary dimensions, leaving hidden layers intact.
+
+```python
+from orcanet.transfer import ArchitectureTransfer, adapt_architecture
+
+transfer = ArchitectureTransfer(
+    architecture_embedder=embedder,
+    orcamind_client=client,
+    top_k_candidates=10,
+)
+
+transfer.register_config("mlp_128_64", {
+    "input_dim": 25,
+    "layers": [
+        {"type": "linear", "size": 128, "activation": "relu"},
+        {"type": "linear", "size": 64,  "activation": "relu"},
+        {"type": "linear", "size": 10,  "activation": "none"},
+    ]
+})
+
+score = transfer.score_transfer(source_task, target_task)
+# score.overall            — highest cosine similarity across candidates
+# score.layer_scores       — {"mlp_128_64": 0.87}
+# score.recommended_layers — []  (architecture-level decision)
+
+adapted = transfer.execute_transfer(source_task, target_task, source_model)
+# adapted: nn.Sequential with in_features == target_task.n_features
+#           and out_features == target_task.n_classes;
+#           hidden-layer weights copied from source_model where shapes match
+```
+
+The remaining transfer component (`MultiTaskTrainer`) is planned.
 
 #### `orcanet.retrieval` — Hybrid Retrieval (planned)
 

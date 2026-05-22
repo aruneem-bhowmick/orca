@@ -67,7 +67,7 @@ pytest packages/orcanet/tests/unit/embeddings/test_text_features.py -v
 # OrcaNet — ArchitectureGraph and ArchitectureEmbedder unit tests only
 pytest packages/orcanet/tests/unit/embeddings/test_architecture_embedder.py -v
 
-# OrcaNet — transfer module unit tests only (linear_cka, FeatureTransfer, WeightTransfer)
+# OrcaNet — transfer module unit tests only (linear_cka, FeatureTransfer, WeightTransfer, ArchitectureTransfer)
 pytest packages/orcanet/tests/unit/transfer/ -v
 
 # OrcaNet — linear_cka correctness tests only
@@ -87,6 +87,18 @@ pytest packages/orcanet/tests/unit/transfer/test_weight_transfer.py -v -k "TestW
 
 # OrcaNet — WeightTransfer guards and metadata tests only
 pytest packages/orcanet/tests/unit/transfer/test_weight_transfer.py -v -k "TestWeightTransferGuards or TestWeightTransferMetadata"
+
+# OrcaNet — ArchitectureTransfer tests only (all classes)
+pytest packages/orcanet/tests/unit/transfer/test_architecture_transfer.py -v
+
+# OrcaNet — ArchitectureTransfer adapt_architecture tests only
+pytest packages/orcanet/tests/unit/transfer/test_architecture_transfer.py -v -k "TestAdaptArchitecture"
+
+# OrcaNet — ArchitectureTransfer score_transfer tests only
+pytest packages/orcanet/tests/unit/transfer/test_architecture_transfer.py -v -k "TestArchitectureTransferScore"
+
+# OrcaNet — ArchitectureTransfer execute_transfer, metadata, and guards tests only
+pytest packages/orcanet/tests/unit/transfer/test_architecture_transfer.py -v -k "TestArchitectureTransferExecute or TestArchitectureTransferMetadata or TestArchitectureTransferGuards"
 ```
 
 The test suite has 80+ test files across unit, integration, performance, and deployment-validation categories.
@@ -115,6 +127,8 @@ OrcaMind integration tests auto-skip when their target service port is unreachab
 - *Deepcopy-semantics split in WeightTransfer tests* — `test_weight_transfer.py` recognises that `execute_transfer` starts from `deepcopy(source_model)`, so shape mismatches can never occur within that path and the no-raise guarantee is trivially satisfied for the deepcopy case. Rather than building a misleading mismatched-architecture fixture, the test file separates concerns: `test_shape_mismatch_skipped_without_exception` verifies that no exception is raised across all three `match_by` modes using a matched architecture (the real goal), while `test_safe_reinit_handles_1d_and_2d_tensors` targets `_safe_reinit` directly with 1-D and 2-D tensors to pin the reinitialisation path. Making the separation explicit prevents future readers from wondering why the deepcopy fixture "doesn't really test mismatches."
 - *Per-parameter optimizer group verification* — `TestGetOptimizerWithLayerLR.test_transferred_params_get_decayed_lr` resolves each optimizer `param_groups` entry back to its parameter name via `model.named_parameters()` and asserts the learning rate individually. This catches silent index-drift bugs where a list comprehension over `named_parameters()` assigns the wrong LR to the wrong parameter — a class of bug that would pass a coarser "check the mean LR" assertion but silently mis-train transferred layers.
 - *match_by mode isolation* — `TestWeightTransferScoreMatchBy` constructs a single pair of models with differing `out_dim` (first layer identical, last layer shape-mismatched) and asserts each `match_by` mode independently. `"name"` mode gives `overall == 1.0` (names all exist regardless of shape), `"both"` drops below 1.0 (last-layer params excluded) while preserving 1.0 for the first-layer params, and `"shape"` produces a valid float without a specific assertion (shape-first matching on arbitrary architectures is deterministic but architecturally coupled). Testing each mode against the same fixture makes it straightforward to verify that adding a new mode does not silently change the behaviour of the existing three.
+- *AsyncMock + synchronous ABC bridge testing* — `test_architecture_transfer.py` uses `AsyncMock` for `OrcaMindClient` (whose `get_best_model` is a coroutine) alongside `MagicMock(spec=ArchitectureEmbedder)` for the synchronous embedder. The `_run_coro` helper that bridges the synchronous `TransferStrategy` ABC with the async client is exercised automatically by every `score_transfer` call in the test suite, verifying that it completes without deadlock even though `AsyncMock` resolves immediately.
+- *Activation-function coverage* — `test_all_activation_types_supported` builds a model from `_config_with_activations()`, which sequences all four supported activation types (`sigmoid`, `tanh`, `gelu`, `none`) in a single forward pass. A concrete output-shape assertion (`(2, 5)`) verifies that `_build_sequential_from_config` threads `current_in` correctly through activation modules (which do not change the width) without off-by-one errors in the layer dimension chain.
 
 The performance benchmark tests in `tests/performance/` make executable compute-efficiency assertions that cannot be expressed as ordinary unit tests. They drive deterministic synthetic sweeps — no external services, no randomness — and enforce measurable invariants about algorithm behaviour at scale. Currently the tier contains `TestASHAPruningSavings`, which simulates 20-trial hyperparameter sweeps on a concave-quadratic learning-curve objective and asserts that ASHA executes ≤60% of the steps an unpruned baseline would require (≥40% compute savings). The scaling test additionally runs a 27-trial cohort and asserts that savings for the larger cohort are at least as good as for the 20-trial baseline, enforcing the monotonicity property directly.
 
