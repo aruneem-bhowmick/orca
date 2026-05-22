@@ -645,6 +645,26 @@ class TestGradnormWeighting:
         mt.update_gradnorm_weights({})
         assert mt.task_weights == before
 
+    def test_raises_on_unknown_task_id(self) -> None:
+        """A task id absent from the registry raises ``ValueError``."""
+        mt, _, _ = self._strategy_with_two_tasks()
+        with pytest.raises(ValueError, match="Unknown task ids"):
+            mt.update_gradnorm_weights({"nonexistent_task": 1.0})
+
+    def test_partial_update_preserves_omitted_task_weight(self) -> None:
+        """Task ids absent from ``grad_norms`` retain their existing weight exactly."""
+        mt = MultiTaskTransfer(
+            backbone=_make_backbone(), task_weighting="gradnorm", task_head_hidden_dim=8
+        )
+        t1, t2, t3 = _make_task(), _make_task(), _make_task()
+        mt.add_task(t1, 3)
+        mt.add_task(t2, 3)
+        mt.add_task(t3, 3)
+        tid3 = str(t3.task_id)
+        weight_before = mt.task_weights[tid3]
+        mt.update_gradnorm_weights({str(t1.task_id): 2.0, str(t2.task_id): 1.0})
+        assert mt.task_weights[tid3] == weight_before
+
 
 # ---------------------------------------------------------------------------
 # TestUncertaintyWeighting

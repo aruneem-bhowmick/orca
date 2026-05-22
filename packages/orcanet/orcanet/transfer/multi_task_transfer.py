@@ -251,26 +251,37 @@ class MultiTaskTransfer(TransferStrategy):
     def update_gradnorm_weights(self, grad_norms: dict[str, float]) -> None:
         """Renormalise task weights from per-task gradient norms (GradNorm).
 
-        Weights are set so that tasks with larger gradient norms receive
-        proportionally higher weight, normalised to sum to 1.  The caller is
-        responsible for computing ``grad_norms`` (e.g. via
+        Only the task ids present in ``grad_norms`` are updated; omitted task
+        ids retain their existing weight exactly.  The updated tasks are scaled
+        so that their combined weight equals the combined weight they held
+        before the update, keeping the global sum stable.
+
+        The caller is responsible for computing ``grad_norms`` (e.g. via
         ``torch.autograd.grad``) on the backbone's final layer.
 
         Parameters
         ----------
         grad_norms:
-            Maps each task id to its gradient norm scalar.  Missing task ids
-            retain their existing weight.
+            Maps each task id to its gradient norm scalar.  Must only contain
+            task ids that were previously registered via :meth:`add_task`.
+
+        Raises
+        ------
+        ValueError
+            If any key in ``grad_norms`` does not correspond to a registered
+            task id.
         """
         if not grad_norms:
             return
+        unknown = set(grad_norms) - set(self._task_weights)
+        if unknown:
+            raise ValueError(
+                f"Unknown task ids in grad_norms: {sorted(unknown)}"
+            )
+        preserved_mass = sum(self._task_weights[tid] for tid in grad_norms)
         total = sum(grad_norms.values()) + 1e-8
-        n = len(grad_norms)
         for tid, norm in grad_norms.items():
-            self._task_weights[tid] = (norm / total) * n
-        w_sum = sum(self._task_weights.values()) + 1e-8
-        for tid in self._task_weights:
-            self._task_weights[tid] /= w_sum
+            self._task_weights[tid] = (norm / total) * preserved_mass
 
     # ------------------------------------------------------------------
     # TransferStrategy interface
