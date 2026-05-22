@@ -281,6 +281,24 @@ class TestArchitectureTransferScore:
 # ---------------------------------------------------------------------------
 
 
+def _config_with_activations(input_dim: int = 10) -> ArchConfig:
+    """Return a config exercising every supported activation type.
+
+    Layers use ``sigmoid``, ``tanh``, ``gelu``, and ``none`` in sequence so
+    that ``_build_sequential_from_config`` appends each corresponding
+    ``nn.Module`` activation (or skips it for ``none``).
+    """
+    return {
+        "input_dim": input_dim,
+        "layers": [
+            {"type": "linear", "size": 8, "activation": "sigmoid"},
+            {"type": "linear", "size": 6, "activation": "tanh"},
+            {"type": "linear", "size": 4, "activation": "gelu"},
+            {"type": "linear", "size": 5, "activation": "none"},
+        ],
+    }
+
+
 def _transfer_for_execute(
     source_name: str = "arch_net",
     source_n_features: int = 8,
@@ -369,6 +387,20 @@ class TestArchitectureTransferExecute:
         assert transfer._last_best_match is None
         result = transfer.execute_transfer(source, target, source_model)
         assert isinstance(result, nn.Module)
+
+    def test_all_activation_types_supported(self) -> None:
+        """``_build_sequential_from_config`` materialises sigmoid, tanh, gelu, and none layers.
+
+        Exercises every activation in ``_ACTIVATION_MAP`` plus the no-op ``"none"``
+        branch, runs a forward pass, and asserts the output shape matches the final
+        layer size defined in the config.
+        """
+        config = _config_with_activations(input_dim=10)
+        model = _build_sequential_from_config(config)
+        assert isinstance(model, nn.Module)
+        x = torch.randn(2, 10)
+        out = model(x)
+        assert out.shape == (2, 5)
 
 
 # ---------------------------------------------------------------------------
