@@ -218,7 +218,7 @@ class MultiTaskTransfer(TransferStrategy):
             Tensor of shape ``(1, embedder_input_dim)`` or ``(embedder_input_dim,)``.
             Must match the embedder's expected input dimensionality (default 25).
         """
-        self._task_features[str(task_id)] = features
+        self._task_features[str(task_id)] = features.detach()
 
     def add_task(self, task: Task, head_output_dim: int) -> None:
         """Register a new task and create its two-layer output head.
