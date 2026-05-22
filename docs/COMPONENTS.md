@@ -1850,9 +1850,11 @@ Methods:
 
 Creates a two-layer output head `nn.Sequential(Linear(backbone_out, hidden), ReLU(), Linear(hidden, head_output_dim))` and registers it under `str(task.task_id)`. For `"uncertainty"` weighting, also creates a `nn.Parameter(torch.zeros(1))` log-sigma for that task. Calls `_update_weights()` after registration so weights always reflect the current number of tasks.
 
+Raises `ValueError` if `task.task_id` has already been registered. This prevents a second `add_task` call from silently discarding any trained head parameters.
+
 **`register_task_features(task_id: str, features: Tensor) -> None`**
 
-Stores a meta-feature tensor for a task (expected shape `(1, input_dim)` matching the embedder's `input_dim`, default 25). Follows the same pre-registration pattern as `FeatureTransfer.register_model` and `WeightTransfer.register_model`. Call this before `score_transfer` for a meaningful similarity score.
+Stores a meta-feature tensor for a task (expected shape `(1, input_dim)` matching the embedder's `input_dim`, default 25). Follows the same pre-registration pattern as `FeatureTransfer.register_model` and `WeightTransfer.register_model`. Call this before `score_transfer` for a meaningful similarity score. The stored tensor is always detached from any autograd graph, so calling this inside a training loop does not cause the intermediate activations to be retained in memory.
 
 **`score_transfer(source: Task, target: Task) -> TransferScore`**
 
@@ -1879,7 +1881,7 @@ Auto-registers any task that was not pre-registered via `add_task`, using `task.
 
 **`update_gradnorm_weights(grad_norms: dict[str, float]) -> None`**
 
-Renormalises `_task_weights` based on per-task gradient norms supplied by the caller. Tasks with larger gradient norms receive proportionally higher weight; the updated weights sum to 1. The caller is responsible for computing gradient norms (e.g. via `torch.autograd.grad` on the backbone's last layer). If an empty dict is passed, weights are unchanged.
+Renormalises `_task_weights` for the task ids present in `grad_norms`. Only those tasks are updated; all other registered tasks retain their existing weight exactly. The updated tasks are scaled so that their combined weight equals what they held before the call, keeping the global weight sum stable. The caller is responsible for computing gradient norms (e.g. via `torch.autograd.grad` on the backbone's last layer). Raises `ValueError` if any key in `grad_norms` does not match a registered task id. If an empty dict is passed, weights are unchanged.
 
 **`task_weights` property**
 

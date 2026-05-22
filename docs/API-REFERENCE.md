@@ -1073,9 +1073,11 @@ Raises `ValueError` on construction if `task_weighting` is not one of `"equal"`,
 
 Create a `nn.Sequential(Linear(backbone_out, hidden), ReLU(), Linear(hidden, head_output_dim))` head and register it under `str(task.task_id)`. Automatically rebalances `_task_weights` after registration. For `"uncertainty"` weighting, also creates a `nn.Parameter(torch.zeros(1))` log-sigma for the task.
 
+Raises `ValueError` if `task.task_id` has already been registered, preventing silent overwrite of trained parameters.
+
 **`register_task_features(task_id: str, features: Tensor) -> None`**
 
-Store a meta-feature tensor for the given task id (shape `(1, embedder_input_dim)` or `(embedder_input_dim,)`). Must be called before `score_transfer` to obtain a meaningful similarity score.
+Store a meta-feature tensor for the given task id (shape `(1, embedder_input_dim)` or `(embedder_input_dim,)`). Must be called before `score_transfer` to obtain a meaningful similarity score. The tensor is detached from any autograd graph on storage so that calling this inside a training loop does not retain intermediate activations.
 
 **`score_transfer(source: Task, target: Task) -> TransferScore`**
 
@@ -1087,7 +1089,9 @@ Auto-registers any unregistered task using `task.n_classes` (or `1` if absent) a
 
 **`update_gradnorm_weights(grad_norms: dict[str, float]) -> None`**
 
-Renormalise `_task_weights` from per-task gradient norms so that all tasks contribute equally to gradient magnitude after the update. Weights sum to 1 after the call. A no-op when passed an empty dict.
+Renormalise `_task_weights` for the task ids present in `grad_norms`. Only those tasks are updated — omitted tasks retain their existing weight exactly. The updated tasks are scaled so that their combined weight equals what they held before the call, keeping the global weight sum stable.
+
+Raises `ValueError` if any key in `grad_norms` does not correspond to a registered task id. A no-op when passed an empty dict.
 
 **`task_weights` (property) `-> dict[str, float]`**
 
