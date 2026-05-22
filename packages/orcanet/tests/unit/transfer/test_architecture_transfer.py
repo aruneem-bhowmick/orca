@@ -127,3 +127,132 @@ class TestAdaptArchitecture:
         task = _make_task(n_classes=None)
         adapted = adapt_architecture(config, task)
         assert adapted["layers"][-1]["size"] == 10
+
+
+# ---------------------------------------------------------------------------
+# Helpers for ArchitectureTransfer tests
+# ---------------------------------------------------------------------------
+
+
+def _mock_client(source_name: str = "mlp_128_64") -> Any:
+    """Return an AsyncMock OrcaMindClient pre-configured for score_transfer tests."""
+    from unittest.mock import AsyncMock
+    from uuid import uuid4 as _uuid4
+    from orca_shared.schemas.model import ModelSummary
+
+    mock = AsyncMock()
+    mock.get_best_model.return_value = ModelSummary(
+        model_id=_uuid4(),
+        name=source_name,
+        architecture=source_name,
+    )
+    return mock
+
+
+def _mock_embedder(sim_value: float = 0.85) -> Any:
+    """Return a MagicMock ArchitectureEmbedder with deterministic similarity."""
+    from unittest.mock import MagicMock
+    from orcanet.embeddings.architecture_embedder import ArchitectureEmbedder
+
+    mock = MagicMock(spec=ArchitectureEmbedder)
+    mock.similarity.return_value = sim_value
+    return mock
+
+
+def _transfer_with_registry(
+    source_name: str = "mlp_128_64",
+    sim_value: float = 0.85,
+    configs: dict[str, ArchConfig] | None = None,
+) -> tuple[ArchitectureTransfer, Any, Any]:
+    """Return (transfer, mock_client, mock_embedder) with one registered config."""
+    client = _mock_client(source_name)
+    embedder = _mock_embedder(sim_value)
+    transfer = ArchitectureTransfer(architecture_embedder=embedder, orcamind_client=client)
+    for name, cfg in (configs or {source_name: _simple_config()}).items():
+        transfer.register_config(name, cfg)
+    return transfer, client, embedder
+
+
+# ---------------------------------------------------------------------------
+# TestArchitectureTransferScore
+# ---------------------------------------------------------------------------
+
+
+class TestArchitectureTransferScore:
+    """score_transfer delegates to OrcaMind + ArchitectureEmbedder and returns TransferScore."""
+
+    def test_returns_transfer_score_instance(self) -> None:
+        transfer, _, _ = _transfer_with_registry()
+        source = _make_task()
+        target = _make_task()
+        score = transfer.score_transfer(source, target)
+        assert isinstance(score, TransferScore)
+
+    def test_score_calls_orcamind_get_best_model(self) -> None:
+        transfer, client, _ = _transfer_with_registry()
+        source = _make_task()
+        target = _make_task()
+        transfer.score_transfer(source, target)
+        client.get_best_model.assert_called_once_with(source.task_id)
+
+    def test_score_uses_embedder_similarity(self) -> None:
+        transfer, _, embedder = _transfer_with_registry()
+        source = _make_task()
+        target = _make_task()
+        transfer.score_transfer(source, target)
+        assert embedder.similarity.called
+
+    def test_overall_equals_max_similarity(self) -> None:
+        configs = {
+            "arch_a": _simple_config(hidden=64),
+            "arch_b": _simple_config(hidden=128),
+        }
+        transfer, _, _ = _transfer_with_registry(sim_value=0.85, configs=configs)
+        source = _make_task()
+        target = _make_task()
+        score = transfer.score_transfer(source, target)
+        # Both candidates return 0.85; max = 0.85
+        assert abs(score.overall - 0.85) < 1e-6
+
+    def test_recommended_layers_is_always_empty(self) -> None:
+        transfer, _, _ = _transfer_with_registry()
+        source = _make_task()
+        target = _make_task()
+        score = transfer.score_transfer(source, target)
+        assert score.recommended_layers == []
+
+    def test_reasoning_contains_best_arch_name(self) -> None:
+        configs = {"best_arch": _simple_config()}
+        client = _mock_client(source_name="best_arch")
+        embedder = _mock_embedder(0.9)
+        transfer = ArchitectureTransfer(architecture_embedder=embedder, orcamind_client=client)
+        transfer.register_config("best_arch", _simple_config())
+        source = _make_task()
+        target = _make_task()
+        score = transfer.score_transfer(source, target)
+        assert "best_arch" in score.reasoning
+
+    def test_empty_registry_returns_zero_overall(self) -> None:
+        client = _mock_client()
+        embedder = _mock_embedder()
+        transfer = ArchitectureTransfer(architecture_embedder=embedder, orcamind_client=client)
+        # No configs registered
+        source = _make_task()
+        target = _make_task()
+        score = transfer.score_transfer(source, target)
+        assert score.overall == 0.0
+
+    def test_layer_scores_keys_match_registered_names(self) -> None:
+        configs = {"arch_a": _simple_config(), "arch_b": _simple_config(hidden=128)}
+        transfer, _, _ = _transfer_with_registry(configs=configs)
+        source = _make_task()
+        target = _make_task()
+        score = transfer.score_transfer(source, target)
+        assert set(score.layer_scores.keys()) == {"arch_a", "arch_b"}
+
+    def test_overall_in_unit_interval(self) -> None:
+        transfer, _, _ = _transfer_with_registry(sim_value=0.5)
+        source = _make_task()
+        target = _make_task()
+        score = transfer.score_transfer(source, target)
+        assert 0.0 <= score.overall <= 1.0
