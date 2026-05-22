@@ -256,3 +256,156 @@ class TestArchitectureTransferScore:
         target = _make_task()
         score = transfer.score_transfer(source, target)
         assert 0.0 <= score.overall <= 1.0
+
+
+# ---------------------------------------------------------------------------
+# TestArchitectureTransferExecute
+# ---------------------------------------------------------------------------
+
+
+def _transfer_for_execute(
+    source_name: str = "arch_net",
+    source_n_features: int = 8,
+    source_hidden: int = 64,
+    source_output: int = 10,
+    target_n_features: int = 25,
+    target_n_classes: int = 3,
+) -> tuple[ArchitectureTransfer, Task, Task, nn.Module]:
+    """Return (transfer, source_task, target_task, source_model) pre-wired for execute_transfer."""
+    client = _mock_client(source_name)
+    embedder = _mock_embedder(0.9)
+    transfer = ArchitectureTransfer(architecture_embedder=embedder, orcamind_client=client)
+
+    config = _deep_config(
+        input_dim=source_n_features,
+        hidden1=source_hidden,
+        hidden2=source_hidden // 2,
+        output=source_output,
+    )
+    transfer.register_config(source_name, config)
+
+    source_task = _make_task(n_features=source_n_features, n_classes=source_output)
+    target_task = _make_task(n_features=target_n_features, n_classes=target_n_classes)
+
+    # Build a source model matching the source config so middle-layer copies work.
+    source_model = _build_sequential_from_config(config)
+    torch.manual_seed(42)
+    for module in source_model.modules():
+        if isinstance(module, nn.Linear):
+            nn.init.normal_(module.weight)
+            if module.bias is not None:
+                nn.init.normal_(module.bias)
+
+    return transfer, source_task, target_task, source_model
+
+
+class TestArchitectureTransferExecute:
+    """execute_transfer returns an nn.Module with correct input/output dimensions."""
+
+    def test_returns_nn_module(self) -> None:
+        transfer, source, target, source_model = _transfer_for_execute()
+        result = transfer.execute_transfer(source, target, source_model)
+        assert isinstance(result, nn.Module)
+
+    def test_correct_input_size(self) -> None:
+        transfer, source, target, source_model = _transfer_for_execute(
+            target_n_features=25
+        )
+        result = transfer.execute_transfer(source, target, source_model)
+        first_linear = next(m for m in result.modules() if isinstance(m, nn.Linear))
+        assert first_linear.in_features == 25
+
+    def test_correct_output_size(self) -> None:
+        transfer, source, target, source_model = _transfer_for_execute(
+            target_n_classes=3
+        )
+        result = transfer.execute_transfer(source, target, source_model)
+        all_linears = [m for m in result.modules() if isinstance(m, nn.Linear)]
+        assert all_linears[-1].out_features == 3
+
+    def test_middle_layer_width_preserved(self) -> None:
+        transfer, source, target, source_model = _transfer_for_execute(
+            source_hidden=64, target_n_features=25, target_n_classes=5
+        )
+        result = transfer.execute_transfer(source, target, source_model)
+        all_linears = [m for m in result.modules() if isinstance(m, nn.Linear)]
+        # Middle linear(s) should have the same width as in the source config.
+        assert len(all_linears) >= 3
+        assert all_linears[1].out_features == 32  # hidden2 = hidden1 // 2 = 64 // 2
+
+    def test_source_model_not_mutated(self) -> None:
+        transfer, source, target, source_model = _transfer_for_execute()
+        original_state = {k: v.clone() for k, v in source_model.state_dict().items()}
+        transfer.execute_transfer(source, target, source_model)
+        for k, v in source_model.state_dict().items():
+            assert torch.equal(v, original_state[k]), f"Source param '{k}' was mutated"
+
+    def test_execute_without_prior_score_does_not_raise(self) -> None:
+        """execute_transfer calls score_transfer internally if needed."""
+        transfer, source, target, source_model = _transfer_for_execute()
+        assert transfer._last_best_match is None
+        result = transfer.execute_transfer(source, target, source_model)
+        assert isinstance(result, nn.Module)
+
+
+# ---------------------------------------------------------------------------
+# TestArchitectureTransferMetadata
+# ---------------------------------------------------------------------------
+
+
+class TestArchitectureTransferMetadata:
+    def test_strategy_name(self) -> None:
+        client = _mock_client()
+        embedder = _mock_embedder()
+        transfer = ArchitectureTransfer(architecture_embedder=embedder, orcamind_client=client)
+        assert transfer.get_transfer_metadata()["strategy"] == "architecture_transfer"
+
+    def test_top_k_reflected(self) -> None:
+        client = _mock_client()
+        embedder = _mock_embedder()
+        transfer = ArchitectureTransfer(
+            architecture_embedder=embedder,
+            orcamind_client=client,
+            top_k_candidates=5,
+        )
+        assert transfer.get_transfer_metadata()["top_k_candidates"] == 5
+
+    def test_n_registered_configs_increments(self) -> None:
+        client = _mock_client()
+        embedder = _mock_embedder()
+        transfer = ArchitectureTransfer(architecture_embedder=embedder, orcamind_client=client)
+        assert transfer.get_transfer_metadata()["n_registered_configs"] == 0
+        transfer.register_config("arch_a", _simple_config())
+        assert transfer.get_transfer_metadata()["n_registered_configs"] == 1
+        transfer.register_config("arch_b", _simple_config(hidden=128))
+        assert transfer.get_transfer_metadata()["n_registered_configs"] == 2
+
+    def test_default_top_k_is_ten(self) -> None:
+        client = _mock_client()
+        embedder = _mock_embedder()
+        transfer = ArchitectureTransfer(architecture_embedder=embedder, orcamind_client=client)
+        assert transfer.get_transfer_metadata()["top_k_candidates"] == 10
+
+
+# ---------------------------------------------------------------------------
+# TestArchitectureTransferGuards
+# ---------------------------------------------------------------------------
+
+
+class TestArchitectureTransferGuards:
+    def test_register_config_stores_config(self) -> None:
+        client = _mock_client()
+        embedder = _mock_embedder()
+        transfer = ArchitectureTransfer(architecture_embedder=embedder, orcamind_client=client)
+        cfg = _simple_config(hidden=256)
+        transfer.register_config("my_arch", cfg)
+        assert transfer._config_registry["my_arch"] == cfg
+
+    def test_overwrite_registered_config(self) -> None:
+        client = _mock_client()
+        embedder = _mock_embedder()
+        transfer = ArchitectureTransfer(architecture_embedder=embedder, orcamind_client=client)
+        transfer.register_config("arch", _simple_config(hidden=64))
+        new_cfg = _simple_config(hidden=256)
+        transfer.register_config("arch", new_cfg)
+        assert transfer._config_registry["arch"]["layers"][0]["size"] == 256
