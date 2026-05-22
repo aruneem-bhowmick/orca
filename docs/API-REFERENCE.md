@@ -706,10 +706,10 @@ Dataclass returned by `score_transfer`. **Note:** this is the internal rich type
 
 | Field | Type | Description |
 |---|---|---|
-| `overall` | `float` | Aggregate transferability score in [0, 1]. `FeatureTransfer`: depth-weighted mean CKA. `WeightTransfer`: `n_matched / n_total` parameter ratio. `ArchitectureTransfer`: max cosine similarity across registered candidate configs. |
-| `layer_scores` | `dict[str, float]` | Per-named-layer score. `FeatureTransfer`: CKA similarity value. `WeightTransfer`: `1.0` (matched) or `0.0` (unmatched) per parameter tensor. `ArchitectureTransfer`: cosine similarity per registered candidate config name. |
-| `recommended_layers` | `list[str]` | Layers selected for transfer. `FeatureTransfer`: layers whose CKA exceeds `cka_threshold`. `WeightTransfer`: all matched parameter names. `ArchitectureTransfer`: always `[]` (architecture-level decision). |
-| `reasoning` | `str` | Human-readable summary, e.g. `"CKA analysis: 3/4 layers exceed threshold 0.5."`, `"Matched 4/4 layers by name"`, or `"Architecture mlp_128_64 is most similar to source architecture"`. |
+| `overall` | `float` | Aggregate transferability score in [0, 1]. `FeatureTransfer`: depth-weighted mean CKA. `WeightTransfer`: `n_matched / n_total` parameter ratio. `ArchitectureTransfer`: max cosine similarity across registered candidate configs. `MultiTaskTransfer`: cosine similarity of `CrossDomainEmbedder` embeddings, or `0.5` when no task features are registered. |
+| `layer_scores` | `dict[str, float]` | Per-named-layer score. `FeatureTransfer`: CKA similarity value. `WeightTransfer`: `1.0` (matched) or `0.0` (unmatched) per parameter tensor. `ArchitectureTransfer`: cosine similarity per registered candidate config name. `MultiTaskTransfer`: `{"cosine_similarity": float}` when features registered; `{}` otherwise. |
+| `recommended_layers` | `list[str]` | Layers selected for transfer. `FeatureTransfer`: layers whose CKA exceeds `cka_threshold`. `WeightTransfer`: all matched parameter names. `ArchitectureTransfer`: always `[]` (architecture-level decision). `MultiTaskTransfer`: `["backbone"]` when similarity > 0.5; `[]` otherwise. |
+| `reasoning` | `str` | Human-readable summary, e.g. `"CKA analysis: 3/4 layers exceed threshold 0.5."`, `"Matched 4/4 layers by name"`, `"Architecture mlp_128_64 is most similar to source architecture"`, or `"Multi-task training beneficial: similarity 0.73 > threshold 0.5"`. |
 
 ### `FeatureTransfer`
 
@@ -997,6 +997,164 @@ new_config = adapt_architecture(
 )
 # new_config["input_dim"] == 50
 # new_config["layers"][-1]["size"] == 3
+```
+
+### `MultiTaskModel`
+
+```python
+from orcanet.transfer import MultiTaskModel
+```
+
+`nn.Module` subclass returned by `MultiTaskTransfer.execute_transfer`. Routes inputs to a task-specific head after passing them through a shared backbone.
+
+#### Constructor
+
+```python
+MultiTaskModel(
+    backbone: nn.Module,
+    task_heads: dict[str, nn.Module],
+    task_weighting: str = "equal",
+    log_sigmas: dict[str, nn.Parameter] | None = None,
+)
+```
+
+| Parameter | Default | Description |
+|---|---|---|
+| `backbone` | — | Shared feature extractor, registered as a submodule |
+| `task_heads` | — | Per-task output heads; stored as `nn.ModuleDict` to ensure heads appear in `model.parameters()` and `model.state_dict()` |
+| `task_weighting` | `"equal"` | Weighting scheme string, stored for reference; does not affect `forward` |
+| `log_sigmas` | `None` | Per-task learnable log-variance `nn.Parameter` objects for uncertainty weighting; stored as `nn.ParameterDict`. Pass `None` or an empty dict when not using uncertainty weighting. |
+
+#### Methods
+
+**`forward(x: Tensor, task_id: str) -> Tensor`**
+
+Passes `x` through `backbone`, then routes the result through `task_heads[task_id]`. Raises `KeyError` for unregistered task ids.
+
+**`compute_loss(batch: dict[str, tuple[Tensor, Tensor]], weights: dict[str, float]) -> Tensor`**
+
+Computes a weighted sum of per-task cross-entropy losses: `Σ weights[tid] · CE(forward(x, tid), y)`. For use with `"equal"` or `"gradnorm"` weighting. Returns a scalar tensor.
+
+**`compute_uncertainty_loss(batch: dict[str, tuple[Tensor, Tensor]]) -> Tensor`**
+
+Implements the Kendall et al. 2018 multi-task loss: `L = Σ exp(−2·log_σᵢ) · CEᵢ + log_σᵢ`. Requires `log_sigmas` to be populated (set by `MultiTaskTransfer` when `task_weighting="uncertainty"`). Gradients flow into `log_sigmas` automatically. Returns a scalar tensor.
+
+### `MultiTaskTransfer`
+
+```python
+from orcanet.transfer import MultiTaskTransfer
+```
+
+Concrete `TransferStrategy` for joint training across multiple tasks with a shared backbone.
+
+#### Constructor
+
+```python
+MultiTaskTransfer(
+    backbone: nn.Module,
+    task_weighting: str = "equal",        # "equal" | "uncertainty" | "gradnorm"
+    task_head_hidden_dim: int = 64,
+    embedder: CrossDomainEmbedder | None = None,
+)
+```
+
+| Parameter | Default | Description |
+|---|---|---|
+| `backbone` | — | Shared feature extractor. Output dimensionality is inferred automatically from the last `nn.Linear` in the backbone. |
+| `task_weighting` | `"equal"` | Weighting scheme. `"equal"`: uniform `1/n`; `"uncertainty"`: Kendall et al. 2018 learnable log-variance; `"gradnorm"`: caller-driven gradient-norm renormalisation. |
+| `task_head_hidden_dim` | `64` | Hidden size of each two-layer task head. |
+| `embedder` | `None` | `CrossDomainEmbedder` used to embed task feature tensors in `score_transfer`. A default instance (`input_dim=25`) is created when not supplied. |
+
+Raises `ValueError` on construction if `task_weighting` is not one of `"equal"`, `"uncertainty"`, `"gradnorm"`.
+
+#### Methods
+
+**`add_task(task: Task, head_output_dim: int) -> None`**
+
+Create a `nn.Sequential(Linear(backbone_out, hidden), ReLU(), Linear(hidden, head_output_dim))` head and register it under `str(task.task_id)`. Automatically rebalances `_task_weights` after registration. For `"uncertainty"` weighting, also creates a `nn.Parameter(torch.zeros(1))` log-sigma for the task.
+
+Raises `ValueError` if `task.task_id` has already been registered, preventing silent overwrite of trained parameters.
+
+**`register_task_features(task_id: str, features: Tensor) -> None`**
+
+Store a meta-feature tensor for the given task id (shape `(1, embedder_input_dim)` or `(embedder_input_dim,)`). Must be called before `score_transfer` to obtain a meaningful similarity score. The tensor is detached from any autograd graph on storage so that calling this inside a training loop does not retain intermediate activations.
+
+**`score_transfer(source: Task, target: Task) -> TransferScore`**
+
+Compute embedding cosine similarity if features are registered for both tasks; otherwise return a neutral `TransferScore(overall=0.5)`. The reasoning string uses the wording `"Multi-task training beneficial: similarity {:.2f} > threshold 0.5"` when `overall > 0.5`.
+
+**`execute_transfer(source: Task, target: Task, source_model: nn.Module) -> nn.Module`**
+
+Auto-registers any unregistered task using `task.n_classes` (or `1` if absent) as the head output dimension, then returns a `MultiTaskModel` bundling the shared backbone with all registered heads and log-sigma parameters. The returned model is ready for immediate training.
+
+**`update_gradnorm_weights(grad_norms: dict[str, float]) -> None`**
+
+Renormalise `_task_weights` for the task ids present in `grad_norms`. Only those tasks are updated — omitted tasks retain their existing weight exactly. The updated tasks are scaled so that their combined weight equals what they held before the call, keeping the global weight sum stable.
+
+Raises `ValueError` if any key in `grad_norms` does not correspond to a registered task id. A no-op when passed an empty dict.
+
+**`task_weights` (property) `-> dict[str, float]`**
+
+Returns a copy of the current per-task weight dictionary. Pass directly to `MultiTaskModel.compute_loss(batch, strategy.task_weights)`.
+
+**`get_transfer_metadata() -> dict`**
+
+Returns `{"strategy": "multi_task_transfer", "task_weighting": str, "task_head_hidden_dim": int, "n_registered_tasks": int, "backbone_out_dim": int}`.
+
+#### Example
+
+```python
+import torch
+import torch.nn as nn
+from orcanet.transfer import MultiTaskTransfer, MultiTaskModel
+
+# Shared backbone
+backbone = nn.Sequential(nn.Linear(25, 64), nn.ReLU())
+
+# --- Equal weighting ---
+strategy = MultiTaskTransfer(backbone, task_weighting="equal")
+strategy.add_task(source_task, head_output_dim=3)
+strategy.add_task(target_task, head_output_dim=5)
+
+model: MultiTaskModel = strategy.execute_transfer(source_task, target_task, backbone)
+# model.task_heads["<source_uuid>"]  → Linear(64,64) → ReLU → Linear(64,3)
+# model.task_heads["<target_uuid>"]  → Linear(64,64) → ReLU → Linear(64,5)
+
+x = torch.randn(16, 25)
+batch = {
+    str(source_task.task_id): (x, torch.randint(0, 3, (16,))),
+    str(target_task.task_id): (x, torch.randint(0, 5, (16,))),
+}
+opt = torch.optim.Adam(model.parameters(), lr=1e-3)
+opt.zero_grad()
+model.compute_loss(batch, strategy.task_weights).backward()
+opt.step()
+
+# --- Uncertainty weighting (Kendall et al. 2018) ---
+strategy_unc = MultiTaskTransfer(backbone, task_weighting="uncertainty")
+strategy_unc.add_task(source_task, 3)
+strategy_unc.add_task(target_task, 5)
+
+model_unc: MultiTaskModel = strategy_unc.execute_transfer(source_task, target_task, backbone)
+# model_unc.log_sigmas["<source_uuid>"]  → nn.Parameter(tensor([0.]))
+# model_unc.log_sigmas["<target_uuid>"]  → nn.Parameter(tensor([0.]))
+
+opt_unc = torch.optim.Adam(model_unc.parameters(), lr=1e-3)
+opt_unc.zero_grad()
+model_unc.compute_uncertainty_loss(batch).backward()
+# log_sigmas are updated automatically — noisy tasks learn larger sigma
+opt_unc.step()
+
+# --- GradNorm weighting ---
+strategy_gn = MultiTaskTransfer(backbone, task_weighting="gradnorm")
+strategy_gn.add_task(source_task, 3)
+strategy_gn.add_task(target_task, 5)
+model_gn = strategy_gn.execute_transfer(source_task, target_task, backbone)
+
+# Compute per-task gradient norms (caller's responsibility), then update
+grad_norms = {str(source_task.task_id): 1.2, str(target_task.task_id): 0.6}
+strategy_gn.update_gradnorm_weights(grad_norms)
+model_gn.compute_loss(batch, strategy_gn.task_weights).backward()
 ```
 
 ---

@@ -145,13 +145,14 @@ orca/
 │       │   │   ├── cross_domain.py   # GradientReversalFunction, GradientReversalLayer, _FeatureMLP, CrossDomainEmbedder
 │       │   │   ├── text_features.py  # _AddFusion, _AttentionFusion, TextTaskEmbedder
 │       │   │   └── architecture_embedder.py  # ArchitectureGraph, ArchitectureEmbedder
-│       │   ├── transfer/             # TransferStrategy ABC, TransferScore dataclass, FeatureTransfer (linear CKA, implemented), WeightTransfer (parameter matching + layer-lr optimizer, implemented), ArchitectureTransfer (graph-embedding similarity + config adaptation, implemented); multi-task training (planned)
-│       │   │   ├── __init__.py       # Public re-exports: ArchitectureTransfer, FeatureTransfer, WeightTransfer, TransferScore, TransferStrategy, adapt_architecture, get_optimizer_with_layer_lr, linear_cka
+│       │   ├── transfer/             # TransferStrategy ABC, TransferScore dataclass, FeatureTransfer (linear CKA, implemented), WeightTransfer (parameter matching + layer-lr optimizer, implemented), ArchitectureTransfer (graph-embedding similarity + config adaptation, implemented), MultiTaskTransfer + MultiTaskModel (joint training with equal/uncertainty/gradnorm weighting, implemented)
+│       │   │   ├── __init__.py       # Public re-exports: ArchitectureTransfer, FeatureTransfer, MultiTaskModel, MultiTaskTransfer, WeightTransfer, TransferScore, TransferStrategy, adapt_architecture, get_optimizer_with_layer_lr, linear_cka
 │       │   │   ├── base.py           # TransferStrategy ABC — score_transfer, execute_transfer, get_transfer_metadata
 │       │   │   ├── types.py          # TransferScore dataclass — overall, layer_scores, recommended_layers, reasoning
 │       │   │   ├── feature_transfer.py  # linear_cka (Kornblith et al. 2019), FeatureTransfer (forward-hook activation collection, depth-weighted CKA scoring, weight patching)
 │       │   │   ├── weight_transfer.py   # WeightTransfer (name/shape/both parameter matching, kaiming reinit, deepcopy-based transfer), get_optimizer_with_layer_lr (per-parameter Adam with lr decay), _safe_reinit
-│       │   │   └── architecture_transfer.py  # adapt_architecture (input/output dim adaptation), _build_sequential_from_config (ArchConfig → nn.Sequential), ArchitectureTransfer (OrcaMind source lookup, graph-embedding cosine scoring, middle-layer weight copying)
+│       │   │   ├── architecture_transfer.py  # adapt_architecture (input/output dim adaptation), _build_sequential_from_config (ArchConfig → nn.Sequential), ArchitectureTransfer (OrcaMind source lookup, graph-embedding cosine scoring, middle-layer weight copying)
+│       │   │   └── multi_task_transfer.py  # _get_backbone_out_dim, MultiTaskModel (nn.ModuleDict heads, compute_loss, compute_uncertainty_loss with nn.ParameterDict log_sigmas), MultiTaskTransfer (add_task, score_transfer via CrossDomainEmbedder, execute_transfer, update_gradnorm_weights)
 │       │   ├── retrieval/            # Three-stage hybrid retrieval (FAISS → PostgreSQL metadata filter → LLM re-ranking) (planned)
 │       │   ├── reasoning/            # LangChain ReAct agent, Pydantic-validated response models, retry logic (planned)
 │       │   │   └── prompts/          # Transfer explanation, task similarity, architecture recommendation templates
@@ -167,7 +168,7 @@ orca/
 │       └── tests/
 │           ├── unit/
 │           │   ├── embeddings/       # CrossDomainEmbedder, GRL, TextTaskEmbedder, and ArchitectureEmbedder unit tests — 76 tests
-│           │   ├── transfer/         # linear_cka correctness, FeatureTransfer scoring/guards/metadata/structural, execute_transfer — 37 tests; WeightTransfer scoring (name/shape/both), execute_transfer, optimizer LR groups, guards, metadata — 36 tests; ArchitectureTransfer adapt_architecture, score_transfer, execute_transfer (incl. all activations), metadata, guards — 29 tests (102 total)
+│           │   ├── transfer/         # linear_cka correctness, FeatureTransfer scoring/guards/metadata/structural, execute_transfer — 37 tests; WeightTransfer scoring (name/shape/both), execute_transfer, optimizer LR groups, guards, metadata — 36 tests; ArchitectureTransfer adapt_architecture, score_transfer, execute_transfer (incl. all activations), metadata, guards — 29 tests; MultiTaskModel forward routing, compute_loss, compute_uncertainty_loss, log_sigma gradient flow — 19 tests; MultiTaskTransfer add_task, score_transfer, execute_transfer, metadata, gradnorm weights, uncertainty convergence — 37 tests (158 total)
 │           │   └── *.py              # Package structure, CLI smoke tests, config validation — 18 tests
 │           └── integration/          # API integration tests (planned)
 │

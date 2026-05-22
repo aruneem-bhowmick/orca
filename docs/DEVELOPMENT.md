@@ -67,7 +67,7 @@ pytest packages/orcanet/tests/unit/embeddings/test_text_features.py -v
 # OrcaNet — ArchitectureGraph and ArchitectureEmbedder unit tests only
 pytest packages/orcanet/tests/unit/embeddings/test_architecture_embedder.py -v
 
-# OrcaNet — transfer module unit tests only (linear_cka, FeatureTransfer, WeightTransfer, ArchitectureTransfer)
+# OrcaNet — transfer module unit tests only (all four strategies: FeatureTransfer, WeightTransfer, ArchitectureTransfer, MultiTaskTransfer)
 pytest packages/orcanet/tests/unit/transfer/ -v
 
 # OrcaNet — linear_cka correctness tests only
@@ -99,6 +99,27 @@ pytest packages/orcanet/tests/unit/transfer/test_architecture_transfer.py -v -k 
 
 # OrcaNet — ArchitectureTransfer execute_transfer, metadata, and guards tests only
 pytest packages/orcanet/tests/unit/transfer/test_architecture_transfer.py -v -k "TestArchitectureTransferExecute or TestArchitectureTransferMetadata or TestArchitectureTransferGuards"
+
+# OrcaNet — MultiTaskTransfer and MultiTaskModel tests only (all classes)
+pytest packages/orcanet/tests/unit/transfer/test_multi_task.py -v
+
+# OrcaNet — MultiTaskModel forward routing and loss tests only
+pytest packages/orcanet/tests/unit/transfer/test_multi_task.py -v -k "TestMultiTaskModelForward or TestMultiTaskModelLoss"
+
+# OrcaNet — MultiTaskModel uncertainty loss and log_sigma gradient-flow tests only
+pytest packages/orcanet/tests/unit/transfer/test_multi_task.py -v -k "TestMultiTaskModelUncertaintyLoss"
+
+# OrcaNet — _get_backbone_out_dim helper tests only
+pytest packages/orcanet/tests/unit/transfer/test_multi_task.py -v -k "TestGetBackboneOutDim"
+
+# OrcaNet — MultiTaskTransfer add_task, score_transfer, execute_transfer, and metadata tests only
+pytest packages/orcanet/tests/unit/transfer/test_multi_task.py -v -k "TestAddTask or TestScoreTransfer or TestExecuteTransfer or TestTransferMetadata"
+
+# OrcaNet — GradNorm weight renormalisation tests only
+pytest packages/orcanet/tests/unit/transfer/test_multi_task.py -v -k "TestGradnormWeighting"
+
+# OrcaNet — Uncertainty weighting convergence tests (gradient direction + 10-step mini-training loop)
+pytest packages/orcanet/tests/unit/transfer/test_multi_task.py -v -k "TestUncertaintyWeighting"
 ```
 
 The test suite has 80+ test files across unit, integration, performance, and deployment-validation categories.
@@ -129,6 +150,14 @@ OrcaMind integration tests auto-skip when their target service port is unreachab
 - *match_by mode isolation* — `TestWeightTransferScoreMatchBy` constructs a single pair of models with differing `out_dim` (first layer identical, last layer shape-mismatched) and asserts each `match_by` mode independently. `"name"` mode gives `overall == 1.0` (names all exist regardless of shape), `"both"` drops below 1.0 (last-layer params excluded) while preserving 1.0 for the first-layer params, and `"shape"` produces a valid float without a specific assertion (shape-first matching on arbitrary architectures is deterministic but architecturally coupled). Testing each mode against the same fixture makes it straightforward to verify that adding a new mode does not silently change the behaviour of the existing three.
 - *AsyncMock + synchronous ABC bridge testing* — `test_architecture_transfer.py` uses `AsyncMock` for `OrcaMindClient` (whose `get_best_model` is a coroutine) alongside `MagicMock(spec=ArchitectureEmbedder)` for the synchronous embedder. The `_run_coro` helper that bridges the synchronous `TransferStrategy` ABC with the async client is exercised automatically by every `score_transfer` call in the test suite, verifying that it completes without deadlock even though `AsyncMock` resolves immediately.
 - *Activation-function coverage* — `test_all_activation_types_supported` builds a model from `_config_with_activations()`, which sequences all four supported activation types (`sigmoid`, `tanh`, `gelu`, `none`) in a single forward pass. A concrete output-shape assertion (`(2, 5)`) verifies that `_build_sequential_from_config` threads `current_in` correctly through activation modules (which do not change the width) without off-by-one errors in the layer dimension chain.
+- *`nn.ModuleDict` parameter-registration assertion* — `TestMultiTaskModelForward.test_head_params_in_model_parameters` iterates every head parameter and asserts its `id()` appears in the set of `id(p) for p in model.parameters()`. This pins the requirement that task heads are stored as `nn.ModuleDict` (not a plain `dict`), because a plain dict would silently exclude head parameters from the optimiser, producing a model that trains only the backbone.
+- *`nn.ParameterDict` gradient-flow assertion* — `TestMultiTaskModelUncertaintyLoss.test_log_sigmas_have_grad_after_backward` calls `compute_uncertainty_loss(batch).backward()` and asserts that `log_sigma.grad is not None` for each task. This pins the requirement that log-sigma scalars are stored as `nn.ParameterDict` (not plain tensors), because a plain tensor would have `requires_grad=False` by default and would never receive a gradient.
+- *Uncertainty convergence test using a mini-training loop* — `TestUncertaintyWeighting.test_noisy_task_learns_higher_log_sigma` runs 10 Adam steps with a fixed random seed. One task always sees constant labels (low cross-entropy), the other sees random labels (irreducible noise, high cross-entropy). After training, it asserts `log_sigma_hard > log_sigma_easy`. The test uses small dimensions (4-dim input, 8 hidden, 2 classes) so it completes in milliseconds. A fixed seed makes the assertion deterministic. This pattern is preferred over testing the gradient direction alone because it verifies the *integrated effect* of the Kendall et al. 2018 objective over multiple steps, not just a single-step gradient sign.
+- *`register_task_features` as a pre-registration pattern* — `TestScoreTransfer` tests both the fallback path (no features registered → neutral 0.5 score) and the live path (features registered → real cosine similarity computed via `CrossDomainEmbedder.embed()`). Testing the fallback explicitly pins the contract that `score_transfer` never raises when called without prior setup, mirroring the same policy enforced in `FeatureTransfer` (raises on missing probe data) and `WeightTransfer` (raises on missing model) — where `MultiTaskTransfer` takes the more lenient approach of returning a neutral score.
+- *Backbone output-dim inference boundary test* — `TestGetBackboneOutDim.test_raises_when_no_linear` passes a bare `nn.ReLU()` to `_get_backbone_out_dim` and asserts a `ValueError`. This ensures that a backbone without any `nn.Linear` (e.g. a pre-activation residual block that exposes only `nn.Conv2d`) produces an actionable error at construction time rather than a silent failure when `add_task` is first called.
+- *Duplicate task-registration guard* — `TestAddTask.test_raises_on_duplicate_task_id` calls `add_task` twice for the same task and asserts a `ValueError` on the second call. Without the guard, the second call would silently replace any trained head parameters and reset the log-sigma to zero for uncertainty weighting; the test pins the fail-fast contract so the bug surfaces at call time rather than manifesting as a mysterious loss spike after reload.
+- *Shared-backbone gradient accumulation* — `TestMultiTaskModelForward.test_backbone_shared_across_heads` runs a forward pass through both task heads, sums the outputs, calls `backward()`, and asserts that at least one backbone parameter has a non-None gradient. This replaces the previous tautological `model.backbone is model.backbone` check and directly verifies that both head paths contribute gradients to the same backbone module — a requirement that would be silently violated if `execute_transfer` accidentally copied the backbone instead of sharing it.
+- *GradNorm partial-update isolation* — `TestGradnormWeighting.test_partial_update_preserves_omitted_task_weight` registers three tasks, then calls `update_gradnorm_weights` with only two of them. It asserts that the third task's weight is bit-identical after the call. This pins the invariant that a partial gradient-norm update is safe to call within a training step where only a subset of tasks produced usable gradient signals, without silently perturbing the weights of tasks that were not included. A companion test (`test_raises_on_unknown_task_id`) asserts that supplying an unregistered task id raises `ValueError` rather than silently inserting a spurious key.
 
 The performance benchmark tests in `tests/performance/` make executable compute-efficiency assertions that cannot be expressed as ordinary unit tests. They drive deterministic synthetic sweeps — no external services, no randomness — and enforce measurable invariants about algorithm behaviour at scale. Currently the tier contains `TestASHAPruningSavings`, which simulates 20-trial hyperparameter sweeps on a concave-quadratic learning-curve objective and asserts that ASHA executes ≤60% of the steps an unpruned baseline would require (≥40% compute savings). The scaling test additionally runs a 27-trial cohort and asserts that savings for the larger cohort are at least as good as for the 20-trial baseline, enforcing the monotonicity property directly.
 
