@@ -68,6 +68,6 @@
 | CKA         | Kornblith et al., *Similarity of Neural Network Representations Revisited* (2019)       |
 | DANN        | Ganin et al., *Domain-Adversarial Training of Neural Networks* (2016)                   |
 | Multi-Task  | Kendall et al., *Multi-Task Learning Using Uncertainty to Weigh Losses* (2018)          |
-| GradNorm    | Chen et al., *GradNorm: Gradient Normalization for Adaptive Loss Balancing* (2018)      |
+| GradNorm    | Chen et al., *GradNorm: Gradient Normalisation for Adaptive Loss Balancing* (2018)      |
 | ASHA        | Li et al., *A System for Massively Parallel Hyperparameter Tuning* (2018)               |
 | CMA-ES      | Hansen, N., *The CMA Evolution Strategy: A Tutorial* (2016), arXiv:1604.00772           |

@@ -1113,8 +1113,8 @@ strategy.add_task(source_task, head_output_dim=3)
 strategy.add_task(target_task, head_output_dim=5)
 
 model: MultiTaskModel = strategy.execute_transfer(source_task, target_task, backbone)
-# model.task_heads["<source_uuid>"]  → Linear(64,32) → ReLU → Linear(32,3)
-# model.task_heads["<target_uuid>"]  → Linear(64,32) → ReLU → Linear(32,5)
+# model.task_heads["<source_uuid>"]  → Linear(64,64) → ReLU → Linear(64,3)
+# model.task_heads["<target_uuid>"]  → Linear(64,64) → ReLU → Linear(64,5)
 
 x = torch.randn(16, 25)
 batch = {
