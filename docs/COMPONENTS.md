@@ -2048,13 +2048,13 @@ results = await retriever.retrieve(query_task, filters={"domain": "vision"})
 | Method | Signature | Description |
 |---|---|---|
 | `retrieve` | `async (query_task: Task, filters: dict \| None = None) → list[tuple[Task, float, str]]` | Executes the three-stage pipeline described below. |
-| `retrieve_with_expanded_queries` | `async (query_description: str, query_task: Task) → list[tuple[Task, float, str]]` | Calls `QueryExpander.expand(query_description)`, runs `retrieve(query_task)` for the original description plus each expansion, merges all results via `_deduplicate_and_sort`, and returns the top-`top_k_final` deduplicated entries. |
+| `retrieve_with_expanded_queries` | `async (query_description: str, query_task: Task) → list[tuple[Task, float, str]]` | Calls `QueryExpander.expand(query_description)`, then for the original description and each expansion creates a task variant via `query_task.model_copy(update={"name": description})` and calls `retrieve(query_variant)`. Merges all results via `_deduplicate_and_sort` and returns the top-`top_k_final` deduplicated entries. Each expansion drives a distinct FAISS embedding so the fan-out is semantically meaningful. |
 
 **Three-stage pipeline (inside `retrieve`):**
 
 1. **Stage 1 — FAISS vector search**: `_task_to_feature_vector(query_task)` produces a 25-dim float32 array — `log1p(n_samples)` at index 0, raw `n_features` at index 1, raw `n_classes` at index 2; `None` fields map to 0. The array is wrapped in a `torch.Tensor`, passed through `CrossDomainEmbedder.embed()` to obtain a unit-normalised 64-dim embedding, and searched against the FAISS index with `k=top_k_initial`. Returns `[]` immediately when the index returns no candidates.
 
-2. **Stage 2 — Metadata filter + threshold**: all candidate IDs are batch-fetched via `asyncio.gather(*[repo.get_by_id(UUID(tid)) for tid in score_by_id])`. `None` results (deleted or unknown tasks) are silently dropped. Any candidate whose FAISS score falls below `similarity_threshold` is discarded. The optional `filters` dict then applies field-equality checks: `getattr(task, key) == val` for each `(key, val)` pair.
+2. **Stage 2 — Metadata filter + threshold**: all candidate IDs are batch-fetched via `asyncio.gather(..., return_exceptions=True)`. Failed fetches (exceptions) are logged at `WARNING` and skipped rather than aborting the entire batch, so a single flaky database row does not discard all other candidates. `None` results (deleted or unknown tasks) are silently dropped. Any candidate whose FAISS score falls below `similarity_threshold` is discarded. The optional `filters` dict then applies field-equality checks: `getattr(task, key) == val` for each `(key, val)` pair.
 
 3. **Stage 3 — LLM re-ranking (optional)**: activated only when `use_llm_reranking=True` **and** the number of surviving candidates exceeds `top_k_final`. Delegates to `LLMRanker.rerank(query_task, candidates, top_k=top_k_final)`. When the condition is not met, returns the top-`top_k_final` candidates each annotated with `"vector similarity"` as the reasoning string.
 
@@ -2137,7 +2137,7 @@ All sensitive values use `${oc.env:VAR}` (required) or `${oc.env:VAR,default}` (
 
 ### Test Infrastructure (`tests/`)
 
-Ten unit test files across four directories, plus two empty `__init__.py` placeholders for future integration tests.
+Eleven unit test files across four directories, plus two empty `__init__.py` placeholders for future integration tests.
 
 | File | Tests | Covers |
 |---|---|---|
