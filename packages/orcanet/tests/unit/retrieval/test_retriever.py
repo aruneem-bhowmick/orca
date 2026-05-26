@@ -227,5 +227,7 @@ class TestHybridRetriever:
         result = await retriever.retrieve_with_expanded_queries(
             "brain MRI classification", task
         )
+        mocks.expander.expand.assert_awaited_once_with("brain MRI classification")
+        assert mocks.index.search.call_count == 3  # original + 2 expansions
         task_ids = [r[0].task_id for r in result]
         assert len(task_ids) == len(set(task_ids))

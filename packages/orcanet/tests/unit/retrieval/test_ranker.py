@@ -147,7 +147,9 @@ class TestLLMRanker:
         llm = _make_llm(json.dumps({"rankings": rankings}))
         ranker = LLMRanker(llm)
         result = await ranker.rerank(_make_task(), tasks, top_k=2)
-        assert len(result) <= 2
+        assert len(result) == 2
+        assert result[0][1] == pytest.approx(0.9)
+        assert result[1][1] == pytest.approx(0.8)
 
     @pytest.mark.asyncio
     async def test_prompt_contains_query_task_metadata(self) -> None:
