@@ -513,7 +513,7 @@ Returns mean metric values grouped by `(task_name, architecture)` — the data s
 
 ## OrcaNet API — port 8002
 
-> The OrcaNet API is currently scaffolded. Endpoint implementations are in progress; this section describes the planned interface.
+> The OrcaNet HTTP API is currently scaffolded; endpoint implementations are in progress. The retrieval Python module (`orcanet.retrieval`) is fully implemented and documented in [OrcaNet Retrieval Python API](#orcanet-retrieval-python-api) below.
 
 OrcaNet orchestrates OrcaMind and OrcaLab to deliver end-to-end cross-domain knowledge transfer. It retrieves the best-performing model config for a source task from OrcaMind, scores transferability via Centered Kernel Alignment (CKA), dispatches a validation experiment to OrcaLab when the transfer score exceeds the threshold, and returns a structured recommendation with an LLM-generated explanation.
 
@@ -572,7 +572,7 @@ Poll this endpoint after a `POST /api/v1/transfer` with `run_validation: true` t
 
 #### `POST /api/v1/similar-tasks` — Find similar tasks
 
-Three-stage hybrid retrieval: FAISS vector similarity → PostgreSQL metadata filter → optional LLM re-ranking.
+Three-stage hybrid retrieval: FAISS vector similarity → PostgreSQL metadata filter → optional LLM re-ranking. The underlying pipeline is implemented in `orcanet.retrieval.HybridRetriever` (see [OrcaNet Retrieval Python API](#orcanet-retrieval-python-api)); this HTTP endpoint wraps it.
 
 **Request body** — `SimilarTasksRequest`
 
@@ -1156,6 +1156,118 @@ grad_norms = {str(source_task.task_id): 1.2, str(target_task.task_id): 0.6}
 strategy_gn.update_gradnorm_weights(grad_norms)
 model_gn.compute_loss(batch, strategy_gn.task_weights).backward()
 ```
+
+---
+
+## OrcaNet Retrieval Python API
+
+The retrieval subpackage provides the three-stage hybrid pipeline as a pure-Python API. All three classes are exported from `orcanet.retrieval`.
+
+```python
+from orcanet.retrieval import QueryExpander, LLMRanker, HybridRetriever
+```
+
+### `QueryExpander`
+
+Generates alternative phrasings of a task description to broaden FAISS recall.
+
+```python
+from orcanet.retrieval import QueryExpander
+
+expander = QueryExpander(llm=my_llm)
+alternatives = await expander.expand("brain MRI binary classification", n_expansions=3)
+# → ["medical image classification", "neurological imaging task", "3D scan binary classification"]
+```
+
+**Constructor**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `llm` | `langchain_core.language_models.BaseLLM` | Any LangChain-compatible LLM; called via `ainvoke` |
+
+**`async expand(query, n_expansions=3) -> list[str]`**
+
+Builds a prompt asking the LLM for `n_expansions` alternatives, calls `ainvoke`, and strips numbered prefixes / bullet markers from each response line. Handles both `BaseLLM` (returns `str`) and chat-model (returns a message object with `.content`) response types. Returns an empty list when the LLM response is blank.
+
+---
+
+### `LLMRanker`
+
+Scores and sorts candidate tasks against a query task using Pydantic-validated LLM output.
+
+```python
+from orcanet.retrieval import LLMRanker
+
+ranker = LLMRanker(llm=my_llm)
+ranked = await ranker.rerank(query_task, candidates, top_k=5)
+# → [(task_a, 0.92, "same domain, similar n_classes"), ...]
+```
+
+**Constructor**
+
+| Parameter | Type | Description |
+|---|---|---|
+| `llm` | `BaseLLM` | LangChain-compatible LLM; called via `ainvoke` |
+
+**`async rerank(query_task, candidate_tasks, top_k=10) -> list[tuple[Task, float, str]]`**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `query_task` | `Task` | — | The target task against which candidates are ranked |
+| `candidate_tasks` | `list[Task]` | — | Candidate pool; returns `[]` immediately when empty (no LLM call) |
+| `top_k` | `int` | `10` | Maximum number of results to return |
+
+**Returns** a list of `(Task, score, reasoning)` tuples sorted by `score` descending. `score` is in `[0.0, 1.0]`. `reasoning` is the LLM's one-sentence explanation for the ranking position.
+
+The LLM response is validated against `_RankedList(rankings: list[_RankedItem])` where `_RankedItem.score` carries `Field(ge=0.0, le=1.0)`. Any parse failure (`json.JSONDecodeError`, `ValidationError`) or out-of-range score returns `[]` with a `WARNING` log rather than raising.
+
+---
+
+### `HybridRetriever`
+
+Three-stage async retrieval pipeline wiring FAISS, `TaskRepository`, `CrossDomainEmbedder`, `QueryExpander`, and `LLMRanker` into a single cohesive interface.
+
+```python
+from orcanet.retrieval import HybridRetriever
+
+retriever = HybridRetriever(
+    faiss_index=index,
+    task_repository=repo,
+    embedder=cross_domain_embedder,
+    query_expander=expander,
+    llm_ranker=ranker,
+    top_k_initial=50,
+    top_k_final=10,
+    similarity_threshold=0.6,
+    use_llm_reranking=True,
+)
+```
+
+**Constructor parameters**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `faiss_index` | object | — | Must expose `.search(embedding: np.ndarray, k: int) → list[tuple[str, float]]` |
+| `task_repository` | `TaskRepository` | — | `async get_by_id(UUID) → Task \| None` |
+| `embedder` | `CrossDomainEmbedder` | — | Maps the 25-dim feature vector to the FAISS embedding space |
+| `query_expander` | `QueryExpander` | — | Used only by `retrieve_with_expanded_queries` |
+| `llm_ranker` | `LLMRanker` | — | Activated in Stage 3 when conditions are met |
+| `top_k_initial` | `int` | `50` | FAISS candidate count (Stage 1) |
+| `top_k_final` | `int` | `10` | Maximum results returned |
+| `similarity_threshold` | `float` | `0.6` | FAISS scores below this are discarded in Stage 2 |
+| `use_llm_reranking` | `bool` | `True` | Set to `False` to skip Stage 3 entirely |
+
+**`async retrieve(query_task, filters=None) -> list[tuple[Task, float, str]]`**
+
+Executes the three-stage pipeline:
+
+1. **Stage 1 — FAISS**: converts `query_task` to a 25-dim float32 feature vector (`log1p(n_samples)`, `n_features`, `n_classes`; `None` → 0), embeds via `CrossDomainEmbedder.embed`, searches the index.
+2. **Stage 2 — Filter**: batch-fetches all candidate UUIDs concurrently via `asyncio.gather(..., return_exceptions=True)`. Failed individual fetches are logged at `WARNING` and skipped without aborting the batch. `None` results (unknown or deleted tasks) are dropped. Candidates below `similarity_threshold` are discarded. The optional `filters` dict applies field-equality checks.
+3. **Stage 3 — LLM re-rank**: delegates to `LLMRanker.rerank` only when `use_llm_reranking=True` and `len(candidates) > top_k_final`; otherwise returns top-`top_k_final` candidates annotated as `"vector similarity"`.
+
+**`async retrieve_with_expanded_queries(query_description, query_task) -> list[tuple[Task, float, str]]`**
+
+Calls `QueryExpander.expand(query_description)`, then for the original description and each expansion creates a task variant via `query_task.model_copy(update={"name": description})` and calls `retrieve(query_variant)`. Each variant produces a distinct FAISS embedding, making the fan-out semantically meaningful rather than redundant. Results are merged via `_deduplicate_and_sort` — duplicate `task_id` entries are collapsed to the highest-scoring occurrence — and the top-`top_k_final` are returned.
 
 ---
 

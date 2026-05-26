@@ -1281,7 +1281,7 @@ All external service URLs (Prefect API, OrcaMind API) are resolved via `${oc.env
 
 ## `orcanet` — Cross-Domain Knowledge Transfer Agent
 
-OrcaNet is the third component of the Orca ecosystem. It orchestrates OrcaMind and OrcaLab to deliver end-to-end cross-domain knowledge transfer: retrieving proven model configurations from one domain and adapting them to a new target task, validated through a real OrcaLab experiment. The package is currently in the scaffold phase — the module structure, CLI, config hierarchy, Dockerfile, and test suite are in place; the algorithm implementations inside each namespace are in progress.
+OrcaNet is the third component of the Orca ecosystem. It orchestrates OrcaMind and OrcaLab to deliver end-to-end cross-domain knowledge transfer: retrieving proven model configurations from one domain and adapting them to a new target task, validated through a real OrcaLab experiment. The embeddings namespace (DANN, text, GNN-based architecture embedders), the transfer namespace (CKA feature transfer, weight transfer, architecture transfer, multi-task transfer), and the retrieval namespace (FAISS vector search, metadata filtering, LLM re-ranking) are all fully implemented. The reasoning agent and FastAPI service are in progress.
 
 ### Package Structure
 
@@ -1289,8 +1289,8 @@ OrcaNet is the third component of the Orca ecosystem. It orchestrates OrcaMind a
 orcanet/
 ├── embeddings/    # CrossDomainEmbedder (DANN, implemented), TextTaskEmbedder (sentence-transformers + stats fusion, implemented), ArchitectureEmbedder (GNN-based, implemented)
 ├── transfer/      # CKA feature transfer, weight transfer, architecture transfer, multi-task transfer (all implemented)
-├── retrieval/     # Three-stage hybrid retrieval (FAISS → PostgreSQL metadata filter → LLM re-ranking)
-├── reasoning/     # LangChain ReAct agent, Pydantic response models, retry logic
+├── retrieval/     # QueryExpander, LLMRanker, HybridRetriever — three-stage async pipeline (implemented)
+├── reasoning/     # LangChain ReAct agent, Pydantic response models, retry logic (planned)
 │   └── prompts/   # Prompt templates: transfer explanation, task similarity, architecture recommendation
 ├── api/           # FastAPI service (8 endpoints) — port 8002
 └── cli.py         # Typer CLI — serve and version commands
@@ -1950,15 +1950,118 @@ loss_equal = mt_model.compute_loss(batch, model_equal.task_weights)
 loss_equal.backward()
 ```
 
-#### `orcanet.retrieval` — Hybrid Retrieval (planned)
+#### `orcanet.retrieval` — Hybrid Retrieval
 
-Three-stage pipeline that narrows from broad vector similarity to a small set of highly relevant candidates:
+Three-stage async pipeline that narrows from broad vector similarity to a small set of highly relevant candidates, with optional LLM re-ranking. Public exports from `orcanet.retrieval`: `QueryExpander`, `LLMRanker`, `HybridRetriever`.
 
-1. **Stage 1 — FAISS vector search**: loads the task FAISS index from `faiss_index_path` and retrieves the `top_k_initial` (default 50) nearest tasks by embedding cosine similarity.
-2. **Stage 2 — PostgreSQL metadata filter**: queries the `transfer_mappings` and `tasks` tables to filter the stage-1 candidates by domain, task type, and existing transfer score, reducing to a smaller candidate set.
-3. **Stage 3 — LLM re-ranking** (optional): passes the remaining candidates to the LangChain reasoning agent for semantic re-ranking using the task description and architecture notes. Skipped when `use_llm_reranking=False` or when `OPENAI_API_KEY` is absent.
+##### `QueryExpander`
 
-Final output: at most `top_k_final` (default 10) ranked `SimilarTaskResult` objects.
+Generates alternative phrasings of a task description to broaden FAISS recall before the vector search stage.
+
+```python
+from orcanet.retrieval import QueryExpander
+
+expander = QueryExpander(llm=my_llm)
+alternatives = await expander.expand(
+    "brain MRI binary classification",
+    n_expansions=3,
+)
+# → ["medical image classification", "neurological imaging task", "3D scan binary classification"]
+```
+
+| Method / Helper | Signature | Description |
+|---|---|---|
+| `__init__` | `(llm: BaseLLM) → None` | Stores the LLM; no model loading occurs at construction time. |
+| `expand` | `async (query: str, n_expansions: int = 3) → list[str]` | Builds a prompt asking the LLM to produce `n_expansions` alternative descriptions, calls `ainvoke`, and parses the result via `_parse_list_from_response`. |
+| `_parse_list_from_response` | `(text: str) → list[str]` | Strips numbered prefixes (`1.`, `2)`), bullet markers (`-`, `*`, `•`), and leading/trailing whitespace from each line, then filters blank lines. Returns all non-empty strings. Works on any mix of list formats in a single response. |
+
+##### `LLMRanker`
+
+Re-ranks a list of candidate tasks against a query task by asking an LLM to score each candidate on a 0–1 relevance scale. Output is Pydantic-validated before returning.
+
+```python
+from orcanet.retrieval import LLMRanker
+
+ranker = LLMRanker(llm=my_llm)
+ranked = await ranker.rerank(query_task, candidates, top_k=5)
+# → [(task_a, 0.92, "same domain and similar n_classes"), ...]
+```
+
+**Internal Pydantic models:**
+
+```python
+class _RankedItem(BaseModel):
+    task_id: str
+    score: float = Field(ge=0.0, le=1.0)   # strictly validated; rejects scores outside [0, 1]
+    reasoning: str
+
+class _RankedList(BaseModel):
+    rankings: list[_RankedItem]
+```
+
+| Method | Signature | Description |
+|---|---|---|
+| `__init__` | `(llm: BaseLLM) → None` | Stores the LLM. |
+| `rerank` | `async (query_task: Task, candidate_tasks: list[Task], top_k: int = 10) → list[tuple[Task, float, str]]` | Returns `[]` immediately when `candidate_tasks` is empty (no LLM call). Otherwise builds a prompt from query and candidate metadata, calls `ainvoke`, strips markdown backtick fences, and delegates to `_parse_ranked_list`. Results are sorted by score descending and truncated to `top_k`. |
+| `_parse_ranked_list` | `(text: str, candidate_tasks: list[Task]) → list[tuple[Task, float, str]]` | Strips leading ` ```json ` / ` ``` ` fences, then validates via `_RankedList.model_validate_json`. Any `ValidationError`, `json.JSONDecodeError`, or `ValueError` returns `[]` with a `WARNING`-level log. Task IDs in the LLM output that are absent from `candidate_tasks` are silently skipped. |
+
+The prompt template (`_RERANK_PROMPT_TEMPLATE`) instructs the LLM to return **only** a JSON object with no markdown or explanation, lists all `n_candidates` candidates with their metadata, and names the exact field types and constraints for `score`.
+
+##### `HybridRetriever`
+
+Three-stage retrieval pipeline. All dependencies are constructor-injected for testability.
+
+```python
+from orcanet.retrieval import HybridRetriever
+
+retriever = HybridRetriever(
+    faiss_index=index,
+    task_repository=repo,
+    embedder=cross_domain_embedder,
+    query_expander=expander,
+    llm_ranker=ranker,
+    top_k_initial=50,
+    top_k_final=10,
+    similarity_threshold=0.6,
+    use_llm_reranking=True,
+)
+results = await retriever.retrieve(query_task, filters={"domain": "vision"})
+# → [(task, score, reasoning), ...]
+```
+
+**Constructor parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `faiss_index` | object with `.search(embedding, k) → list[tuple[str, float]]` | — | FAISS index returning `(task_id_str, cosine_score)` pairs |
+| `task_repository` | `TaskRepository` | — | Async repository; `get_by_id(UUID) → Task \| None` is the only method called |
+| `embedder` | `CrossDomainEmbedder` | — | Converts the 25-dim feature vector to the 64-dim FAISS embedding space |
+| `query_expander` | `QueryExpander` | — | Generates alternative query descriptions for `retrieve_with_expanded_queries` |
+| `llm_ranker` | `LLMRanker` | — | Re-ranks the Stage 2 candidate list when Stage 3 is activated |
+| `top_k_initial` | `int` | `50` | Number of candidates retrieved from FAISS in Stage 1 |
+| `top_k_final` | `int` | `10` | Maximum number of results returned |
+| `similarity_threshold` | `float` | `0.6` | FAISS scores below this are dropped in Stage 2 |
+| `use_llm_reranking` | `bool` | `True` | When `False`, Stage 3 is skipped regardless of candidate count |
+
+**Methods:**
+
+| Method | Signature | Description |
+|---|---|---|
+| `retrieve` | `async (query_task: Task, filters: dict \| None = None) → list[tuple[Task, float, str]]` | Executes the three-stage pipeline described below. |
+| `retrieve_with_expanded_queries` | `async (query_description: str, query_task: Task) → list[tuple[Task, float, str]]` | Calls `QueryExpander.expand(query_description)`, then for the original description and each expansion creates a task variant via `query_task.model_copy(update={"name": description})` and calls `retrieve(query_variant)`. Merges all results via `_deduplicate_and_sort` and returns the top-`top_k_final` deduplicated entries. Each expansion drives a distinct FAISS embedding so the fan-out is semantically meaningful. |
+
+**Three-stage pipeline (inside `retrieve`):**
+
+1. **Stage 1 — FAISS vector search**: `_task_to_feature_vector(query_task)` produces a 25-dim float32 array — `log1p(n_samples)` at index 0, raw `n_features` at index 1, raw `n_classes` at index 2; `None` fields map to 0. The array is wrapped in a `torch.Tensor`, passed through `CrossDomainEmbedder.embed()` to obtain a unit-normalised 64-dim embedding, and searched against the FAISS index with `k=top_k_initial`. Returns `[]` immediately when the index returns no candidates.
+
+2. **Stage 2 — Metadata filter + threshold**: all candidate IDs are batch-fetched via `asyncio.gather(..., return_exceptions=True)`. Failed fetches (exceptions) are logged at `WARNING` and skipped rather than aborting the entire batch, so a single flaky database row does not discard all other candidates. `None` results (deleted or unknown tasks) are silently dropped. Any candidate whose FAISS score falls below `similarity_threshold` is discarded. The optional `filters` dict then applies field-equality checks: `getattr(task, key) == val` for each `(key, val)` pair.
+
+3. **Stage 3 — LLM re-ranking (optional)**: activated only when `use_llm_reranking=True` **and** the number of surviving candidates exceeds `top_k_final`. Delegates to `LLMRanker.rerank(query_task, candidates, top_k=top_k_final)`. When the condition is not met, returns the top-`top_k_final` candidates each annotated with `"vector similarity"` as the reasoning string.
+
+**Helper functions (module-level):**
+
+- `_task_to_feature_vector(task: Task) → np.ndarray` — 25-dim float32 feature vector. Only the first three indices are currently populated; indices 3–24 are reserved for future statistical features and are always zero.
+- `_deduplicate_and_sort(results: list[tuple[Task, float, str]]) → list[tuple[Task, float, str]]` — Collapses entries that share the same `task_id` UUID by keeping the one with the highest score, then sorts the remaining entries descending by score. Used by `retrieve_with_expanded_queries` to merge and rank results from multiple query expansions without duplicates.
 
 #### `orcanet.reasoning` — LangChain ReAct Agent (planned)
 
@@ -2034,7 +2137,7 @@ All sensitive values use `${oc.env:VAR}` (required) or `${oc.env:VAR,default}` (
 
 ### Test Infrastructure (`tests/`)
 
-Seven unit test files across three directories, plus two empty `__init__.py` placeholders for future integration tests.
+Eleven unit test files across four directories, plus two empty `__init__.py` placeholders for future integration tests.
 
 | File | Tests | Covers |
 |---|---|---|
@@ -2046,6 +2149,9 @@ Seven unit test files across three directories, plus two empty `__init__.py` pla
 | `tests/unit/embeddings/test_architecture_embedder.py` | 45 | `ArchitectureGraph` node counts for MLP, CNN, single-layer, and empty configs; node feature shape `(n, 16)` and dtype float32; one-hot correctness for all layer types and all activation types; log-size encoding against `_LOG_SIZE_SCALE`; unknown-type zero-out; sequential and skip-connection edge counts; edge dtype int64; global features shape, dtype, depth equality, log-total-size sign, log-max-width value; `ArchitectureEmbedder.embed` shape `(32,)`, L2 norm, numpy dtype float32, custom `output_dim`, training-mode preservation (both directions), single-layer and empty-config edge cases, determinism across two calls; similarity — identical configs → 1.0, self-similarity exceeds cross-architecture similarity (seeded), return type float, symmetry; retrieval — `top_k` count, fewer-candidates-than-k, descending sort, tuple types, identical query is top result, default `top_k=5`, `top_k=0` returns `[]`, negative `top_k` raises `ValueError` |
 | `tests/unit/transfer/test_feature_transfer.py` | 37 | `linear_cka` — self-similarity equals 1.0 (square, tall, wide); orthogonal subspace pair near zero; CKA symmetry; value always in [0, 1]; different feature dimensions allowed; return type float. `FeatureTransfer` — identical models produce overall > 0.9; all layer scores near 1.0; all layers recommended; `TransferScore` instance returned; random-init models score well below identical; reasoning non-empty; layer scores populated. Guards — `ValueError` when source/target not registered; `ValueError` when `probe_data` absent; mock `OrcaMindClient` stored but not called during scoring. Metadata — strategy name, threshold, probe-data presence flag, registered model count. Structural invariants — overall in [0, 1]; `layer_scores` is dict; `recommended_layers` is list; reasoning non-empty string; recommended layers are a subset of layer_scores keys; recommended layers all exceed threshold. `execute_transfer` — returns `nn.Module`; does not mutate source model; result differs from unmodified target; `ValueError` when target not registered |
 | `tests/unit/transfer/test_weight_transfer.py` | 34 | `WeightTransfer` score — identical models produce `overall == 1.0`; all layer scores are 1.0; all params in `recommended_layers`. Match-by semantics — `"name"` mode scores 1.0 for all params even when last-layer shapes differ; `"both"` mode excludes shape-mismatched params and drops `overall` below 1.0; first-layer params remain 1.0 in `"both"` mode; `"shape"` mode score is a float in [0, 1]. Structural invariants — `overall` in [0, 1]; `layer_scores` is dict; `recommended_layers` is list and subset of `layer_scores` keys; all recommended layers have score 1.0; reasoning non-empty string. `execute_transfer` — returns `(nn.Module, list[str])` tuple; transferred-layer weights equal source weights after transfer; all params transferred for identical architecture; source model not mutated; no exception for any `match_by` mode; `_safe_reinit` handles 1-D bias and 2-D+ weight tensors without raising. `get_optimizer_with_layer_lr` — returns `torch.optim.Adam`; transferred params get `base_lr * decay`; non-transferred params get `base_lr`; `decay=0.0` produces zero LR for transferred layers; empty transferred list gives all-base-lr groups. Guards — `ValueError` when source/target not registered; `ValueError` on invalid `match_by`. Metadata — `strategy == "weight_transfer"`; `match_by`, `frozen_epochs`, `layer_lr_decay` reflected; defaults verified. |
+| `tests/unit/retrieval/test_query_expander.py` | 12 | `_parse_list_from_response` — numbered lists (`1.`, `2.`), dash bullets, asterisk bullets, blank-line filtering, plain-line passthrough, empty-string input returns `[]`, every returned element is non-empty. `QueryExpander.expand` — correct expansion count, each expansion non-empty, prompt contains `n_expansions` integer and `query` text, empty LLM response returns `[]`, default `n_expansions=3` reflected in the prompt. |
+| `tests/unit/retrieval/test_ranker.py` | 11 | `_parse_ranked_list` — valid JSON parsed into `(Task, float, str)` tuples with correct field values; unknown `task_id` in LLM output excluded; markdown ` ```json ` / ` ``` ` fences stripped before parsing; invalid JSON returns `[]`; `score` outside `[0, 1]` triggers `ValidationError` and returns `[]`; three-candidate input returns all three tuples. `LLMRanker.rerank` — empty `candidate_tasks` returns `[]` without calling `ainvoke`; results sorted descending by score; `top_k` truncates output; prompt contains query task `name`, `domain`, and `task_type`; prompt contains all candidate `task_id` strings. |
+| `tests/unit/retrieval/test_retriever.py` | 12 | `_task_to_feature_vector` — shape `(25,)`, dtype float32; `n_samples=1000` maps to `log1p(1000)` at index 0; all-`None` statistical fields produce an all-zero vector. `_deduplicate_and_sort` — duplicate `task_id` entries collapsed to the highest-scoring entry; output sorted descending by score; single-entry input returned unchanged. `HybridRetriever.retrieve` — empty FAISS result returns `[]`; candidate with FAISS score 0.4 excluded when `similarity_threshold=0.6`; `use_llm_reranking=False` leaves `LLMRanker.rerank` uncalled; `LLMRanker.rerank` called exactly once when three candidates exceed `top_k_final=2`; `filters={"domain": "nlp"}` removes task with `domain="vision"`. `retrieve_with_expanded_queries` — same `task_id` returned from multiple expansions appears exactly once in the output. |
 
 **Notable patterns introduced in the OrcaNet test suite:**
 
@@ -2063,3 +2169,7 @@ Seven unit test files across three directories, plus two empty `__init__.py` pla
 - *Deepcopy semantics for WeightTransfer* — `test_weight_transfer.py` explicitly documents that `execute_transfer` starts from `deepcopy(source_model)`, so shape mismatches between source and target cannot arise within `execute_transfer` itself. The `test_shape_mismatch_skipped_without_exception` test verifies the no-raise guarantee across all three `match_by` modes; the shape-safety of `_find_source_tensor` is covered separately via `test_safe_reinit_handles_1d_and_2d_tensors`, which calls `_safe_reinit` directly on 1-D (bias) and 2-D+ (weight) tensors and confirms no exception is raised. This split makes the test intent explicit rather than hiding it behind an architecture-mismatch fixture that would not actually exercise the code path.
 - *Binary score assertions for WeightTransfer* — `TestWeightTransferScoreMatchBy` uses two model architectures with identical first layers but different `out_dim` to assert the three `match_by` semantics precisely: `"name"` matches all four parameters (all names exist regardless of shape), `"both"` excludes the two last-layer parameters (shape mismatch), and `"shape"` produces a float in [0, 1] without asserting a specific value (shape-indexed matching on random architectures is deterministic but architecturally coupled). Testing each mode independently makes it easy to add a fourth mode without adjusting existing assertions.
 - *Per-parameter optimizer group verification* — `TestGetOptimizerWithLayerLR.test_transferred_params_get_decayed_lr` iterates every `param_groups` entry, resolves the parameter back to its name via `model.named_parameters()`, and asserts the learning rate equals `base_lr * decay` for transferred names and `base_lr` for all others. This catches silent bugs where a group contains the wrong parameter or the LR formula is applied to the wrong set — possible when `param_groups` is built by list comprehension over `named_parameters()` and the index mapping drifts.
+- *`SimpleNamespace` mock factory for multi-dependency tests* — `test_retriever.py` uses a `_make_mocks(task)` factory that returns all five `HybridRetriever` dependencies as a `SimpleNamespace`. Tests that need a default happy-path setup call `_make_mocks` and `_build_retriever`; tests that need custom behaviour (e.g. multi-task threshold filtering) replace individual attributes (`mocks.repo.get_by_id = AsyncMock(side_effect=...)`) after construction. This pattern avoids deeply nested fixture pyramids while keeping each test's intent visible in its own body.
+- *Real `torch.zeros` tensor in embedder mock* — the FAISS embedding call chain (`CrossDomainEmbedder.embed(tensor).squeeze(0).detach().numpy()`) involves three chained tensor operations. Using `MagicMock().embed.return_value = torch.zeros(25)` rather than a chain of `MagicMock` returns means the chain executes correctly against a real 1-D tensor: `squeeze(0)` is a no-op on a 1-D tensor, `detach()` returns the same tensor, and `numpy()` produces a valid array — so the FAISS mock receives a proper numpy array without needing a spec-heavy mock for the embedder.
+- *`side_effect` lambda for multi-task repository mocking* — when a test needs the repository to return different tasks for different UUIDs (e.g. threshold filtering), `repo.get_by_id = AsyncMock(side_effect=lambda uid: task_map.get(uid))` threads the `UUID` argument through a pre-populated dict. This is preferable to `side_effect=[task1, task2]` (order-dependent) and to separate `AsyncMock` instances (requires separate injection points).
+- *Pydantic field-constraint testing via score boundary* — `TestParseRankedList.test_score_out_of_range_returns_empty_list` submits `"score": 1.5` to trigger `_RankedItem`'s `Field(ge=0.0, le=1.0)` constraint, causing a `ValidationError` that `_parse_ranked_list` converts to `[]`. This pins the graceful-degradation contract: a misbehaving LLM that returns an out-of-bounds score never propagates a `ValidationError` to the caller. Testing the boundary directly (not just a valid score) ensures the `Field` constraint is actually present and enforced at parse time rather than being checked post-hoc.
