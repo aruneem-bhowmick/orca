@@ -17,7 +17,8 @@ class QueryExpander:
         """Return *n_expansions* alternative descriptions of *query*."""
         prompt = f"Generate {n_expansions} alternative descriptions for this ML task: {query}"
         response = await self._llm.ainvoke(prompt)
-        return _parse_list_from_response(response.content)
+        text = response if isinstance(response, str) else getattr(response, "content", "")
+        return _parse_list_from_response(text)
 
 
 def _parse_list_from_response(text: str) -> list[str]:

@@ -80,7 +80,8 @@ class LLMRanker:
             n_candidates=len(candidate_tasks),
         )
         response = await self._llm.ainvoke(prompt)
-        ranked = _parse_ranked_list(response.content, candidate_tasks)
+        text = response if isinstance(response, str) else getattr(response, "content", "")
+        ranked = _parse_ranked_list(text, candidate_tasks)
         return sorted(ranked, key=lambda x: x[1], reverse=True)[:top_k]
 
 
