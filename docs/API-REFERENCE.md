@@ -1187,7 +1187,7 @@ alternatives = await expander.expand("brain MRI binary classification", n_expans
 
 **`async expand(query, n_expansions=3) -> list[str]`**
 
-Builds a prompt asking the LLM for `n_expansions` alternatives, calls `ainvoke`, and strips numbered prefixes / bullet markers from each response line. Returns an empty list when the LLM response is blank.
+Builds a prompt asking the LLM for `n_expansions` alternatives, calls `ainvoke`, and strips numbered prefixes / bullet markers from each response line. Handles both `BaseLLM` (returns `str`) and chat-model (returns a message object with `.content`) response types. Returns an empty list when the LLM response is blank.
 
 ---
 
@@ -1262,12 +1262,12 @@ retriever = HybridRetriever(
 Executes the three-stage pipeline:
 
 1. **Stage 1 — FAISS**: converts `query_task` to a 25-dim float32 feature vector (`log1p(n_samples)`, `n_features`, `n_classes`; `None` → 0), embeds via `CrossDomainEmbedder.embed`, searches the index.
-2. **Stage 2 — Filter**: batch-fetches by UUID, drops below-threshold and `None` results, applies `filters` dict field-equality checks.
+2. **Stage 2 — Filter**: batch-fetches all candidate UUIDs concurrently via `asyncio.gather(..., return_exceptions=True)`. Failed individual fetches are logged at `WARNING` and skipped without aborting the batch. `None` results (unknown or deleted tasks) are dropped. Candidates below `similarity_threshold` are discarded. The optional `filters` dict applies field-equality checks.
 3. **Stage 3 — LLM re-rank**: delegates to `LLMRanker.rerank` only when `use_llm_reranking=True` and `len(candidates) > top_k_final`; otherwise returns top-`top_k_final` candidates annotated as `"vector similarity"`.
 
 **`async retrieve_with_expanded_queries(query_description, query_task) -> list[tuple[Task, float, str]]`**
 
-Calls `QueryExpander.expand(query_description)`, runs `retrieve(query_task)` for the original description plus each expansion, collapses duplicate `task_id` entries by keeping the highest score via `_deduplicate_and_sort`, and returns the top-`top_k_final` results.
+Calls `QueryExpander.expand(query_description)`, then for the original description and each expansion creates a task variant via `query_task.model_copy(update={"name": description})` and calls `retrieve(query_variant)`. Each variant produces a distinct FAISS embedding, making the fan-out semantically meaningful rather than redundant. Results are merged via `_deduplicate_and_sort` — duplicate `task_id` entries are collapsed to the highest-scoring occurrence — and the top-`top_k_final` are returned.
 
 ---
 
