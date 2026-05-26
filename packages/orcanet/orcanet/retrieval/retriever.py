@@ -95,8 +95,15 @@ class HybridRetriever:
         # Stage 2: Batch fetch + threshold filter + metadata filter
         fetched = await asyncio.gather(
             *[self._repo.get_by_id(UUID(tid)) for tid in score_by_id],
+            return_exceptions=True,
         )
-        candidates: list[Task] = [t for t in fetched if t is not None]
+        candidates: list[Task] = []
+        for item in fetched:
+            if isinstance(item, Exception):
+                logger.warning("HybridRetriever: failed to fetch candidate task", exc_info=item)
+                continue
+            if item is not None:
+                candidates.append(item)
         candidates = [
             t for t in candidates
             if score_by_id.get(str(t.task_id), 0.0) >= self.similarity_threshold
@@ -125,7 +132,8 @@ class HybridRetriever:
         """Expand *query_description* and aggregate results across all expansions."""
         expansions = await self._expander.expand(query_description)
         all_results: list[tuple[Task, float, str]] = []
-        for _ in [query_description] + expansions:
-            results = await self.retrieve(query_task)
+        for description in [query_description, *expansions]:
+            query_variant = query_task.model_copy(update={"name": description})
+            results = await self.retrieve(query_variant)
             all_results.extend(results)
         return _deduplicate_and_sort(all_results)[: self.top_k_final]
