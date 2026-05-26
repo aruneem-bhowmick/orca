@@ -153,7 +153,8 @@ orca/
 │       │   │   ├── weight_transfer.py   # WeightTransfer (name/shape/both parameter matching, kaiming reinit, deepcopy-based transfer), get_optimizer_with_layer_lr (per-parameter Adam with lr decay), _safe_reinit
 │       │   │   ├── architecture_transfer.py  # adapt_architecture (input/output dim adaptation), _build_sequential_from_config (ArchConfig → nn.Sequential), ArchitectureTransfer (OrcaMind source lookup, graph-embedding cosine scoring, middle-layer weight copying)
 │       │   │   └── multi_task_transfer.py  # _get_backbone_out_dim, MultiTaskModel (nn.ModuleDict heads, compute_loss, compute_uncertainty_loss with nn.ParameterDict log_sigmas), MultiTaskTransfer (add_task, score_transfer via CrossDomainEmbedder, execute_transfer, update_gradnorm_weights)
-│       │   ├── retrieval/            # Three-stage hybrid retrieval (FAISS → PostgreSQL metadata filter → LLM re-ranking) (planned)
+│       │   ├── retrieval/            # QueryExpander, LLMRanker, HybridRetriever — three-stage async pipeline (implemented)
+│       │   │   └── __init__.py       # Public re-exports: QueryExpander, LLMRanker, HybridRetriever
 │       │   ├── reasoning/            # LangChain ReAct agent, Pydantic-validated response models, retry logic (planned)
 │       │   │   └── prompts/          # Transfer explanation, task similarity, architecture recommendation templates
 │       │   ├── api/                  # FastAPI service (8 endpoints) — port 8002 (planned)
@@ -169,6 +170,7 @@ orca/
 │           ├── unit/
 │           │   ├── embeddings/       # CrossDomainEmbedder, GRL, TextTaskEmbedder, and ArchitectureEmbedder unit tests — 76 tests
 │           │   ├── transfer/         # linear_cka correctness, FeatureTransfer scoring/guards/metadata/structural, execute_transfer — 37 tests; WeightTransfer scoring (name/shape/both), execute_transfer, optimizer LR groups, guards, metadata — 36 tests; ArchitectureTransfer adapt_architecture, score_transfer, execute_transfer (incl. all activations), metadata, guards — 29 tests; MultiTaskModel forward routing, compute_loss, compute_uncertainty_loss, log_sigma gradient flow — 19 tests; MultiTaskTransfer add_task, score_transfer, execute_transfer, metadata, gradnorm weights, uncertainty convergence — 37 tests (158 total)
+│           │   ├── retrieval/        # _parse_list_from_response, QueryExpander.expand — 12 tests; _parse_ranked_list, LLMRanker.rerank — 11 tests; _task_to_feature_vector, _deduplicate_and_sort, HybridRetriever.retrieve, retrieve_with_expanded_queries — 12 tests (35 total)
 │           │   └── *.py              # Package structure, CLI smoke tests, config validation — 18 tests
 │           └── integration/          # API integration tests (planned)
 │
@@ -214,7 +216,7 @@ orca/
 - **FastAPI** + **Uvicorn** for REST APIs; **WebSockets** for real-time metric streaming
 - **Typer** + **Rich** for the CLI
 - **Streamlit** + **Plotly** for the analytics dashboard
-- **LangChain** (`langchain`, `langchain-openai`, `langchain-anthropic`) for the OrcaNet ReAct reasoning agent and tool orchestration
+- **LangChain** (`langchain`, `langchain-openai`, `langchain-anthropic`) for OrcaNet query expansion, LLM-based candidate re-ranking (`LLMRanker`), and the planned ReAct reasoning agent
 
 ### Experiment Orchestration (OrcaLab)
 
