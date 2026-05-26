@@ -120,6 +120,39 @@ pytest packages/orcanet/tests/unit/transfer/test_multi_task.py -v -k "TestGradno
 
 # OrcaNet — Uncertainty weighting convergence tests (gradient direction + 10-step mini-training loop)
 pytest packages/orcanet/tests/unit/transfer/test_multi_task.py -v -k "TestUncertaintyWeighting"
+
+# OrcaNet — retrieval module unit tests only (all three files: QueryExpander, LLMRanker, HybridRetriever)
+pytest packages/orcanet/tests/unit/retrieval/ -v
+
+# OrcaNet — QueryExpander and _parse_list_from_response tests only
+pytest packages/orcanet/tests/unit/retrieval/test_query_expander.py -v
+
+# OrcaNet — LLMRanker and _parse_ranked_list tests only
+pytest packages/orcanet/tests/unit/retrieval/test_ranker.py -v
+
+# OrcaNet — HybridRetriever, _task_to_feature_vector, and _deduplicate_and_sort tests only
+pytest packages/orcanet/tests/unit/retrieval/test_retriever.py -v
+
+# OrcaNet — _parse_list_from_response helper tests only (list format stripping)
+pytest packages/orcanet/tests/unit/retrieval/test_query_expander.py -v -k "TestParseListFromResponse"
+
+# OrcaNet — QueryExpander LLM invocation and prompt format tests only
+pytest packages/orcanet/tests/unit/retrieval/test_query_expander.py -v -k "TestQueryExpander"
+
+# OrcaNet — _parse_ranked_list JSON parsing and validation tests only
+pytest packages/orcanet/tests/unit/retrieval/test_ranker.py -v -k "TestParseRankedList"
+
+# OrcaNet — LLMRanker.rerank() sorting, top_k, prompt, and short-circuit tests only
+pytest packages/orcanet/tests/unit/retrieval/test_ranker.py -v -k "TestLLMRanker"
+
+# OrcaNet — _task_to_feature_vector helper tests only (shape, encoding, None handling)
+pytest packages/orcanet/tests/unit/retrieval/test_retriever.py -v -k "TestTaskToFeatureVector"
+
+# OrcaNet — _deduplicate_and_sort helper tests only
+pytest packages/orcanet/tests/unit/retrieval/test_retriever.py -v -k "TestDeduplicateAndSort"
+
+# OrcaNet — HybridRetriever.retrieve() and retrieve_with_expanded_queries() tests only
+pytest packages/orcanet/tests/unit/retrieval/test_retriever.py -v -k "TestHybridRetriever"
 ```
 
 The test suite has 80+ test files across unit, integration, performance, and deployment-validation categories.
@@ -158,6 +191,11 @@ OrcaMind integration tests auto-skip when their target service port is unreachab
 - *Duplicate task-registration guard* — `TestAddTask.test_raises_on_duplicate_task_id` calls `add_task` twice for the same task and asserts a `ValueError` on the second call. Without the guard, the second call would silently replace any trained head parameters and reset the log-sigma to zero for uncertainty weighting; the test pins the fail-fast contract so the bug surfaces at call time rather than manifesting as a mysterious loss spike after reload.
 - *Shared-backbone gradient accumulation* — `TestMultiTaskModelForward.test_backbone_shared_across_heads` runs a forward pass through both task heads, sums the outputs, calls `backward()`, and asserts that at least one backbone parameter has a non-None gradient. This replaces the previous tautological `model.backbone is model.backbone` check and directly verifies that both head paths contribute gradients to the same backbone module — a requirement that would be silently violated if `execute_transfer` accidentally copied the backbone instead of sharing it.
 - *GradNorm partial-update isolation* — `TestGradnormWeighting.test_partial_update_preserves_omitted_task_weight` registers three tasks, then calls `update_gradnorm_weights` with only two of them. It asserts that the third task's weight is bit-identical after the call. This pins the invariant that a partial gradient-norm update is safe to call within a training step where only a subset of tasks produced usable gradient signals, without silently perturbing the weights of tasks that were not included. A companion test (`test_raises_on_unknown_task_id`) asserts that supplying an unregistered task id raises `ValueError` rather than silently inserting a spurious key.
+- *`SimpleNamespace` mock factory for multi-dependency injection* — `test_retriever.py` defines `_make_mocks(task)` which returns all five `HybridRetriever` dependencies as a `SimpleNamespace`. Each test calls `_make_mocks` and `_build_retriever` to get a ready retriever with sensible defaults, then mutates only the attributes it cares about (e.g. `mocks.repo.get_by_id = AsyncMock(side_effect=...)`). This avoids deeply nested fixture pyramids while keeping each test's setup visible in its own body — a useful pattern whenever a class under test has more than two or three injected collaborators.
+- *Real tensor in embedder mock* — `HybridRetriever.retrieve` chains `.squeeze(0).detach().numpy()` on the value returned by `CrossDomainEmbedder.embed`. The embedder mock uses `embedder.embed.return_value = torch.zeros(25)` (a real 1-D tensor) rather than a `MagicMock` chain: `squeeze(0)` on a 1-D tensor is a no-op, `detach()` returns the same tensor, and `numpy()` produces a valid array. This gives the FAISS index mock a proper numpy array without needing a complex spec-restricted mock for `CrossDomainEmbedder`.
+- *`side_effect` lambda for multi-task repository mocking* — when a test needs `TaskRepository.get_by_id` to return different tasks for different UUIDs (e.g. the similarity-threshold test), `repo.get_by_id = AsyncMock(side_effect=lambda uid: task_map.get(uid))` routes calls through a pre-populated dict keyed by `UUID` objects. This is preferable to `side_effect=[task1, task2]` (call-order dependent) and to separate mock instances per call site (not possible with a single `AsyncMock`).
+- *Pydantic field-constraint boundary test* — `TestParseRankedList.test_score_out_of_range_returns_empty_list` submits `"score": 1.5` to exercise `_RankedItem`'s `Field(ge=0.0, le=1.0)` constraint. The resulting `ValidationError` is caught by `_parse_ranked_list` and silently converted to `[]`. Testing the boundary explicitly pins the graceful-degradation contract: a misbehaving LLM that emits an out-of-range score must never propagate a `ValidationError` to the caller, and without the boundary test a future refactor could remove or weaken the `Field` constraint without any test catching the regression.
+- *No-LLM-call assertion for empty candidate list* — `TestLLMRanker.test_empty_candidates_returns_empty_without_llm_call` calls `LLMRanker.rerank` with `candidate_tasks=[]` and asserts both `result == []` and `llm.ainvoke.assert_not_called()`. The second assertion is the load-bearing one: it documents that the short-circuit is deliberate (avoid paying LLM token cost for a degenerate case) and that no network call is made in the empty-candidate path, which matters for tests and for production latency.
 
 The performance benchmark tests in `tests/performance/` make executable compute-efficiency assertions that cannot be expressed as ordinary unit tests. They drive deterministic synthetic sweeps — no external services, no randomness — and enforce measurable invariants about algorithm behaviour at scale. Currently the tier contains `TestASHAPruningSavings`, which simulates 20-trial hyperparameter sweeps on a concave-quadratic learning-curve objective and asserts that ASHA executes ≤60% of the steps an unpruned baseline would require (≥40% compute savings). The scaling test additionally runs a 27-trial cohort and asserts that savings for the larger cohort are at least as good as for the 20-trial baseline, enforcing the monotonicity property directly.
 
