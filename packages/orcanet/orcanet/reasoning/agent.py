@@ -1,4 +1,4 @@
-"""OrcaNet ReAct reasoning agent for transfer learning recommendations."""
+"""OrcaNet reasoning agent for transfer learning recommendations."""
 
 from __future__ import annotations
 
@@ -7,8 +7,8 @@ import logging
 import os
 from typing import Any
 
-from langchain.agents import AgentExecutor, create_react_agent
-from langchain_core.prompts import ChatPromptTemplate
+from langchain.agents import create_agent
+from langchain_core.messages import HumanMessage
 from pydantic import ValidationError
 
 from orcanet.reasoning.tools import (
@@ -17,56 +17,34 @@ from orcanet.reasoning.tools import (
     task_retrieval_tool,
     transfer_scoring_tool,
 )
-from orcanet.reasoning.tools import embedding_similarity_tool as _est_mod
-from orcanet.reasoning.tools import performance_prediction_tool as _ppt_mod
-from orcanet.reasoning.tools import task_retrieval_tool as _trt_mod
-from orcanet.reasoning.tools import transfer_scoring_tool as _tst_mod
 from orcanet.reasoning.validators import LLMParsingError, TransferRecommendationResponse
 
 logger = logging.getLogger(__name__)
 
 _MAX_RETRIES = 2
 
-_REACT_SYSTEM = """\
-You are OrcaNet, an expert in cross-domain transfer learning. You help users find the best \
-source tasks and strategies for knowledge transfer.
+_SYSTEM_PROMPT = """\
+You are OrcaNet, an expert in cross-domain transfer learning. You help users identify the
+best source tasks and strategies for knowledge transfer to a target task.
 
-You have access to the following tools:
-
-{tools}
-
-Use this format:
-
-Question: the input question you must answer
-Thought: you should always think about what to do
-Action: the action to take, should be one of [{tool_names}]
-Action Input: the input to the action
-Observation: the result of the action
-... (this Thought/Action/Action Input/Observation can repeat N times)
-Thought: I now know the final answer
-Final Answer: a JSON object matching this schema:
-{{
+When you have gathered enough information using the available tools, respond with a JSON
+object that exactly matches this schema (no markdown fences, no extra text):
+{
   "top_sources": [
-    {{
+    {
       "task_id": "<uuid>",
       "task_name": "<string>",
       "similarity_score": <float 0-1>,
       "transfer_score": <float 0-1>,
       "reasoning": "<string>"
-    }}
+    }
   ],
   "recommended_strategy": "<feature|weight|architecture|multi_task>",
   "expected_improvement": <float 0-1>,
   "explanation": "<string>",
   "confidence": <float 0-1>
-}}
-
-Begin!
+}
 """
-
-_REACT_HUMAN = """\
-Question: {input}
-Thought:{agent_scratchpad}"""
 
 _CORRECTIVE_SUFFIX = (
     "\n\nYour previous response could not be parsed as valid JSON. "
@@ -76,11 +54,11 @@ _CORRECTIVE_SUFFIX = (
 
 
 class OrcaNetAgent:
-    """LangChain ReAct agent for transfer learning recommendations.
+    """LangChain agent for transfer learning recommendations.
 
-    Wraps four LangChain tools and an LLM into a ReAct loop. The
-    ``recommend_transfer`` method retries parsing up to two times
-    with a corrective prompt before raising ``LLMParsingError``.
+    Uses the LangChain 1.x ``create_agent`` API backed by langgraph.
+    The ``recommend_transfer`` method retries parsing up to ``_MAX_RETRIES``
+    times with a corrective prompt before raising ``LLMParsingError``.
     """
 
     def __init__(
@@ -121,32 +99,30 @@ class OrcaNetAgent:
             performance_prediction_tool,
         ]
         self.llm = self._build_llm(llm_provider, model, temperature, api_key)
-        prompt = ChatPromptTemplate.from_messages(
-            [
-                ("system", _REACT_SYSTEM),
-                ("human", _REACT_HUMAN),
-            ]
-        )
-        agent = create_react_agent(self.llm, self.tools, prompt)
-        self.executor = AgentExecutor(
-            agent=agent,
-            tools=self.tools,
-            verbose=True,
-            handle_parsing_errors=True,
+        self._agent = create_agent(
+            self.llm,
+            self.tools,
+            system_prompt=_SYSTEM_PROMPT,
         )
 
     async def recommend_transfer(self, query: str) -> TransferRecommendationResponse:
-        """Run the ReAct loop and return a validated transfer recommendation.
+        """Run the agent loop and return a validated transfer recommendation.
 
-        Retries up to ``_MAX_RETRIES`` times with a corrective prompt if the
-        LLM output cannot be parsed.  Raises ``LLMParsingError`` after all
-        attempts are exhausted.
+        Retries up to ``_MAX_RETRIES`` times with a corrective prompt when the
+        agent's final message cannot be parsed into a ``TransferRecommendationResponse``.
+        Raises ``LLMParsingError`` after all attempts are exhausted.
         """
-        current_query = query
+        messages: list = [HumanMessage(content=query)]
         last_output: str = ""
+
         for attempt in range(_MAX_RETRIES + 1):
-            raw = await self.executor.ainvoke({"input": current_query})
-            last_output = raw.get("output", "")
+            result = await self._agent.ainvoke({"messages": messages})
+            last_message = result["messages"][-1]
+            last_output = (
+                last_message.content
+                if isinstance(last_message.content, str)
+                else str(last_message.content)
+            )
             try:
                 return self._parse_and_validate(last_output)
             except (ValidationError, json.JSONDecodeError, ValueError) as exc:
@@ -161,12 +137,12 @@ class OrcaNetAgent:
                     _MAX_RETRIES + 1,
                     exc,
                 )
-                current_query = query + _CORRECTIVE_SUFFIX
+                messages = [HumanMessage(content=query + _CORRECTIVE_SUFFIX)]
 
         raise LLMParsingError("Unreachable")  # pragma: no cover
 
     def _parse_and_validate(self, output: str) -> TransferRecommendationResponse:
-        """Extract and validate a TransferRecommendationResponse from raw LLM output."""
+        """Strip markdown fences and validate as TransferRecommendationResponse."""
         text = output.strip()
         if text.startswith("```"):
             lines = text.splitlines()
