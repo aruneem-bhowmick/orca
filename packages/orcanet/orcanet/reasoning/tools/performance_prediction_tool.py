@@ -1,0 +1,73 @@
+"""LangChain tool for predicting model performance on a given task."""
+
+from __future__ import annotations
+
+import json
+import logging
+import math
+from uuid import UUID
+
+import numpy as np
+
+logger = logging.getLogger(__name__)
+
+_orcamind_client = None
+_task_repository = None
+
+
+def set_orcamind_client(client) -> None:
+    global _orcamind_client
+    _orcamind_client = client
+
+
+def set_task_repository(repo) -> None:
+    global _task_repository
+    _task_repository = repo
+
+
+def get_orcamind_client():
+    return _orcamind_client
+
+
+def get_task_repository():
+    return _task_repository
+
+
+def _task_to_embedding(task) -> list[float]:
+    vec = np.zeros(25, dtype=np.float32)
+    if task.n_samples is not None:
+        vec[0] = math.log1p(float(task.n_samples))
+    if task.n_features is not None:
+        vec[1] = float(task.n_features)
+    if task.n_classes is not None:
+        vec[2] = float(task.n_classes)
+    return vec.tolist()
+
+
+from langchain_core.tools import tool
+
+
+@tool
+async def performance_prediction_tool(task_id: str, model_config_json: str) -> str:
+    """Predict the performance of a model configuration on a given task."""
+    if _orcamind_client is None or _task_repository is None:
+        return json.dumps({"error": "OrcaMind client or task repository not configured"})
+    try:
+        model_config = json.loads(model_config_json)
+        task = await _task_repository.get_by_id(UUID(task_id))
+        if task is None:
+            return json.dumps({"error": f"Task {task_id} not found"})
+
+        task_embedding = _task_to_embedding(task)
+        model_id = UUID(model_config.get("model_id", str(UUID(int=0))))
+        metrics = await _orcamind_client.predict_performance(task_embedding, model_id)
+        return json.dumps(
+            {
+                "task_id": task_id,
+                "model_id": str(model_id),
+                "metrics": metrics.final_metrics,
+            }
+        )
+    except Exception as exc:
+        logger.warning("performance_prediction_tool failed: %s", exc)
+        return json.dumps({"error": str(exc)})
