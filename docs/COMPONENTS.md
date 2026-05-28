@@ -2063,23 +2063,141 @@ results = await retriever.retrieve(query_task, filters={"domain": "vision"})
 - `_task_to_feature_vector(task: Task) → np.ndarray` — 25-dim float32 feature vector. Only the first three indices are currently populated; indices 3–24 are reserved for future statistical features and are always zero.
 - `_deduplicate_and_sort(results: list[tuple[Task, float, str]]) → list[tuple[Task, float, str]]` — Collapses entries that share the same `task_id` UUID by keeping the one with the highest score, then sorts the remaining entries descending by score. Used by `retrieve_with_expanded_queries` to merge and rank results from multiple query expansions without duplicates.
 
-#### `orcanet.reasoning` — LangChain ReAct Agent (planned)
+#### `orcanet.reasoning` — LangChain Reasoning Agent
 
-LLM-powered reasoning layer that generates transfer explanations and re-ranks retrieval candidates:
+LLM-powered reasoning layer that generates structured transfer recommendations over a tool-augmented agent loop. Public exports from `orcanet.reasoning`: `OrcaNetAgent`, `TransferRecommendationResponse`, `SourceTaskRecommendation`, `LLMParsingError`.
 
-- **`TransferReasoningAgent`** — LangChain `AgentExecutor` configured with a ReAct prompt. Equipped with four tools: `lookup_task_metadata`, `get_transfer_score`, `fetch_model_config`, and `compare_domains`. On each call the agent iteratively selects tools, inspects results, and terminates when it has assembled a complete explanation.
-- **`TransferResponseModel`** — Pydantic v2 model for structured agent output: `explanation` (free text), `reasoning_trace` (list of tool-call steps), `confidence` (float), `caveats` (list of strings).
-- **Retry logic** — `@retry(stop=stop_after_attempt(3), wait=wait_exponential())` wraps agent invocations so transient API failures (rate limits, timeouts) are retried automatically.
+##### Response Validators (`orcanet.reasoning.validators`)
 
-#### `orcanet.reasoning.prompts` — Prompt Templates (planned)
+Pydantic v2 schemas that type and bound the agent's structured output.
 
-Three Jinja2 / f-string prompt templates:
+**`LLMParsingError(Exception)`**
 
-| Template | Purpose |
-|---|---|
-| `transfer_explanation.py` | Explains why a source task's model transfers to the target task, citing dataset statistics and performance history |
-| `task_similarity.py` | Assesses structural similarity between two tasks based on domain, feature space, and class distribution |
-| `architecture_recommendation.py` | Recommends an architecture for the target task given similar-task performance history and computational constraints |
+Raised by `OrcaNetAgent.recommend_transfer` after all retry attempts are exhausted and the LLM output cannot be parsed into a `TransferRecommendationResponse`.
+
+**`SourceTaskRecommendation(BaseModel)`**
+
+| Field | Type | Constraints | Description |
+|---|---|---|---|
+| `task_id` | `str` | — | UUID string of the recommended source task |
+| `task_name` | `str` | — | Human-readable source task name |
+| `similarity_score` | `float` | `[0.0, 1.0]` | Embedding cosine similarity to the target task |
+| `transfer_score` | `float` | `[0.0, 1.0]` | Transfer strategy score from `transfer_scoring_tool` |
+| `reasoning` | `str` | — | Agent's natural-language rationale for this recommendation |
+
+**`TransferRecommendationResponse(BaseModel)`**
+
+| Field | Type | Constraints | Description |
+|---|---|---|---|
+| `top_sources` | `list[SourceTaskRecommendation]` | may be empty | Ranked list of recommended source tasks |
+| `recommended_strategy` | `TransferStrategy` | `Literal["feature","weight","architecture","multi_task"]` | Transfer strategy name; Pydantic rejects any value not in the allowed set at parse time |
+| `expected_improvement` | `float` | `[0.0, 1.0]` | Predicted relative improvement from applying the recommended transfer |
+| `explanation` | `str` | — | Comprehensive free-text explanation of the recommendation |
+| `confidence` | `float` | `[0.0, 1.0]` | Agent's confidence in the recommendation |
+
+##### LangChain Tools (`orcanet.reasoning.tools`)
+
+Four `@tool`-decorated async functions exposed to the agent loop. Each tool module uses two DI mechanisms:
+
+- **Module-level registry**: a plain `None`-initialised variable with `set_*(instance)` / `get_*()` helpers. The `@tool`-decorated function reads from these globals, providing backwards-compatible standalone use.
+- **Per-instance factory** (`make_<tool_name>(*deps) → StructuredTool`): returns a new `StructuredTool.from_function()` instance whose inner coroutine closes over the supplied dependencies. `OrcaNetAgent.__init__` uses these factories so each agent instance owns its own tool objects and **never mutates shared module-level state**. Constructing two agents with different dependencies is therefore safe.
+
+All four tools return JSON-encoded strings and handle errors gracefully by returning `{"error": "..."}` rather than raising, allowing the agent to relay error context to the LLM and attempt a corrective action.
+
+**`task_retrieval_tool(query: str, filters: str = "{}") → str`**
+
+*"Retrieve similar ML tasks from the registry. Returns JSON list of tasks with similarity scores."*
+
+Calls `HybridRetriever.retrieve_with_expanded_queries(query, stub_task)` to perform three-stage hybrid retrieval. Applies any `filters` JSON as post-retrieval field-equality checks on each returned `Task`. Returns a JSON array of objects with `task_id`, `task_name`, `domain`, `task_type`, `n_samples`, `n_classes`, `score`, and `reason` fields. Module-level DI: `set_retriever(r)` / `get_retriever()`.
+
+**`embedding_similarity_tool(task_id_a: str, task_id_b: str) → str`**
+
+*"Compute embedding similarity between two tasks. Returns a float 0-1."*
+
+Fetches both tasks from the repository, builds 25-dim feature vectors, and embeds them via `CrossDomainEmbedder.embed()`. Both embeddings are **explicitly L2-normalised** with `torch.nn.functional.normalize(emb, dim=0)` before the dot product, ensuring a true cosine similarity regardless of whether the embedder returns unit vectors. Returns `{"similarity": float}` clamped to `[-1.0, 1.0]`. Module-level DI: `set_embedder(e)` / `get_embedder()`, `set_task_repository(r)` / `get_task_repository()`. Per-instance factory: `make_embedding_similarity_tool(embedder, task_repository)`.
+
+**`transfer_scoring_tool(source_task_id: str, target_task_id: str, strategy: str = "feature") → str`**
+
+*"Score the transferability between two tasks using the specified strategy."*
+
+Dispatches to a named `TransferStrategy` instance from the registered strategy dict. Returns `{"overall": float, "layer_scores": dict, "recommended_layers": list, "reasoning": str}` reflecting the `TransferScore` returned by `strategy.score_transfer(source, target)`. Returns `{"error": "..."}` if the strategy name is not registered. Module-level DI: `set_transfer_strategies(d: dict)` / `get_transfer_strategies()`, `set_task_repository(r)` / `get_task_repository()`.
+
+**`performance_prediction_tool(task_id: str, model_config_json: str) → str`**
+
+*"Predict the performance of a model configuration on a given task."*
+
+Fetches the task, deserialises `model_config_json`, and calls `OrcaMindClient.predict_performance(task, model_config)`. Returns `{"metrics": {**final_metrics}, "experiment_id": str}`. After parsing, validates `isinstance(model_config, dict)` and returns `{"error": "model_config_json must be a JSON object"}` immediately when the check fails — preventing `AttributeError` from a non-dict JSON value (arrays, strings, numbers). Module-level DI: `set_orcamind_client(c)` / `get_orcamind_client()`, `set_task_repository(r)` / `get_task_repository()`. Per-instance factory: `make_performance_prediction_tool(orcamind_client, task_repository)`.
+
+##### `OrcaNetAgent`
+
+LangChain reasoning agent that runs a tool-augmented loop and returns a validated `TransferRecommendationResponse`. Uses `langchain.agents.create_agent` (LangChain 1.x langgraph `CompiledStateGraph` API) with a locally-defined system prompt, eliminating any network access to `langchain hub`.
+
+```python
+from orcanet.reasoning import OrcaNetAgent
+
+agent = OrcaNetAgent(
+    llm_provider="openai",          # "openai" | "anthropic" | "local"
+    model="gpt-4-turbo",
+    temperature=0.7,
+    api_key="sk-...",
+    retriever=hybrid_retriever,
+    embedder=cross_domain_embedder,
+    task_repository=task_repo,
+    transfer_strategies={"feature": feature_strategy, "weight": weight_strategy},
+    orcamind_client=orcamind_client,
+)
+
+result = await agent.recommend_transfer("find the best source task for retinal scan classification")
+print(result.recommended_strategy)     # "feature"
+print(result.top_sources[0].task_name) # "brain MRI classification"
+print(result.confidence)               # 0.82
+```
+
+**Constructor parameters:**
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `llm_provider` | `str` | `"openai"` | LLM backend: `"openai"` → `ChatOpenAI`; `"anthropic"` → `ChatAnthropic`; `"local"` → `ChatOpenAI` with base URL from `ORCANET_LOCAL_LLM_URL` env var (default `http://localhost:11434/v1`) |
+| `model` | `str` | `"gpt-4-turbo"` | Model name passed to the LLM constructor |
+| `temperature` | `float` | `0.7` | Sampling temperature |
+| `api_key` | `str \| None` | `None` | API key for the LLM provider |
+| `retriever` | `HybridRetriever \| None` | `None` | Injected into `task_retrieval_tool` module registry |
+| `embedder` | `CrossDomainEmbedder \| None` | `None` | Injected into `embedding_similarity_tool` module registry |
+| `task_repository` | `TaskRepository \| None` | `None` | Injected into `embedding_similarity_tool`, `transfer_scoring_tool`, and `performance_prediction_tool` module registries |
+| `transfer_strategies` | `dict \| None` | `None` | Dict mapping strategy name string to `TransferStrategy` instance; injected into `transfer_scoring_tool` |
+| `orcamind_client` | `OrcaMindClient \| None` | `None` | Injected into `performance_prediction_tool` module registry |
+
+**`recommend_transfer(query: str) → TransferRecommendationResponse`** (async)
+
+Invokes the agent loop by passing `HumanMessage(content=query)` to the underlying `CompiledStateGraph`. Extracts the final message's `content` string, strips markdown fences if present, and attempts to validate it as a `TransferRecommendationResponse` via `model_validate_json`. Retry logic retries up to `_MAX_RETRIES = 2` additional attempts (3 total). On each failed parse, a corrective `HumanMessage` is constructed as `query + _CORRECTIVE_SUFFIX`, where the suffix instructs the LLM to respond only with valid JSON matching the required schema. After the third failure, `LLMParsingError` is raised.
+
+| Attempt | Parse result | Action |
+|---|---|---|
+| 1 | Success | Return `TransferRecommendationResponse` immediately |
+| 1 | Failure | Log warning; rebuild messages with corrective prompt |
+| 2 | Success | Return immediately |
+| 2 | Failure | Log warning; rebuild messages with corrective prompt |
+| 3 | Success | Return immediately |
+| 3 | Failure | Raise `LLMParsingError` |
+
+**`_build_llm(provider, model, temperature, api_key)`**
+
+| `provider` | LLM class | Notes |
+|---|---|---|
+| `"openai"` | `langchain_openai.ChatOpenAI` | — |
+| `"anthropic"` | `langchain_anthropic.ChatAnthropic` | — |
+| `"local"` | `langchain_openai.ChatOpenAI` | `base_url` from `ORCANET_LOCAL_LLM_URL` env var; `api_key` defaults to `"local"` |
+| any other value | — | Raises `ValueError` naming the invalid provider and listing the three supported values. Fails fast rather than silently defaulting. |
+
+##### Prompt Templates (`orcanet.reasoning.prompts`)
+
+Three string constants exported from `orcanet.reasoning.prompts`:
+
+| Constant | Module | Purpose |
+|---|---|---|
+| `TRANSFER_EXPLANATION_TEMPLATE` | `transfer_explanation` | Explains why a source task's model transfers to the target task, citing dataset statistics and performance history |
+| `TASK_SIMILARITY_TEMPLATE` | `task_similarity` | Assesses structural similarity between two tasks based on domain, feature space, and class distribution |
+| `ARCHITECTURE_RECOMMENDATION_TEMPLATE` | `architecture_recommendation` | Recommends an architecture for the target task given similar-task performance history and computational constraints |
 
 #### `orcanet.api` — FastAPI Service (scaffolded, port 8002)
 
@@ -2137,7 +2255,7 @@ All sensitive values use `${oc.env:VAR}` (required) or `${oc.env:VAR,default}` (
 
 ### Test Infrastructure (`tests/`)
 
-Eleven unit test files across four directories, plus two empty `__init__.py` placeholders for future integration tests.
+Fourteen unit test files across five directories, plus two empty `__init__.py` placeholders for future integration tests.
 
 | File | Tests | Covers |
 |---|---|---|
@@ -2152,6 +2270,9 @@ Eleven unit test files across four directories, plus two empty `__init__.py` pla
 | `tests/unit/retrieval/test_query_expander.py` | 12 | `_parse_list_from_response` — numbered lists (`1.`, `2.`), dash bullets, asterisk bullets, blank-line filtering, plain-line passthrough, empty-string input returns `[]`, every returned element is non-empty. `QueryExpander.expand` — correct expansion count, each expansion non-empty, prompt contains `n_expansions` integer and `query` text, empty LLM response returns `[]`, default `n_expansions=3` reflected in the prompt. |
 | `tests/unit/retrieval/test_ranker.py` | 11 | `_parse_ranked_list` — valid JSON parsed into `(Task, float, str)` tuples with correct field values; unknown `task_id` in LLM output excluded; markdown ` ```json ` / ` ``` ` fences stripped before parsing; invalid JSON returns `[]`; `score` outside `[0, 1]` triggers `ValidationError` and returns `[]`; three-candidate input returns all three tuples. `LLMRanker.rerank` — empty `candidate_tasks` returns `[]` without calling `ainvoke`; results sorted descending by score; `top_k` truncates output; prompt contains query task `name`, `domain`, and `task_type`; prompt contains all candidate `task_id` strings. |
 | `tests/unit/retrieval/test_retriever.py` | 12 | `_task_to_feature_vector` — shape `(25,)`, dtype float32; `n_samples=1000` maps to `log1p(1000)` at index 0; all-`None` statistical fields produce an all-zero vector. `_deduplicate_and_sort` — duplicate `task_id` entries collapsed to the highest-scoring entry; output sorted descending by score; single-entry input returned unchanged. `HybridRetriever.retrieve` — empty FAISS result returns `[]`; candidate with FAISS score 0.4 excluded when `similarity_threshold=0.6`; `use_llm_reranking=False` leaves `LLMRanker.rerank` uncalled; `LLMRanker.rerank` called exactly once when three candidates exceed `top_k_final=2`; `filters={"domain": "nlp"}` removes task with `domain="vision"`. `retrieve_with_expanded_queries` — same `task_id` returned from multiple expansions appears exactly once in the output. |
+| `tests/unit/reasoning/test_validators.py` | 15 | `LLMParsingError` — subclasses `Exception`; carries message; can be raised and caught. `SourceTaskRecommendation` — valid construction with all five fields; `similarity_score < 0` rejected; `transfer_score > 1` rejected; missing required field raises `ValidationError`. `TransferRecommendationResponse` — valid JSON parsed via `model_validate_json`; invalid JSON raises; `confidence > 1` rejected; `expected_improvement < 0` rejected; all four strategy names accepted; empty `top_sources` is valid; multiple sources parsed; boundary values `confidence=0.0` and `expected_improvement=1.0` accepted. |
+| `tests/unit/reasoning/test_tools.py` | 17 | `TestToolDocstrings` — each of the four tools has a non-empty `description` (LangChain uses this as the tool description in the agent prompt). `TestTaskRetrievalTool` — returns JSON list with `task_id`, `score`, `reason` fields; returns `{"error": "..."}` when retriever not configured; `filters` JSON applied post-retrieval (domain mismatch returns `[]`); default empty filters pass all results. `TestEmbeddingSimilarityTool` — returns `{"similarity": float}` in `[-1, 1]`; returns error when not configured; returns error when task not found. `TestTransferScoringTool` — `"feature"` strategy returns `{"overall": 0.75, "recommended_layers": [...], ...}`; unknown strategy returns error; returns error when not configured. `TestPerformancePredictionTool` — returns `{"metrics": {"predicted_score": ...}}` from `OrcaMindClient`; returns error when not configured; returns error for missing task. |
+| `tests/unit/reasoning/test_agent.py` | 10 | `TestOrcaNetAgentTools` — agent constructed with four tools; all four tool names present (`task_retrieval_tool`, `embedding_similarity_tool`, `transfer_scoring_tool`, `performance_prediction_tool`). `TestRecommendTransfer` — returns `TransferRecommendationResponse` on valid JSON; parses `top_sources` correctly; strips markdown fences before parsing; invalid JSON triggers retry (`ainvoke` called 3× before success); two exhausted retries raise `LLMParsingError` with `ainvoke` called exactly 3×; corrective prompt used on retry (`original query + "JSON"` in second `HumanMessage`). `TestBuildLlm` — `llm_provider="openai"` constructs `ChatOpenAI`; `llm_provider="anthropic"` constructs `ChatAnthropic`. |
 
 **Notable patterns introduced in the OrcaNet test suite:**
 
@@ -2171,5 +2292,11 @@ Eleven unit test files across four directories, plus two empty `__init__.py` pla
 - *Per-parameter optimizer group verification* — `TestGetOptimizerWithLayerLR.test_transferred_params_get_decayed_lr` iterates every `param_groups` entry, resolves the parameter back to its name via `model.named_parameters()`, and asserts the learning rate equals `base_lr * decay` for transferred names and `base_lr` for all others. This catches silent bugs where a group contains the wrong parameter or the LR formula is applied to the wrong set — possible when `param_groups` is built by list comprehension over `named_parameters()` and the index mapping drifts.
 - *`SimpleNamespace` mock factory for multi-dependency tests* — `test_retriever.py` uses a `_make_mocks(task)` factory that returns all five `HybridRetriever` dependencies as a `SimpleNamespace`. Tests that need a default happy-path setup call `_make_mocks` and `_build_retriever`; tests that need custom behaviour (e.g. multi-task threshold filtering) replace individual attributes (`mocks.repo.get_by_id = AsyncMock(side_effect=...)`) after construction. This pattern avoids deeply nested fixture pyramids while keeping each test's intent visible in its own body.
 - *Real `torch.zeros` tensor in embedder mock* — the FAISS embedding call chain (`CrossDomainEmbedder.embed(tensor).squeeze(0).detach().numpy()`) involves three chained tensor operations. Using `MagicMock().embed.return_value = torch.zeros(25)` rather than a chain of `MagicMock` returns means the chain executes correctly against a real 1-D tensor: `squeeze(0)` is a no-op on a 1-D tensor, `detach()` returns the same tensor, and `numpy()` produces a valid array — so the FAISS mock receives a proper numpy array without needing a spec-heavy mock for the embedder.
+- *Autouse reset fixture for shared module state* — `test_tools.py` includes a `_reset_reasoning_tool_state` autouse fixture that calls every `set_*()` helper on all four tool modules with sentinel values (`None`, `{}`) both before and after each test. Module-level registries persist across tests in the same process; without explicit teardown, a test that sets `_retriever` leaks the value into the next test, producing false positives or brittle order dependencies. The before-yield clear guards against leftover state; the after-yield clear restores a clean baseline regardless of whether the test itself called any setters.
+- *Scale-invariant cosine similarity assertion* — `test_similarity_is_cosine_regardless_of_embedder_scale` supplies an embedder that returns `torch.ones(1, 64) * 5.0` (un-normalised, constant direction) and asserts `similarity == 1.0`. This is only true if the tool normalises the embeddings before the dot product. The test would pass incorrectly if the tool happened to call an embedder that returned unit vectors, but the constant-scale fixture breaks that coincidence, making the normalisation an explicit, verifiable contract rather than an implicit assumption.
 - *`side_effect` lambda for multi-task repository mocking* — when a test needs the repository to return different tasks for different UUIDs (e.g. threshold filtering), `repo.get_by_id = AsyncMock(side_effect=lambda uid: task_map.get(uid))` threads the `UUID` argument through a pre-populated dict. This is preferable to `side_effect=[task1, task2]` (order-dependent) and to separate `AsyncMock` instances (requires separate injection points).
 - *Pydantic field-constraint testing via score boundary* — `TestParseRankedList.test_score_out_of_range_returns_empty_list` submits `"score": 1.5` to trigger `_RankedItem`'s `Field(ge=0.0, le=1.0)` constraint, causing a `ValidationError` that `_parse_ranked_list` converts to `[]`. This pins the graceful-degradation contract: a misbehaving LLM that returns an out-of-bounds score never propagates a `ValidationError` to the caller. Testing the boundary directly (not just a valid score) ensures the `Field` constraint is actually present and enforced at parse time rather than being checked post-hoc.
+- *`importlib.import_module` to bypass package attribute shadowing* — `tools/__init__.py` exports `task_retrieval_tool` (and the other three) as module-level names, which shadows the submodule of the same name in the package namespace. `import orcanet.reasoning.tools.task_retrieval_tool as mod` resolves via `getattr` on the package, returning the `StructuredTool` object, not the module. `test_tools.py` works around this with a `_mod(name)` helper that calls `importlib.import_module(f"orcanet.reasoning.tools.{name}")`, which looks up `sys.modules` directly and returns the actual module object. Any project that exports a symbol with the same name as a submodule should anticipate this gotcha in tests.
+- *`side_effect` list for agent retry sequencing* — `test_invalid_json_triggers_retry` and `test_two_retries_exhausted_raises_llm_parsing_error` use `AsyncMock(side_effect=[response1, response2, response3])` on the `CompiledStateGraph.ainvoke` mock. Each call pops the next element from the list, so the test can exercise the exact sequence of agent responses without any shared state between calls. The `call_count` assertion afterwards locks in the number of retry attempts.
+- *`__new__` bypass for agent construction in fixtures* — the `_build_agent` helper uses `OrcaNetAgent.__new__(OrcaNetAgent)` to create an agent instance without running `__init__`, then manually sets `agent.tools`, `agent.llm`, and `agent._agent` to mocks. This avoids the LLM constructor call (which would attempt a real network connection) while still testing the full `recommend_transfer` code path. The pattern is appropriate here because `__init__`'s only side effects are DI registry calls and LLM construction — both tested separately in `TestBuildLlm`.
+- *`call_args_list` index access for corrective prompt assertion* — `test_corrective_prompt_used_on_retry` accesses `mock_graph.ainvoke.call_args_list[1][0][0]["messages"]` to inspect the `messages` argument passed on the second `ainvoke` call specifically. This verifies that the corrective prompt is sent on the retry, not on the first call, and that the corrective message contains both the original query string and the word `"JSON"` — confirming the `_CORRECTIVE_SUFFIX` is appended correctly.

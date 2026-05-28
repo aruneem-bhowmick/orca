@@ -1271,6 +1271,160 @@ Calls `QueryExpander.expand(query_description)`, then for the original descripti
 
 ---
 
+## OrcaNet Reasoning Python API
+
+The reasoning subpackage provides the LangChain-powered transfer recommendation agent as a pure-Python API. All public symbols are exported from `orcanet.reasoning`.
+
+```python
+from orcanet.reasoning import (
+    OrcaNetAgent,
+    TransferRecommendationResponse,
+    SourceTaskRecommendation,
+    LLMParsingError,
+)
+```
+
+### `LLMParsingError`
+
+Custom exception raised by `OrcaNetAgent.recommend_transfer` when the LLM's output cannot be parsed into a `TransferRecommendationResponse` after all retry attempts are exhausted.
+
+```python
+try:
+    result = await agent.recommend_transfer(query)
+except LLMParsingError as exc:
+    print(f"All retries failed: {exc}")
+```
+
+`LLMParsingError` subclasses `Exception` directly. The message string includes the number of attempts made and the last raw LLM output.
+
+### `SourceTaskRecommendation`
+
+Pydantic v2 model for a single source-task entry in the agent's response.
+
+| Field | Type | Constraints | Description |
+|---|---|---|---|
+| `task_id` | `str` | — | UUID string of the recommended source task |
+| `task_name` | `str` | — | Human-readable source task name |
+| `similarity_score` | `float` | `[0.0, 1.0]` | Embedding cosine similarity to the target task |
+| `transfer_score` | `float` | `[0.0, 1.0]` | Transferability score from `transfer_scoring_tool` |
+| `reasoning` | `str` | — | Agent's natural-language rationale |
+
+### `TransferRecommendationResponse`
+
+Pydantic v2 model for the full structured response returned by `OrcaNetAgent.recommend_transfer`.
+
+| Field | Type | Constraints | Description |
+|---|---|---|---|
+| `top_sources` | `list[SourceTaskRecommendation]` | may be empty | Ranked list of recommended source tasks |
+| `recommended_strategy` | `TransferStrategy` | `Literal["feature","weight","architecture","multi_task"]` | Transfer strategy name; Pydantic raises `ValidationError` for any value outside this set |
+| `expected_improvement` | `float` | `[0.0, 1.0]` | Predicted relative improvement from applying the transfer |
+| `explanation` | `str` | — | Comprehensive free-text explanation |
+| `confidence` | `float` | `[0.0, 1.0]` | Agent's self-assessed confidence in the recommendation |
+
+`TransferStrategy` is a public type alias exported from `orcanet.reasoning`:
+
+```python
+from orcanet.reasoning import TransferStrategy  # Literal["feature","weight","architecture","multi_task"]
+```
+
+### `OrcaNetAgent`
+
+LangChain-backed reasoning agent that runs a tool-augmented loop over four `@tool`-decorated async functions and returns a validated `TransferRecommendationResponse`.
+
+#### Constructor
+
+```python
+from orcanet.reasoning import OrcaNetAgent
+
+agent = OrcaNetAgent(
+    llm_provider="openai",          # "openai" | "anthropic" | "local"
+    model="gpt-4-turbo",
+    temperature=0.7,
+    api_key="sk-...",
+    retriever=hybrid_retriever,
+    embedder=cross_domain_embedder,
+    task_repository=task_repo,
+    transfer_strategies={"feature": feature_strategy, "weight": weight_strategy},
+    orcamind_client=orcamind_client,
+)
+```
+
+| Parameter | Type | Default | Description |
+|---|---|---|---|
+| `llm_provider` | `str` | `"openai"` | `"openai"` → `ChatOpenAI`; `"anthropic"` → `ChatAnthropic`; `"local"` → `ChatOpenAI` with `base_url` from `ORCANET_LOCAL_LLM_URL` env var (default `http://localhost:11434/v1`); any other value raises `ValueError` |
+| `model` | `str` | `"gpt-4-turbo"` | Model name forwarded to the LLM constructor |
+| `temperature` | `float` | `0.7` | Sampling temperature |
+| `api_key` | `str \| None` | `None` | API key for the chosen LLM provider |
+| `retriever` | `HybridRetriever \| None` | `None` | Injected into `task_retrieval_tool` |
+| `embedder` | `CrossDomainEmbedder \| None` | `None` | Injected into `embedding_similarity_tool` |
+| `task_repository` | `TaskRepository \| None` | `None` | Injected into `embedding_similarity_tool`, `transfer_scoring_tool`, and `performance_prediction_tool` |
+| `transfer_strategies` | `dict[str, TransferStrategy] \| None` | `None` | Injected into `transfer_scoring_tool`; keys are strategy names the LLM can request |
+| `orcamind_client` | `OrcaMindClient \| None` | `None` | Injected into `performance_prediction_tool` |
+
+Services not provided at construction time can be injected later by calling the module-level `set_*()` functions directly (e.g. `orcanet.reasoning.tools.task_retrieval_tool.set_retriever(r)`).
+
+#### `async recommend_transfer(query: str) -> TransferRecommendationResponse`
+
+Runs the agent loop for the given natural-language query and returns a validated `TransferRecommendationResponse`.
+
+**Retry behaviour:** up to `_MAX_RETRIES = 2` additional attempts (3 total) are made when the LLM's final message cannot be parsed. Each retry appends a corrective suffix to the original query instructing the LLM to respond only with valid JSON matching the required schema. `LLMParsingError` is raised after all attempts are exhausted.
+
+| Attempt | Outcome | Next action |
+|---|---|---|
+| 1 | Parse succeeds | Return `TransferRecommendationResponse` |
+| 1 | Parse fails | Log warning; retry with `query + corrective_suffix` |
+| 2 | Parse succeeds | Return immediately |
+| 2 | Parse fails | Log warning; retry again |
+| 3 | Parse succeeds | Return immediately |
+| 3 | Parse fails | Raise `LLMParsingError` |
+
+#### Tool functions
+
+The agent is equipped with four tools. Each tool's docstring is used by LangChain as the tool description shown to the LLM. All tools return JSON-encoded strings and return `{"error": "..."}` on configuration errors or lookup failures rather than raising.
+
+`OrcaNetAgent` uses per-instance `StructuredTool` objects produced by `make_<tool_name>(*deps)` factory functions. The factories close over the supplied dependencies, so each agent instance is fully isolated and constructing two agents with different dependencies does not cause cross-instance state leakage. The module-level `@tool`-decorated functions remain available for direct standalone use.
+
+| Tool | Signature | Returns | Notes |
+|---|---|---|---|
+| `task_retrieval_tool` | `(query: str, filters: str = "{}") → str` | JSON array of task objects with `task_id`, `score`, and `reason` fields | Factory: `make_task_retrieval_tool(retriever)` |
+| `embedding_similarity_tool` | `(task_id_a: str, task_id_b: str) → str` | `{"similarity": float}` in `[-1.0, 1.0]`; both embeddings are L2-normalised before the dot product | Factory: `make_embedding_similarity_tool(embedder, task_repository)` |
+| `transfer_scoring_tool` | `(source_task_id: str, target_task_id: str, strategy: str = "feature") → str` | `{"overall": float, "layer_scores": {...}, "recommended_layers": [...], "reasoning": "..."}` | Factory: `make_transfer_scoring_tool(transfer_strategies, task_repository)` |
+| `performance_prediction_tool` | `(task_id: str, model_config_json: str) → str` | `{"metrics": {**final_metrics}, "experiment_id": "..."}` — `model_config_json` must be a JSON object; arrays, scalars, or strings return an error | Factory: `make_performance_prediction_tool(orcamind_client, task_repository)` |
+
+#### End-to-end example
+
+```python
+import asyncio
+from orcanet.reasoning import OrcaNetAgent
+
+async def main():
+    agent = OrcaNetAgent(
+        llm_provider="openai",
+        model="gpt-4-turbo",
+        api_key="sk-...",
+        retriever=hybrid_retriever,
+        embedder=cross_domain_embedder,
+        task_repository=task_repo,
+        transfer_strategies={"feature": feature_strategy},
+        orcamind_client=orcamind_client,
+    )
+
+    result = await agent.recommend_transfer(
+        "Find the best source task for fine-tuning a retinal scan classifier."
+    )
+
+    print(result.recommended_strategy)          # "feature"
+    print(result.confidence)                     # 0.82
+    print(result.expected_improvement)           # 0.18
+    print(result.top_sources[0].task_name)       # "brain MRI classification"
+    print(result.top_sources[0].similarity_score) # 0.88
+    print(result.explanation)                    # full LLM explanation
+
+asyncio.run(main())
+```
+
+---
+
 ## Shared Schema Types
 
 All Pydantic models live in `packages/orca-shared/orca_shared/schemas/`.
