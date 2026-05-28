@@ -7,7 +7,7 @@ import logging
 from datetime import datetime
 from uuid import uuid4
 
-from langchain_core.tools import tool
+from langchain_core.tools import StructuredTool, tool
 
 logger = logging.getLogger(__name__)
 
@@ -23,10 +23,8 @@ def get_retriever():
     return _retriever
 
 
-@tool
-async def task_retrieval_tool(query: str, filters: str = "{}") -> str:
-    """Retrieve similar ML tasks from the registry. Returns JSON list of tasks with similarity scores."""
-    if _retriever is None:
+async def _run_task_retrieval(query: str, filters: str = "{}", *, retriever) -> str:
+    if retriever is None:
         return json.dumps({"error": "Task retriever not configured"})
     try:
         parsed_filters = json.loads(filters) if filters.strip() not in ("", "{}") else None
@@ -43,7 +41,7 @@ async def task_retrieval_tool(query: str, filters: str = "{}") -> str:
             created_at=datetime.utcnow(),
             updated_at=datetime.utcnow(),
         )
-        results = await _retriever.retrieve_with_expanded_queries(query, query_task)
+        results = await retriever.retrieve_with_expanded_queries(query, query_task)
         if parsed_filters:
             results = [
                 (t, s, r)
@@ -59,3 +57,22 @@ async def task_retrieval_tool(query: str, filters: str = "{}") -> str:
     except Exception as exc:
         logger.warning("task_retrieval_tool failed: %s", exc)
         return json.dumps({"error": str(exc)})
+
+
+@tool
+async def task_retrieval_tool(query: str, filters: str = "{}") -> str:
+    """Retrieve similar ML tasks from the registry. Returns JSON list of tasks with similarity scores."""
+    return await _run_task_retrieval(query, filters, retriever=_retriever)
+
+
+def make_task_retrieval_tool(retriever) -> StructuredTool:
+    """Return a new StructuredTool instance bound to the given retriever."""
+
+    async def _run(query: str, filters: str = "{}") -> str:
+        return await _run_task_retrieval(query, filters, retriever=retriever)
+
+    return StructuredTool.from_function(
+        coroutine=_run,
+        name="task_retrieval_tool",
+        description=task_retrieval_tool.description,
+    )

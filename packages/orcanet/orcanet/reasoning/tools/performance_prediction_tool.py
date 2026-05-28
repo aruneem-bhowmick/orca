@@ -44,25 +44,25 @@ def _task_to_embedding(task) -> list[float]:
     return vec.tolist()
 
 
-from langchain_core.tools import tool
+from langchain_core.tools import StructuredTool, tool
 
 
-@tool
-async def performance_prediction_tool(task_id: str, model_config_json: str) -> str:
-    """Predict the performance of a model configuration on a given task."""
-    if _orcamind_client is None or _task_repository is None:
+async def _run_performance_prediction(
+    task_id: str, model_config_json: str, *, orcamind_client, task_repository
+) -> str:
+    if orcamind_client is None or task_repository is None:
         return json.dumps({"error": "OrcaMind client or task repository not configured"})
     try:
         model_config = json.loads(model_config_json)
         if not isinstance(model_config, dict):
             return json.dumps({"error": "model_config_json must be a JSON object"})
-        task = await _task_repository.get_by_id(UUID(task_id))
+        task = await task_repository.get_by_id(UUID(task_id))
         if task is None:
             return json.dumps({"error": f"Task {task_id} not found"})
 
         task_embedding = _task_to_embedding(task)
         model_id = UUID(model_config.get("model_id", str(UUID(int=0))))
-        metrics = await _orcamind_client.predict_performance(task_embedding, model_id)
+        metrics = await orcamind_client.predict_performance(task_embedding, model_id)
         return json.dumps(
             {
                 "task_id": task_id,
@@ -73,3 +73,30 @@ async def performance_prediction_tool(task_id: str, model_config_json: str) -> s
     except Exception as exc:
         logger.warning("performance_prediction_tool failed: %s", exc)
         return json.dumps({"error": str(exc)})
+
+
+@tool
+async def performance_prediction_tool(task_id: str, model_config_json: str) -> str:
+    """Predict the performance of a model configuration on a given task."""
+    return await _run_performance_prediction(
+        task_id, model_config_json,
+        orcamind_client=_orcamind_client,
+        task_repository=_task_repository,
+    )
+
+
+def make_performance_prediction_tool(orcamind_client, task_repository) -> StructuredTool:
+    """Return a new StructuredTool instance bound to the given client and repository."""
+
+    async def _run(task_id: str, model_config_json: str) -> str:
+        return await _run_performance_prediction(
+            task_id, model_config_json,
+            orcamind_client=orcamind_client,
+            task_repository=task_repository,
+        )
+
+    return StructuredTool.from_function(
+        coroutine=_run,
+        name="performance_prediction_tool",
+        description=performance_prediction_tool.description,
+    )

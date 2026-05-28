@@ -45,25 +45,25 @@ def _task_to_feature_vector(task) -> np.ndarray:
     return vec
 
 
-from langchain_core.tools import tool
+from langchain_core.tools import StructuredTool, tool
 
 
-@tool
-async def embedding_similarity_tool(task_id_a: str, task_id_b: str) -> str:
-    """Compute embedding similarity between two tasks. Returns a float 0-1."""
-    if _embedder is None or _task_repository is None:
+async def _run_embedding_similarity(
+    task_id_a: str, task_id_b: str, *, embedder, task_repository
+) -> str:
+    if embedder is None or task_repository is None:
         return json.dumps({"error": "Embedder or task repository not configured"})
     try:
-        task_a = await _task_repository.get_by_id(UUID(task_id_a))
-        task_b = await _task_repository.get_by_id(UUID(task_id_b))
+        task_a = await task_repository.get_by_id(UUID(task_id_a))
+        task_b = await task_repository.get_by_id(UUID(task_id_b))
         if task_a is None or task_b is None:
             return json.dumps({"error": "One or both tasks not found"})
 
         vec_a = torch.from_numpy(_task_to_feature_vector(task_a)).unsqueeze(0)
         vec_b = torch.from_numpy(_task_to_feature_vector(task_b)).unsqueeze(0)
 
-        emb_a = _embedder.embed(vec_a).squeeze(0).detach()
-        emb_b = _embedder.embed(vec_b).squeeze(0).detach()
+        emb_a = embedder.embed(vec_a).squeeze(0).detach()
+        emb_b = embedder.embed(vec_b).squeeze(0).detach()
 
         emb_a = torch.nn.functional.normalize(emb_a, dim=0)
         emb_b = torch.nn.functional.normalize(emb_b, dim=0)
@@ -72,3 +72,26 @@ async def embedding_similarity_tool(task_id_a: str, task_id_b: str) -> str:
     except Exception as exc:
         logger.warning("embedding_similarity_tool failed: %s", exc)
         return json.dumps({"error": str(exc)})
+
+
+@tool
+async def embedding_similarity_tool(task_id_a: str, task_id_b: str) -> str:
+    """Compute embedding similarity between two tasks. Returns a float 0-1."""
+    return await _run_embedding_similarity(
+        task_id_a, task_id_b, embedder=_embedder, task_repository=_task_repository
+    )
+
+
+def make_embedding_similarity_tool(embedder, task_repository) -> StructuredTool:
+    """Return a new StructuredTool instance bound to the given embedder and repository."""
+
+    async def _run(task_id_a: str, task_id_b: str) -> str:
+        return await _run_embedding_similarity(
+            task_id_a, task_id_b, embedder=embedder, task_repository=task_repository
+        )
+
+    return StructuredTool.from_function(
+        coroutine=_run,
+        name="embedding_similarity_tool",
+        description=embedding_similarity_tool.description,
+    )

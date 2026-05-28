@@ -11,12 +11,10 @@ from langchain.agents import create_agent
 from langchain_core.messages import HumanMessage
 from pydantic import ValidationError
 
-from orcanet.reasoning.tools import (
-    embedding_similarity_tool,
-    performance_prediction_tool,
-    task_retrieval_tool,
-    transfer_scoring_tool,
-)
+from orcanet.reasoning.tools.embedding_similarity_tool import make_embedding_similarity_tool
+from orcanet.reasoning.tools.performance_prediction_tool import make_performance_prediction_tool
+from orcanet.reasoning.tools.task_retrieval_tool import make_task_retrieval_tool
+from orcanet.reasoning.tools.transfer_scoring_tool import make_transfer_scoring_tool
 from orcanet.reasoning.validators import LLMParsingError, TransferRecommendationResponse
 
 logger = logging.getLogger(__name__)
@@ -74,29 +72,11 @@ class OrcaNetAgent:
         transfer_strategies: dict | None = None,
         orcamind_client: Any = None,
     ) -> None:
-        import orcanet.reasoning.tools.embedding_similarity_tool as _em
-        import orcanet.reasoning.tools.performance_prediction_tool as _pp
-        import orcanet.reasoning.tools.task_retrieval_tool as _tr
-        import orcanet.reasoning.tools.transfer_scoring_tool as _ts
-
-        if retriever is not None:
-            _tr.set_retriever(retriever)
-        if embedder is not None:
-            _em.set_embedder(embedder)
-        if task_repository is not None:
-            _em.set_task_repository(task_repository)
-            _ts.set_task_repository(task_repository)
-            _pp.set_task_repository(task_repository)
-        if transfer_strategies is not None:
-            _ts.set_transfer_strategies(transfer_strategies)
-        if orcamind_client is not None:
-            _pp.set_orcamind_client(orcamind_client)
-
         self.tools = [
-            task_retrieval_tool,
-            embedding_similarity_tool,
-            transfer_scoring_tool,
-            performance_prediction_tool,
+            make_task_retrieval_tool(retriever),
+            make_embedding_similarity_tool(embedder, task_repository),
+            make_transfer_scoring_tool(transfer_strategies or {}, task_repository),
+            make_performance_prediction_tool(orcamind_client, task_repository),
         ]
         self.llm = self._build_llm(llm_provider, model, temperature, api_key)
         self._agent = create_agent(
