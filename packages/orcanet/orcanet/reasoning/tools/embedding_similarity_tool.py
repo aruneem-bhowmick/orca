@@ -65,6 +65,8 @@ async def embedding_similarity_tool(task_id_a: str, task_id_b: str) -> str:
         emb_a = _embedder.embed(vec_a).squeeze(0).detach()
         emb_b = _embedder.embed(vec_b).squeeze(0).detach()
 
+        emb_a = torch.nn.functional.normalize(emb_a, dim=0)
+        emb_b = torch.nn.functional.normalize(emb_b, dim=0)
         similarity = float(torch.dot(emb_a, emb_b).clamp(-1.0, 1.0).item())
         return json.dumps({"similarity": similarity})
     except Exception as exc:

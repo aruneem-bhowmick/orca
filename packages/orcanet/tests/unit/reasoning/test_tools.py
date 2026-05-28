@@ -135,6 +135,23 @@ class TestEmbeddingSimilarityTool:
         parsed = json.loads(result)
         assert "error" in parsed
 
+    @pytest.mark.asyncio
+    async def test_similarity_is_cosine_regardless_of_embedder_scale(
+        self, mock_embedder, mock_task_repository, sample_task, another_task
+    ) -> None:
+        from orcanet.reasoning.tools.embedding_similarity_tool import embedding_similarity_tool
+
+        mock_embedder.embed = lambda x: torch.ones(1, 64) * 5.0
+        em = _mod("embedding_similarity_tool")
+        em.set_embedder(mock_embedder)
+        em.set_task_repository(mock_task_repository)
+
+        result = await embedding_similarity_tool.ainvoke(
+            {"task_id_a": str(sample_task.task_id), "task_id_b": str(another_task.task_id)}
+        )
+        parsed = json.loads(result)
+        assert parsed["similarity"] == pytest.approx(1.0)
+
 
 class TestTransferScoringTool:
     @pytest.mark.asyncio
