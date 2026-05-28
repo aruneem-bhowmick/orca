@@ -152,6 +152,14 @@ class OrcaNetAgent:
         return TransferRecommendationResponse.model_validate_json(text)
 
     def _build_llm(self, provider: str, model: str, temperature: float, api_key: str | None):
+        if provider == "openai":
+            from langchain_openai import ChatOpenAI
+
+            return ChatOpenAI(
+                model=model,
+                temperature=temperature,
+                api_key=api_key,
+            )
         if provider == "anthropic":
             from langchain_anthropic import ChatAnthropic
 
@@ -170,10 +178,7 @@ class OrcaNetAgent:
                 api_key=api_key or "local",
                 base_url=base_url,
             )
-        from langchain_openai import ChatOpenAI
-
-        return ChatOpenAI(
-            model=model,
-            temperature=temperature,
-            api_key=api_key,
+        raise ValueError(
+            f"Unknown LLM provider {provider!r}. "
+            "Supported providers: 'openai', 'anthropic', 'local'."
         )

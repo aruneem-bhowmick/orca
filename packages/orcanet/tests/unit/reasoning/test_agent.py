@@ -201,3 +201,9 @@ class TestBuildLlm:
             mock_cls.return_value.bind_tools = MagicMock(return_value=mock_cls.return_value)
             OrcaNetAgent(llm_provider="anthropic", api_key="k")
             mock_cls.assert_called_once()
+
+    def test_unknown_provider_raises_value_error(self) -> None:
+        from orcanet.reasoning.agent import OrcaNetAgent
+
+        with pytest.raises(ValueError, match="Unknown LLM provider"):
+            OrcaNetAgent._build_llm(None, "bogus", "gpt-4", 0.7, None)
