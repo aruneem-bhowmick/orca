@@ -14,6 +14,28 @@ def _mod(name: str):
     return importlib.import_module(f"orcanet.reasoning.tools.{name}")
 
 
+@pytest.fixture(autouse=True)
+def _reset_reasoning_tool_state():
+    """Reset all module-level tool registries before and after each test."""
+    tr = _mod("task_retrieval_tool")
+    es = _mod("embedding_similarity_tool")
+    ts = _mod("transfer_scoring_tool")
+    pp = _mod("performance_prediction_tool")
+
+    def _clear():
+        tr.set_retriever(None)
+        es.set_embedder(None)
+        es.set_task_repository(None)
+        ts.set_transfer_strategies({})
+        ts.set_task_repository(None)
+        pp.set_orcamind_client(None)
+        pp.set_task_repository(None)
+
+    _clear()
+    yield
+    _clear()
+
+
 class TestToolDocstrings:
     """Each tool must have a docstring — LangChain uses it as the tool description."""
 
