@@ -96,6 +96,10 @@ class TestTransferRecommendationResponse:
             )
             assert resp.recommended_strategy == strategy
 
+    def test_invalid_strategy_name_rejected(self) -> None:
+        with pytest.raises(ValidationError):
+            TransferRecommendationResponse(**{**_VALID_RESPONSE, "recommended_strategy": "invalid"})
+
     def test_empty_top_sources_is_valid(self) -> None:
         resp = TransferRecommendationResponse(**{**_VALID_RESPONSE, "top_sources": []})
         assert resp.top_sources == []

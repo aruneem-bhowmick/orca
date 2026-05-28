@@ -5,6 +5,7 @@ from orcanet.reasoning.validators import (
     LLMParsingError,
     SourceTaskRecommendation,
     TransferRecommendationResponse,
+    TransferStrategy,
 )
 
 __all__ = [
@@ -12,4 +13,5 @@ __all__ = [
     "TransferRecommendationResponse",
     "SourceTaskRecommendation",
     "LLMParsingError",
+    "TransferStrategy",
 ]
