@@ -1316,10 +1316,16 @@ Pydantic v2 model for the full structured response returned by `OrcaNetAgent.rec
 | Field | Type | Constraints | Description |
 |---|---|---|---|
 | `top_sources` | `list[SourceTaskRecommendation]` | may be empty | Ranked list of recommended source tasks |
-| `recommended_strategy` | `str` | — | Transfer strategy name (`"feature"`, `"weight"`, `"architecture"`, `"multi_task"`) |
+| `recommended_strategy` | `TransferStrategy` | `Literal["feature","weight","architecture","multi_task"]` | Transfer strategy name; Pydantic raises `ValidationError` for any value outside this set |
 | `expected_improvement` | `float` | `[0.0, 1.0]` | Predicted relative improvement from applying the transfer |
 | `explanation` | `str` | — | Comprehensive free-text explanation |
 | `confidence` | `float` | `[0.0, 1.0]` | Agent's self-assessed confidence in the recommendation |
+
+`TransferStrategy` is a public type alias exported from `orcanet.reasoning`:
+
+```python
+from orcanet.reasoning import TransferStrategy  # Literal["feature","weight","architecture","multi_task"]
+```
 
 ### `OrcaNetAgent`
 
@@ -1345,7 +1351,7 @@ agent = OrcaNetAgent(
 
 | Parameter | Type | Default | Description |
 |---|---|---|---|
-| `llm_provider` | `str` | `"openai"` | `"openai"` → `ChatOpenAI`; `"anthropic"` → `ChatAnthropic`; `"local"` → `ChatOpenAI` with `base_url` from `ORCANET_LOCAL_LLM_URL` env var (default `http://localhost:11434/v1`) |
+| `llm_provider` | `str` | `"openai"` | `"openai"` → `ChatOpenAI`; `"anthropic"` → `ChatAnthropic`; `"local"` → `ChatOpenAI` with `base_url` from `ORCANET_LOCAL_LLM_URL` env var (default `http://localhost:11434/v1`); any other value raises `ValueError` |
 | `model` | `str` | `"gpt-4-turbo"` | Model name forwarded to the LLM constructor |
 | `temperature` | `float` | `0.7` | Sampling temperature |
 | `api_key` | `str \| None` | `None` | API key for the chosen LLM provider |
@@ -1376,12 +1382,14 @@ Runs the agent loop for the given natural-language query and returns a validated
 
 The agent is equipped with four tools. Each tool's docstring is used by LangChain as the tool description shown to the LLM. All tools return JSON-encoded strings and return `{"error": "..."}` on configuration errors or lookup failures rather than raising.
 
-| Tool | Signature | Returns |
-|---|---|---|
-| `task_retrieval_tool` | `(query: str, filters: str = "{}") → str` | JSON array of task objects with `task_id`, `score`, and `reason` fields |
-| `embedding_similarity_tool` | `(task_id_a: str, task_id_b: str) → str` | `{"similarity": float}` in `[-1.0, 1.0]` |
-| `transfer_scoring_tool` | `(source_task_id: str, target_task_id: str, strategy: str = "feature") → str` | `{"overall": float, "layer_scores": {...}, "recommended_layers": [...], "reasoning": "..."}` |
-| `performance_prediction_tool` | `(task_id: str, model_config_json: str) → str` | `{"metrics": {**final_metrics}, "experiment_id": "..."}` |
+`OrcaNetAgent` uses per-instance `StructuredTool` objects produced by `make_<tool_name>(*deps)` factory functions. The factories close over the supplied dependencies, so each agent instance is fully isolated and constructing two agents with different dependencies does not cause cross-instance state leakage. The module-level `@tool`-decorated functions remain available for direct standalone use.
+
+| Tool | Signature | Returns | Notes |
+|---|---|---|---|
+| `task_retrieval_tool` | `(query: str, filters: str = "{}") → str` | JSON array of task objects with `task_id`, `score`, and `reason` fields | Factory: `make_task_retrieval_tool(retriever)` |
+| `embedding_similarity_tool` | `(task_id_a: str, task_id_b: str) → str` | `{"similarity": float}` in `[-1.0, 1.0]`; both embeddings are L2-normalised before the dot product | Factory: `make_embedding_similarity_tool(embedder, task_repository)` |
+| `transfer_scoring_tool` | `(source_task_id: str, target_task_id: str, strategy: str = "feature") → str` | `{"overall": float, "layer_scores": {...}, "recommended_layers": [...], "reasoning": "..."}` | Factory: `make_transfer_scoring_tool(transfer_strategies, task_repository)` |
+| `performance_prediction_tool` | `(task_id: str, model_config_json: str) → str` | `{"metrics": {**final_metrics}, "experiment_id": "..."}` — `model_config_json` must be a JSON object; arrays, scalars, or strings return an error | Factory: `make_performance_prediction_tool(orcamind_client, task_repository)` |
 
 #### End-to-end example
 
