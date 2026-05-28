@@ -54,6 +54,8 @@ async def performance_prediction_tool(task_id: str, model_config_json: str) -> s
         return json.dumps({"error": "OrcaMind client or task repository not configured"})
     try:
         model_config = json.loads(model_config_json)
+        if not isinstance(model_config, dict):
+            return json.dumps({"error": "model_config_json must be a JSON object"})
         task = await _task_repository.get_by_id(UUID(task_id))
         if task is None:
             return json.dumps({"error": f"Task {task_id} not found"})

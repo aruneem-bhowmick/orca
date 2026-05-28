@@ -266,3 +266,20 @@ class TestPerformancePredictionTool:
         )
         parsed = json.loads(result)
         assert "error" in parsed
+
+    @pytest.mark.asyncio
+    async def test_returns_error_for_non_object_json(
+        self, mock_orcamind_client, mock_task_repository, sample_task
+    ) -> None:
+        from orcanet.reasoning.tools.performance_prediction_tool import performance_prediction_tool
+
+        pp = _mod("performance_prediction_tool")
+        pp.set_orcamind_client(mock_orcamind_client)
+        pp.set_task_repository(mock_task_repository)
+
+        for bad_json in ("[1,2,3]", '"just a string"', "42", "true"):
+            result = await performance_prediction_tool.ainvoke(
+                {"task_id": str(sample_task.task_id), "model_config_json": bad_json}
+            )
+            parsed = json.loads(result)
+            assert "error" in parsed, f"Expected error for model_config_json={bad_json!r}"
