@@ -102,7 +102,15 @@ class OrcaLabClient(_BaseAsyncClient):
     async def start_sweep(
         self, experiment_id: UUID, search_space: dict[str, Any]
     ) -> str:
+        """Launch a hyperparameter sweep for an existing experiment.
+
+        Not yet implemented — raises :exc:`NotImplementedError`.
+        """
         raise NotImplementedError("OrcaLabClient.start_sweep is not yet implemented")
 
     async def get_sweep_status(self, sweep_id: str) -> str:
+        """Return the current status string for a running sweep.
+
+        Not yet implemented — raises :exc:`NotImplementedError`.
+        """
         raise NotImplementedError("OrcaLabClient.get_sweep_status is not yet implemented")

@@ -25,10 +25,13 @@ from orca_shared.schemas.transfer import TransferMapping
 
 
 class TaskRepository:
+    """Async repository for ML task records."""
+
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
     async def create(self, data: TaskCreate) -> Task:
+        """Insert a new task and return the stored record."""
         row = TaskORM(
             task_id=uuid.uuid4(),
             name=data.name,
@@ -47,6 +50,7 @@ class TaskRepository:
         return Task.model_validate(row)
 
     async def get_by_id(self, task_id: uuid.UUID) -> Optional[Task]:
+        """Return the task with *task_id*, or ``None`` if it does not exist."""
         result = await self._session.execute(
             select(TaskORM).where(TaskORM.task_id == task_id)
         )
@@ -56,6 +60,7 @@ class TaskRepository:
     async def list_by_domain(
         self, domain: str, *, limit: int = 500, offset: int = 0
     ) -> list[TaskSummary]:
+        """Return tasks whose domain matches *domain*, with pagination."""
         result = await self._session.execute(
             select(TaskORM).where(TaskORM.domain == domain).limit(limit).offset(offset)
         )
@@ -64,6 +69,7 @@ class TaskRepository:
     async def list_by_type(
         self, task_type: str, *, limit: int = 500, offset: int = 0
     ) -> list[TaskSummary]:
+        """Return tasks whose task_type matches *task_type*, with pagination."""
         result = await self._session.execute(
             select(TaskORM).where(TaskORM.task_type == task_type).limit(limit).offset(offset)
         )
@@ -72,12 +78,14 @@ class TaskRepository:
     async def list_all(
         self, *, limit: int = 500, offset: int = 0
     ) -> list[TaskSummary]:
+        """Return all tasks as summaries, with pagination."""
         result = await self._session.execute(
             select(TaskORM).limit(limit).offset(offset)
         )
         return [TaskSummary.model_validate(r) for r in result.scalars()]
 
     async def update_embedding(self, task_id: uuid.UUID, embedding_id: uuid.UUID) -> None:
+        """Associate *embedding_id* with the task identified by *task_id*."""
         await self._session.execute(
             update(TaskORM)
             .where(TaskORM.task_id == task_id)
@@ -108,6 +116,8 @@ class TaskRepository:
 
 
 class ExperimentRepository:
+    """Async repository for experiment lifecycle records."""
+
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
@@ -118,6 +128,7 @@ class ExperimentRepository:
         training_config: dict[str, Any] | None = None,
         created_by: str | None = None,
     ) -> ExperimentResult:
+        """Create a new experiment record in ``PENDING`` status and return it."""
         row = ExperimentORM(
             experiment_id=uuid.uuid4(),
             task_id=task_id,
@@ -131,6 +142,7 @@ class ExperimentRepository:
         return ExperimentResult.model_validate(row)
 
     async def get_by_id(self, experiment_id: uuid.UUID) -> Optional[ExperimentResult]:
+        """Return the experiment with *experiment_id*, or ``None`` if absent."""
         result = await self._session.execute(
             select(ExperimentORM).where(ExperimentORM.experiment_id == experiment_id)
         )
@@ -140,6 +152,7 @@ class ExperimentRepository:
     async def list_by_task(
         self, task_id: uuid.UUID, *, limit: int = 500, offset: int = 0
     ) -> list[ExperimentResult]:
+        """Return experiments for *task_id*, with pagination."""
         result = await self._session.execute(
             select(ExperimentORM)
             .where(ExperimentORM.task_id == task_id)
@@ -149,6 +162,7 @@ class ExperimentRepository:
         return [ExperimentResult.model_validate(r) for r in result.scalars()]
 
     async def update_status(self, experiment_id: uuid.UUID, status: str) -> None:
+        """Unconditionally set the status of *experiment_id* to *status*."""
         await self._session.execute(
             update(ExperimentORM)
             .where(ExperimentORM.experiment_id == experiment_id)
@@ -176,6 +190,7 @@ class ExperimentRepository:
     async def list_all(
         self, *, limit: int = 500, offset: int = 0
     ) -> list[ExperimentResult]:
+        """Return all experiments ordered by ID, with pagination."""
         result = await self._session.execute(
             select(ExperimentORM)
             .order_by(ExperimentORM.experiment_id)
@@ -207,6 +222,7 @@ class ExperimentRepository:
     async def mark_complete(
         self, experiment_id: uuid.UUID, mlflow_run_id: str
     ) -> None:
+        """Transition *experiment_id* to ``completed`` and record the MLflow run ID."""
         await self._session.execute(
             update(ExperimentORM)
             .where(ExperimentORM.experiment_id == experiment_id)
@@ -219,6 +235,8 @@ class ExperimentRepository:
 
 
 class PerformanceRepository:
+    """Async repository for per-run metric records."""
+
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
@@ -230,6 +248,7 @@ class PerformanceRepository:
         epoch: int | None = None,
         is_final: bool = False,
     ) -> MetricPoint:
+        """Record a single metric observation and return it as a :class:`MetricPoint`."""
         row = PerformanceORM(
             performance_id=uuid.uuid4(),
             experiment_id=experiment_id,
@@ -243,6 +262,7 @@ class PerformanceRepository:
         return MetricPoint(name=name, value=value, step=epoch, is_final=is_final)
 
     async def get_final_metrics(self, experiment_id: uuid.UUID) -> PerformanceMetrics:
+        """Return the final (``is_final=True``) metrics for *experiment_id*."""
         result = await self._session.execute(
             select(PerformanceORM).where(
                 PerformanceORM.experiment_id == experiment_id,
@@ -263,6 +283,7 @@ class PerformanceRepository:
     async def get_history(
         self, experiment_id: uuid.UUID, metric_name: str
     ) -> list[MetricPoint]:
+        """Return all recorded values for *metric_name* within *experiment_id*."""
         result = await self._session.execute(
             select(PerformanceORM).where(
                 PerformanceORM.experiment_id == experiment_id,
@@ -282,6 +303,7 @@ class PerformanceRepository:
     async def list_all_with_context(
         self, metric_name: str = "accuracy"
     ) -> list[PerformanceSummary]:
+        """Return mean *metric_name* grouped by task name and model architecture."""
         result = await self._session.execute(
             select(
                 TaskORM.name.label("task_name"),
@@ -306,6 +328,8 @@ class PerformanceRepository:
 
 
 class SearchSpaceRepository:
+    """Async repository for hyperparameter search space definitions."""
+
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
@@ -314,6 +338,7 @@ class SearchSpaceRepository:
         name: str | None,
         definition: dict,
     ) -> SearchSpaceRecord:
+        """Persist a new search space definition and return the stored record."""
         row = SearchSpaceORM(
             search_space_id=uuid.uuid4(),
             name=name,
@@ -327,6 +352,7 @@ class SearchSpaceRepository:
     async def list_all(
         self, *, limit: int = 500, offset: int = 0
     ) -> list[SearchSpaceRecord]:
+        """Return all search space records ordered by ID, with pagination."""
         result = await self._session.execute(
             select(SearchSpaceORM)
             .order_by(SearchSpaceORM.search_space_id)
@@ -337,6 +363,8 @@ class SearchSpaceRepository:
 
 
 class EmbeddingRepository:
+    """Async repository for task embedding vectors."""
+
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
@@ -347,6 +375,7 @@ class EmbeddingRepository:
         embedding_type: str = "statistical",
         model_version: str = "v1",
     ) -> Embedding:
+        """Store a new embedding vector for *task_id* and return the record."""
         row = EmbeddingORM(
             embedding_id=uuid.uuid4(),
             task_id=task_id,
@@ -361,6 +390,7 @@ class EmbeddingRepository:
         return Embedding.model_validate(row)
 
     async def get_by_id(self, embedding_id: uuid.UUID) -> Optional[Embedding]:
+        """Return the embedding with *embedding_id*, or ``None`` if absent."""
         result = await self._session.execute(
             select(EmbeddingORM).where(EmbeddingORM.embedding_id == embedding_id)
         )

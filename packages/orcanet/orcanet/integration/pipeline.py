@@ -54,6 +54,15 @@ class TransferPipeline:
         transfer_strategies: dict[str, TransferStrategy],
         task_repository: TaskRepository,
     ) -> None:
+        """Initialise the pipeline with its three upstream service clients.
+
+        Args:
+            orcamind_client: Client for the OrcaMind meta-learning service.
+            orcalab_client: Client for the OrcaLab experiment orchestration service.
+            transfer_strategies: Mapping of strategy name to :class:`TransferStrategy`
+                instance (e.g. ``{"feature": FeatureTransfer(...)}``.
+            task_repository: Repository for reading tasks and persisting mappings.
+        """
         self._orcamind = orcamind_client
         self._orcalab = orcalab_client
         self._strategies = transfer_strategies
