@@ -647,6 +647,70 @@ Runs the `OrcaNetAgent` reasoning loop and returns a structured recommendation. 
 
 ---
 
+#### `POST /api/v1/transfer/validate` — Three-way pipeline validation
+
+Runs the full `TransferPipeline`: scores the transfer, optionally triggers an OrcaLab validation experiment, and persists a `TransferMapping` to the database.
+
+**Request body** — `TransferValidateRequest`
+
+```json
+{
+  "source_task_id": "uuid-string",
+  "target_task_id": "uuid-string",
+  "strategy":       "feature",
+  "validate":       true
+}
+```
+
+| Field            | Type      | Default    | Description                                                              |
+|------------------|-----------|------------|--------------------------------------------------------------------------|
+| `source_task_id` | `string`  | —          | UUID of the source task (model donor)                                    |
+| `target_task_id` | `string`  | —          | UUID of the target task (model recipient)                                |
+| `strategy`       | `string`  | `"feature"` | Transfer strategy — `"feature"`, `"weight"`, or `"architecture"`        |
+| `validate`       | `boolean` | `true`     | When `true` and `score.overall > 0.4`, triggers an OrcaLab experiment   |
+
+**Response** — `200 OK`
+
+```json
+{
+  "score": {
+    "overall":             0.78,
+    "layer_scores":        { "layer0": 0.78 },
+    "recommended_layers":  ["layer0"],
+    "reasoning":           "High CKA alignment across shared layers"
+  },
+  "experiment_result": {
+    "experiment_id": "uuid",
+    "task_id":       "uuid",
+    "model_id":      null,
+    "status":        "COMPLETED",
+    "metrics":       { "accuracy": 0.90, "baseline_accuracy": 0.78 }
+  },
+  "mapping": {
+    "mapping_id":     "uuid",
+    "source_task_id": "uuid",
+    "target_task_id": "uuid",
+    "transfer_score": 0.78,
+    "transfer_type":  "feature",
+    "metadata":       null,
+    "created_at":     "datetime"
+  },
+  "improvement_over_baseline": 0.12
+}
+```
+
+`experiment_result` is `null` when `validate=false`, when the score is at or below the 0.4 threshold, or when the OrcaLab experiment times out (3600 s). `improvement_over_baseline` is `null` whenever `experiment_result` is `null` or when `accuracy`/`baseline_accuracy` are absent from the metrics.
+
+**Error responses**
+
+| Code | Condition |
+|------|-----------|
+| 400  | Unknown `strategy` value |
+| 404  | `source_task_id` or `target_task_id` not found |
+| 503  | OrcaMind is unreachable or returned a server error (`ServiceUnavailableError`) |
+
+---
+
 ### Retrieval
 
 #### `POST /api/v1/retrieve` — Retrieve similar tasks
