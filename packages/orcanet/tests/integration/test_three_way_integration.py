@@ -140,11 +140,12 @@ def mock_strategy(high_score: TransferScore) -> MagicMock:
 def mock_orcamind() -> AsyncMock:
     client = AsyncMock()
     model_summary = MagicMock()
-    model_summary.model_id = uuid4()
+    _model_id = uuid4()
+    model_summary.model_id = _model_id
     model_summary.name = "resnet18"
     model_summary.architecture = "resnet"
     model_summary.model_dump = MagicMock(
-        return_value={"model_id": str(uuid4()), "name": "resnet18", "architecture": "resnet"}
+        return_value={"model_id": str(_model_id), "name": "resnet18", "architecture": "resnet"}
     )
     client.get_best_model = AsyncMock(return_value=model_summary)
     return client
