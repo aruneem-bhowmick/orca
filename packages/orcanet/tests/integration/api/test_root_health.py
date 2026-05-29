@@ -21,16 +21,37 @@ class TestRoot:
 
 class TestHealth:
     @respx.mock
-    async def test_all_healthy(
+    async def test_shallow_health_omits_llm_check(
         self,
         client: AsyncClient,
         mock_agent: AsyncMock,
     ) -> None:
+        """Default (shallow) probe does not invoke the LLM and returns llm: null."""
+        respx.get("http://orcamind-test/health").mock(return_value=Response(200))
+        respx.get("http://orcalab-test/health").mock(return_value=Response(200))
+
+        response = await client.get("/health")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "healthy"
+        assert body["orcamind"] is True
+        assert body["orcalab"] is True
+        assert body["llm"] is None
+        mock_agent.llm.ainvoke.assert_not_called()
+
+    @respx.mock
+    async def test_deep_health_all_healthy(
+        self,
+        client: AsyncClient,
+        mock_agent: AsyncMock,
+    ) -> None:
+        """Deep probe checks all three dependencies and reports healthy when all pass."""
         respx.get("http://orcamind-test/health").mock(return_value=Response(200))
         respx.get("http://orcalab-test/health").mock(return_value=Response(200))
         mock_agent.llm.ainvoke = AsyncMock(return_value="pong")
 
-        response = await client.get("/health")
+        response = await client.get("/health", params={"deep": "true"})
 
         assert response.status_code == 200
         body = response.json()
@@ -47,7 +68,6 @@ class TestHealth:
     ) -> None:
         respx.get("http://orcamind-test/health").mock(return_value=Response(503))
         respx.get("http://orcalab-test/health").mock(return_value=Response(200))
-        mock_agent.llm.ainvoke = AsyncMock(return_value="pong")
 
         response = await client.get("/health")
 
@@ -63,11 +83,12 @@ class TestHealth:
         client: AsyncClient,
         mock_agent: AsyncMock,
     ) -> None:
+        """Deep probe with a failing LLM reports degraded and llm: false."""
         respx.get("http://orcamind-test/health").mock(return_value=Response(200))
         respx.get("http://orcalab-test/health").mock(return_value=Response(200))
         mock_agent.llm.ainvoke = AsyncMock(side_effect=RuntimeError("LLM unreachable"))
 
-        response = await client.get("/health")
+        response = await client.get("/health", params={"deep": "true"})
 
         assert response.status_code == 200
         body = response.json()
@@ -82,7 +103,6 @@ class TestHealth:
     ) -> None:
         respx.get("http://orcamind-test/health").mock(return_value=Response(200))
         respx.get("http://orcalab-test/health").mock(return_value=Response(503))
-        mock_agent.llm.ainvoke = AsyncMock(return_value="pong")
 
         response = await client.get("/health")
 

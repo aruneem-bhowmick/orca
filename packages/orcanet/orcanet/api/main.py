@@ -158,13 +158,16 @@ def create_app() -> FastAPI:
         return {"name": "OrcaNet", "version": "1.0.0", "status": "ok"}
 
     @app.get("/health", tags=["health"])
-    async def health(request: Request) -> dict:
-        orcamind_ok, orcalab_ok, llm_ok = await asyncio.gather(
+    async def health(request: Request, deep: bool = False) -> dict:
+        checks = await asyncio.gather(
             _check_http(request.app.state.orcamind_url, timeout=3.0),
             _check_http(request.app.state.orcalab_url, timeout=3.0),
-            _check_llm(request.app.state.agent, timeout=5.0),
         )
-        overall_ok = orcamind_ok and orcalab_ok and llm_ok
+        orcamind_ok, orcalab_ok = checks
+        llm_ok: bool | None = None
+        if deep:
+            llm_ok = await _check_llm(request.app.state.agent, timeout=5.0)
+        overall_ok = orcamind_ok and orcalab_ok and (llm_ok is not False)
         return {
             "status": "healthy" if overall_ok else "degraded",
             "orcamind": orcamind_ok,
