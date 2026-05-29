@@ -93,9 +93,15 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     yield
 
-    await engine.dispose()
-    await app.state.orcamind_client.aclose()
-    await app.state.orcalab_client.aclose()
+    results = await asyncio.gather(
+        engine.dispose(),
+        app.state.orcamind_client.aclose(),
+        app.state.orcalab_client.aclose(),
+        return_exceptions=True,
+    )
+    for exc in results:
+        if isinstance(exc, Exception):
+            logger.warning("Error during shutdown cleanup: %s", exc)
 
 
 async def _check_http(url: str, timeout: float) -> bool:
