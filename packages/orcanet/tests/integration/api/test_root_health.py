@@ -2,17 +2,11 @@
 
 from __future__ import annotations
 
-from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 import respx
 from httpx import AsyncClient, Response
-
-from orcanet.api.main import create_app
-from httpx import ASGITransport
-
-from tests.integration.api.conftest import _build_app
 
 
 class TestRoot:
@@ -29,26 +23,14 @@ class TestHealth:
     @respx.mock
     async def test_all_healthy(
         self,
-        mock_session,
-        mock_task_repo,
-        mock_agent,
-        mock_retriever,
-        mock_embedder,
-        mock_transfer_strategies,
-        mock_orcamind_client,
-        mock_orcalab_client,
+        client: AsyncClient,
+        mock_agent: AsyncMock,
     ) -> None:
         respx.get("http://orcamind-test/health").mock(return_value=Response(200))
         respx.get("http://orcalab-test/health").mock(return_value=Response(200))
         mock_agent.llm.ainvoke = AsyncMock(return_value="pong")
 
-        app = _build_app(
-            mock_session, mock_task_repo, mock_agent, mock_retriever,
-            mock_embedder, mock_transfer_strategies, mock_orcamind_client,
-            mock_orcalab_client,
-        )
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            response = await ac.get("/health")
+        response = await client.get("/health")
 
         assert response.status_code == 200
         body = response.json()
@@ -60,26 +42,14 @@ class TestHealth:
     @respx.mock
     async def test_orcamind_down_reports_degraded(
         self,
-        mock_session,
-        mock_task_repo,
-        mock_agent,
-        mock_retriever,
-        mock_embedder,
-        mock_transfer_strategies,
-        mock_orcamind_client,
-        mock_orcalab_client,
+        client: AsyncClient,
+        mock_agent: AsyncMock,
     ) -> None:
         respx.get("http://orcamind-test/health").mock(return_value=Response(503))
         respx.get("http://orcalab-test/health").mock(return_value=Response(200))
         mock_agent.llm.ainvoke = AsyncMock(return_value="pong")
 
-        app = _build_app(
-            mock_session, mock_task_repo, mock_agent, mock_retriever,
-            mock_embedder, mock_transfer_strategies, mock_orcamind_client,
-            mock_orcalab_client,
-        )
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            response = await ac.get("/health")
+        response = await client.get("/health")
 
         assert response.status_code == 200
         body = response.json()
@@ -90,28 +60,33 @@ class TestHealth:
     @respx.mock
     async def test_llm_failure_reports_degraded(
         self,
-        mock_session,
-        mock_task_repo,
-        mock_agent,
-        mock_retriever,
-        mock_embedder,
-        mock_transfer_strategies,
-        mock_orcamind_client,
-        mock_orcalab_client,
+        client: AsyncClient,
+        mock_agent: AsyncMock,
     ) -> None:
         respx.get("http://orcamind-test/health").mock(return_value=Response(200))
         respx.get("http://orcalab-test/health").mock(return_value=Response(200))
         mock_agent.llm.ainvoke = AsyncMock(side_effect=RuntimeError("LLM unreachable"))
 
-        app = _build_app(
-            mock_session, mock_task_repo, mock_agent, mock_retriever,
-            mock_embedder, mock_transfer_strategies, mock_orcamind_client,
-            mock_orcalab_client,
-        )
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
-            response = await ac.get("/health")
+        response = await client.get("/health")
 
         assert response.status_code == 200
         body = response.json()
         assert body["status"] == "degraded"
         assert body["llm"] is False
+
+    @respx.mock
+    async def test_orcalab_down_reports_degraded(
+        self,
+        client: AsyncClient,
+        mock_agent: AsyncMock,
+    ) -> None:
+        respx.get("http://orcamind-test/health").mock(return_value=Response(200))
+        respx.get("http://orcalab-test/health").mock(return_value=Response(503))
+        mock_agent.llm.ainvoke = AsyncMock(return_value="pong")
+
+        response = await client.get("/health")
+
+        assert response.status_code == 200
+        body = response.json()
+        assert body["status"] == "degraded"
+        assert body["orcalab"] is False
