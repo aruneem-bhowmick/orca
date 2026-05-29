@@ -515,7 +515,7 @@ Returns mean metric values grouped by `(task_name, architecture)` — the data s
 
 OrcaNet exposes a FastAPI HTTP service for cross-domain transfer scoring, LLM-powered recommendations, task retrieval, and domain-invariant embedding. All endpoints are live and covered by integration tests.
 
-The `X-LLM-Provider` request header can be set to `openai`, `anthropic`, or `local` on any endpoint that invokes the reasoning agent (`/transfer/recommend`, `/explain`) to override the default LLM provider configured at startup without restarting the service.
+The `X-LLM-Provider` request header can be set to `openai`, `anthropic`, or `local` on any endpoint that invokes the reasoning agent (`/transfer/recommend`, `/explain`) to override the default LLM provider configured at startup without restarting the service. Values outside this set are rejected with **400**.
 
 ### Root and health
 
@@ -529,7 +529,13 @@ The `X-LLM-Provider` request header can be set to `openai`, `anthropic`, or `loc
 
 #### `GET /health` — Dependency health check
 
-Checks OrcaMind (`GET <orcamind_url>/health`, 3 s timeout), OrcaLab (`GET <orcalab_url>/health`, 3 s timeout), and the LLM backend (`agent.llm.ainvoke("ping")`, 5 s timeout) in parallel.
+Checks OrcaMind (`GET <orcamind_url>/health`, 3 s timeout) and OrcaLab (`GET <orcalab_url>/health`, 3 s timeout) in parallel. The LLM backend check (`agent.llm.ainvoke("ping")`, 5 s timeout) is **opt-in** to avoid recurring token costs from frequent load-balancer probes.
+
+**Query parameters**
+
+| Parameter | Type   | Default | Description                                        |
+|-----------|--------|---------|----------------------------------------------------|
+| `deep`    | `bool` | `false` | When `true`, also probes the LLM backend           |
 
 **Response**
 
@@ -542,7 +548,14 @@ Checks OrcaMind (`GET <orcamind_url>/health`, 3 s timeout), OrcaLab (`GET <orcal
 }
 ```
 
-`status` is `"degraded"` when any component is unreachable; the endpoint always returns **200**.
+`llm` is `null` when `deep=false` (the LLM check was not performed). `status` is `"degraded"` when any checked component is unreachable; the endpoint always returns **200**.
+
+**Examples**
+
+```http
+GET /health          → shallow probe; llm: null
+GET /health?deep=true → full probe; llm: true|false
+```
 
 ---
 
@@ -711,15 +724,15 @@ Produces a 64-dim L2-normalised embedding from the `CrossDomainEmbedder` (DANN-b
 }
 ```
 
-At least one of `task_id` or `statistical_features` must be provided; omitting both returns **422**.
+Exactly one of `task_id` or `statistical_features` must be provided; omitting both **or** supplying both returns **422**.
 
-| Field                  | Type                   | Description                                            |
-|------------------------|------------------------|--------------------------------------------------------|
-| `task_id`              | `string \| null`       | UUID of a registered task; features derived from DB    |
-| `statistical_features` | `list[float] \| null`  | Pre-computed 25-dim feature vector                     |
-| `description`          | `string \| null`       | Reserved; not used in current embedding computation    |
+| Field                  | Type                    | Description                                                         |
+|------------------------|-------------------------|---------------------------------------------------------------------|
+| `task_id`              | `string \| null`        | UUID of a registered task; features derived from DB                 |
+| `statistical_features` | `list[float] \| null`   | Pre-computed feature vector — **must be exactly 25 elements**       |
+| `description`          | `string \| null`        | Reserved; not used in current embedding computation                 |
 
-**Response** — or **404** (task not found) / **422** (no source provided)
+**Response** — `EmbedResponse` or **404** (task not found) / **422** (validation error)
 
 ```json
 { "embedding": [0.021, -0.133, ..., 0.047] }
@@ -737,11 +750,11 @@ All three services expose a health endpoint with no authentication requirement.
 |----------|---------------|-------------------------|-------------------------------------------------------|
 | OrcaMind | `GET /health` | `"healthy" \| "degraded"` | `"db": bool`, `"faiss": bool`, `"mlflow": bool`     |
 | OrcaLab  | `GET /health` | `"healthy" \| "degraded"` | `"db": bool`, `"prefect": bool`                     |
-| OrcaNet  | `GET /health` | `"healthy" \| "degraded"` | `"orcamind": bool`, `"orcalab": bool`, `"llm": bool` |
+| OrcaNet  | `GET /health` | `"healthy" \| "degraded"` | `"orcamind": bool`, `"orcalab": bool`, `"llm": bool \| null` (null unless `?deep=true`) |
 
 The OrcaMind health endpoint reports `faiss: false` when the FAISS index has not been built yet. The service remains fully operational — only `/recommend-model` and `/similar-tasks` return 503 until the index is populated.
 
-The OrcaNet health endpoint is always **200**. When one or more downstream components are unreachable, `status` is `"degraded"` but the individual flag for that component is `false`, allowing callers to determine exactly which dependency is unavailable.
+The OrcaNet health endpoint is always **200**. When one or more checked components are unreachable, `status` is `"degraded"` but the individual flag for that component is `false`, allowing callers to determine exactly which dependency is unavailable. The `llm` field is `null` for shallow probes and `true|false` only when `?deep=true` is passed.
 
 ---
 
