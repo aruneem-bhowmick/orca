@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from uuid import UUID
 
@@ -43,5 +44,5 @@ async def cross_domain_embed(
         feature_vec = np.array(body.statistical_features, dtype=np.float32)
 
     input_tensor = torch.from_numpy(feature_vec).unsqueeze(0)
-    embedding = embedder.embed(input_tensor).squeeze(0).tolist()
-    return EmbedResponse(embedding=embedding)
+    embedding_tensor = await asyncio.to_thread(embedder.embed, input_tensor)
+    return EmbedResponse(embedding=embedding_tensor.squeeze(0).tolist())
