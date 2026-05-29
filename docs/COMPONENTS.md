@@ -2206,7 +2206,7 @@ Eight live endpoints served by FastAPI, documented at `GET /docs`. The service r
 | Method | Path | Status | Description |
 |---|---|---|---|
 | `GET` | `/` | 200 | Service info `{name, version, status}` |
-| `GET` | `/health` | 200 | Parallel health probe — `{status, orcamind, orcalab, llm}` booleans; always 200 even when degraded |
+| `GET` | `/health` | 200 | Parallel health probe — `{status, orcamind, orcalab, llm}`; `llm` is `null` unless `?deep=true`; always 200 even when degraded |
 | `POST` | `/api/v1/transfer/score` | 200 / 400 / 404 | CKA-based transfer score between two registered tasks; 400 for unknown strategy, 404 for missing task |
 | `POST` | `/api/v1/transfer/recommend` | 200 / 502 | `OrcaNetAgent` recommendation; supports `X-LLM-Provider` header override; 502 on agent error |
 | `GET` | `/api/v1/transfer/{mapping_id}` | 200 / 404 / 422 | Stored `TransferMapping` record from DB; 404 when not found |
@@ -2219,24 +2219,25 @@ Eight live endpoints served by FastAPI, documented at `GET /docs`. The service r
 | File | Role |
 |---|---|
 | `api/main.py` | `create_app()` factory; ASGI lifespan initialises DB engine, `CrossDomainEmbedder`, FAISS index, `HybridRetriever`, `OrcaNetAgent`, `OrcaMindClient`, `OrcaLabClient`, and transfer strategies dict |
-| `api/deps.py` | `Depends()` providers for all services; `get_orcanet_agent()` reads the `X-LLM-Provider` header and builds a fresh `OrcaNetAgent` for per-request provider overrides |
-| `api/schemas.py` | `TransferScoreRequest`, `TransferRecommendRequest`, `RetrieveRequest`, `EmbedRequest`, `ExplainRequest` |
+| `api/deps.py` | `Depends()` providers for all services; `get_orcanet_agent()` validates the `X-LLM-Provider` header against the allowed set and injects a request-scoped `TaskRepository` into override agents |
+| `api/schemas.py` | `TransferScoreRequest`, `TransferRecommendRequest`, `RetrieveRequest`, `EmbedRequest` (XOR validation + 25-dim pin on `statistical_features`), `ExplainRequest`, `EmbedResponse`, `ExplainResponse` |
 | `api/middleware.py` | CORS (`CORS_ORIGINS` env) + request-logging `BaseHTTPMiddleware` |
 | `api/routers/transfer.py` | Score, recommend, and mapping lookup endpoints |
 | `api/routers/retrieve.py` | Retrieve endpoint; delegates to `HybridRetriever` |
 | `api/routers/explain.py` | Explain endpoint; catches `LLMParsingError` → 502 |
 | `api/routers/embed.py` | Cross-domain embed endpoint; accepts task ID or raw feature vector |
 
-**`X-LLM-Provider` header override** — any request to `/transfer/recommend` or `/explain` may include this header set to `openai`, `anthropic`, or `local`. When present, `get_orcanet_agent()` constructs a fresh `OrcaNetAgent` using that provider and the `ORCANET_LLM_API_KEY` environment variable, bypassing the shared singleton. This allows individual clients to target different LLM backends without restarting the service.
+**`X-LLM-Provider` header override** — any request to `/transfer/recommend` or `/explain` may include this header set to `openai`, `anthropic`, or `local`. Values outside this closed set return **400** immediately. When a valid provider is present, `get_orcanet_agent()` constructs a fresh `OrcaNetAgent` using that provider, the `ORCANET_LLM_API_KEY` environment variable, and a request-scoped `TaskRepository` — so override agents retain full task-lookup and transfer-scoring capabilities, identical to the shared singleton.
 
-**Health check internals** — `GET /health` fires three concurrent tasks via `asyncio.gather`:
+**Health check internals** — `GET /health` fires two concurrent tasks via `asyncio.gather`:
 1. `httpx.AsyncClient.get(orcamind_url + "/health")` with 3 s timeout
 2. `httpx.AsyncClient.get(orcalab_url + "/health")` with 3 s timeout
-3. `agent.llm.ainvoke("ping")` with 5 s timeout via `asyncio.wait_for`
 
-Any exception (network error, timeout, bad status code) sets the corresponding flag to `false`. The endpoint never returns a non-200 status.
+The LLM check (`agent.llm.ainvoke("ping")`, 5 s timeout via `asyncio.wait_for`) is opt-in and only runs when the `?deep=true` query parameter is supplied. Omitting it avoids recurring token costs from frequent load-balancer probes. The `llm` field in the response is `null` for shallow probes. Any exception sets the corresponding flag to `false`. The endpoint never returns a non-200 status.
 
-**Integration test suite** — `tests/integration/api/` uses `httpx.AsyncClient` + `ASGITransport` (no lifespan). All services are pre-populated via `app.dependency_overrides` and manual `app.state` assignment. OrcaMind/OrcaLab HTTP calls in the health tests are intercepted by `respx`. Coverage of the new API code exceeds 90 %.
+**Lifespan shutdown** — the three cleanup tasks (`engine.dispose()`, `orcamind_client.aclose()`, `orcalab_client.aclose()`) run concurrently via `asyncio.gather(return_exceptions=True)` so a failure in any one does not prevent the others from completing.
+
+**Integration test suite** — `tests/integration/api/` uses `httpx.AsyncClient` + `ASGITransport` (no lifespan). All services are pre-populated via `app.dependency_overrides` and manual `app.state` assignment. OrcaMind/OrcaLab HTTP calls in the health tests are intercepted by `respx`. The async `client` fixture is decorated with `@pytest_asyncio.fixture` for compatibility with pytest-asyncio strict mode. Coverage of the new API code exceeds 90 %.
 
 ### CLI (`orcanet`)
 
