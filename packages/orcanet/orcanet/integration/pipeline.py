@@ -93,8 +93,10 @@ class TransferPipeline:
             ServiceUnavailableError: When OrcaMind cannot be reached.
             KeyError: When *strategy_name* is not registered.
             ValueError: When either task ID is not found in the repository.
-            TimeoutError: When OrcaLab validation exceeds the timeout (mapping is
-                still saved; ``experiment_result`` will be ``None``).
+
+        Note:
+            If OrcaLab validation times out, the mapping is still saved and
+            ``experiment_result`` will be ``None`` (no exception is raised).
         """
         source_uuid = UUID(source_task_id)
         target_uuid = UUID(target_task_id)
