@@ -39,6 +39,8 @@ def get_hybrid_retriever(request: Request) -> HybridRetriever:
     return retriever
 
 
+
+
 def get_cross_domain_embedder(request: Request) -> CrossDomainEmbedder:
     return request.app.state.embedder
 

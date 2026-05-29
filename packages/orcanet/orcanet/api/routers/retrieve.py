@@ -36,10 +36,10 @@ async def retrieve_similar_tasks(
 
     if body.query_description:
         raw = await retriever.retrieve_with_expanded_queries(
-            body.query_description, query_task
+            body.query_description, query_task, task_repository=task_repo
         )
     else:
-        raw = await retriever.retrieve(query_task, filters=body.filters)
+        raw = await retriever.retrieve(query_task, filters=body.filters, task_repository=task_repo)
 
     results = raw[: body.top_k]
     return [
