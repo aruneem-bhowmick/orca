@@ -27,8 +27,6 @@ logger = logging.getLogger("orcanet.api")
 
 router = APIRouter(prefix="/transfer", tags=["transfer"])
 
-_VALID_STRATEGIES = {"feature", "weight", "architecture"}
-
 
 @router.post("/score")
 async def score_transfer(
