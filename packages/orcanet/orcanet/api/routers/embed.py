@@ -12,7 +12,7 @@ from fastapi import APIRouter, Depends, HTTPException
 
 from orca_shared.registry.repository import TaskRepository
 from orcanet.api.deps import get_cross_domain_embedder, get_task_repo
-from orcanet.api.schemas import EmbedRequest
+from orcanet.api.schemas import EmbedRequest, EmbedResponse
 from orcanet.embeddings.cross_domain import CrossDomainEmbedder
 from orcanet.retrieval.retriever import _task_to_feature_vector
 
@@ -21,12 +21,12 @@ logger = logging.getLogger("orcanet.api")
 router = APIRouter(tags=["embed"])
 
 
-@router.post("/cross-domain-embed")
+@router.post("/cross-domain-embed", response_model=EmbedResponse)
 async def cross_domain_embed(
     body: EmbedRequest,
     task_repo: TaskRepository = Depends(get_task_repo),
     embedder: CrossDomainEmbedder = Depends(get_cross_domain_embedder),
-) -> dict:
+) -> EmbedResponse:
     """Return a 64-dim domain-invariant embedding for the given task."""
     if body.task_id is not None:
         try:
@@ -44,4 +44,4 @@ async def cross_domain_embed(
 
     input_tensor = torch.from_numpy(feature_vec).unsqueeze(0)
     embedding = embedder.embed(input_tensor).squeeze(0).tolist()
-    return {"embedding": embedding}
+    return EmbedResponse(embedding=embedding)
