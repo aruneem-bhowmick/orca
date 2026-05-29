@@ -38,6 +38,7 @@ def _make_task(
     domain: str = "vision",
     task_type: str = "classification",
 ) -> Task:
+    """Return a minimal :class:`Task` instance for use in tests."""
     tid = task_id or uuid4()
     return Task(
         task_id=tid,
@@ -56,6 +57,7 @@ def _make_task(
 
 
 def _make_mapping(source_id: UUID, target_id: UUID, score: float = 0.75) -> TransferMapping:
+    """Return a minimal :class:`TransferMapping` instance for use in tests."""
     return TransferMapping(
         mapping_id=uuid4(),
         source_task_id=source_id,
@@ -72,6 +74,7 @@ def _make_experiment_result(
     accuracy: float = 0.88,
     baseline: float = 0.76,
 ) -> ExperimentResult:
+    """Return a minimal :class:`ExperimentResult` instance for use in tests."""
     return ExperimentResult(
         experiment_id=uuid4(),
         task_id=None,
@@ -91,26 +94,31 @@ def _make_experiment_result(
 
 @pytest.fixture
 def source_id() -> UUID:
+    """Provide a random UUID for the source task."""
     return uuid4()
 
 
 @pytest.fixture
 def target_id() -> UUID:
+    """Provide a random UUID for the target task."""
     return uuid4()
 
 
 @pytest.fixture
 def source_task(source_id: UUID) -> Task:
+    """Return a vision-domain source task keyed to *source_id*."""
     return _make_task(task_id=source_id, name="source-task")
 
 
 @pytest.fixture
 def target_task(target_id: UUID) -> Task:
+    """Return an NLP-domain target task keyed to *target_id*."""
     return _make_task(task_id=target_id, name="target-task", domain="nlp")
 
 
 @pytest.fixture
 def high_score() -> TransferScore:
+    """Return a :class:`TransferScore` with overall 0.82 (above the 0.4 threshold)."""
     return TransferScore(
         overall=0.82,
         layer_scores={"layer0": 0.9, "layer1": 0.74},
@@ -121,6 +129,7 @@ def high_score() -> TransferScore:
 
 @pytest.fixture
 def low_score() -> TransferScore:
+    """Return a :class:`TransferScore` with overall 0.25 (below the 0.4 threshold)."""
     return TransferScore(
         overall=0.25,
         layer_scores={"layer0": 0.2},
@@ -131,6 +140,7 @@ def low_score() -> TransferScore:
 
 @pytest.fixture
 def mock_strategy(high_score: TransferScore) -> MagicMock:
+    """Return a mock transfer strategy that always returns *high_score*."""
     strategy = MagicMock()
     strategy.score_transfer = MagicMock(return_value=high_score)
     return strategy
@@ -138,6 +148,7 @@ def mock_strategy(high_score: TransferScore) -> MagicMock:
 
 @pytest.fixture
 def mock_orcamind() -> AsyncMock:
+    """Return a mock OrcaMindClient whose get_best_model returns a consistent ModelSummary."""
     client = AsyncMock()
     model_summary = MagicMock()
     _model_id = uuid4()
@@ -153,6 +164,7 @@ def mock_orcamind() -> AsyncMock:
 
 @pytest.fixture
 def mock_orcalab(target_id: UUID) -> AsyncMock:
+    """Return a mock OrcaLabClient that successfully creates and completes an experiment."""
     client = AsyncMock()
     exp_id = str(uuid4())
     client.create_experiment = AsyncMock(return_value=exp_id)
@@ -162,6 +174,7 @@ def mock_orcalab(target_id: UUID) -> AsyncMock:
 
 @pytest.fixture
 def mock_repo(source_task: Task, target_task: Task, source_id: UUID, target_id: UUID) -> AsyncMock:
+    """Return a mock TaskRepository with source/target tasks pre-seeded."""
     repo = AsyncMock()
 
     async def _get_by_id(task_id: UUID) -> Task | None:
@@ -185,6 +198,7 @@ def pipeline(
     mock_strategy: MagicMock,
     mock_repo: AsyncMock,
 ) -> TransferPipeline:
+    """Return a :class:`TransferPipeline` wired to mock upstream clients."""
     return TransferPipeline(
         orcamind_client=mock_orcamind,
         orcalab_client=mock_orcalab,
@@ -199,6 +213,8 @@ def pipeline(
 
 
 class TestFullPipelineHappyPath:
+    """Verify nominal pipeline behaviour when all upstreams respond successfully."""
+
     @pytest.mark.asyncio
     async def test_returns_transfer_validation_result(
         self,
@@ -206,6 +222,7 @@ class TestFullPipelineHappyPath:
         source_id: UUID,
         target_id: UUID,
     ) -> None:
+        """Pipeline result is an instance of TransferValidationResult."""
         result = await pipeline.recommend_and_validate(
             str(source_id), str(target_id), validate=True
         )
@@ -218,6 +235,7 @@ class TestFullPipelineHappyPath:
         source_id: UUID,
         target_id: UUID,
     ) -> None:
+        """The overall transfer score is non-negative."""
         result = await pipeline.recommend_and_validate(str(source_id), str(target_id))
         assert result.score.overall >= 0.0
 
@@ -228,6 +246,7 @@ class TestFullPipelineHappyPath:
         source_id: UUID,
         target_id: UUID,
     ) -> None:
+        """Experiment result is populated when the score exceeds the 0.4 validation threshold."""
         result = await pipeline.recommend_and_validate(
             str(source_id), str(target_id), validate=True
         )
@@ -242,6 +261,7 @@ class TestFullPipelineHappyPath:
         target_id: UUID,
         mock_repo: AsyncMock,
     ) -> None:
+        """save_transfer_mapping is called with the correct source and target UUIDs."""
         result = await pipeline.recommend_and_validate(str(source_id), str(target_id))
         saved_args = mock_repo.save_transfer_mapping.call_args
         assert saved_args.kwargs["source_task_id"] == source_id
@@ -254,6 +274,7 @@ class TestFullPipelineHappyPath:
         source_id: UUID,
         target_id: UUID,
     ) -> None:
+        """improvement_over_baseline equals accuracy minus baseline_accuracy."""
         result = await pipeline.recommend_and_validate(str(source_id), str(target_id))
         # accuracy=0.88, baseline=0.76 → improvement ≈ 0.12
         assert result.improvement_over_baseline is not None
@@ -267,6 +288,7 @@ class TestFullPipelineHappyPath:
         source_id: UUID,
         target_id: UUID,
     ) -> None:
+        """OrcaMind's get_best_model is called exactly once with the source UUID."""
         await pipeline.recommend_and_validate(str(source_id), str(target_id))
         mock_orcamind.get_best_model.assert_awaited_once_with(source_id)
 
@@ -278,6 +300,7 @@ class TestFullPipelineHappyPath:
         source_id: UUID,
         target_id: UUID,
     ) -> None:
+        """OrcaLab's create_experiment receives the expected validation tags."""
         await pipeline.recommend_and_validate(str(source_id), str(target_id))
         call_kwargs = mock_orcalab.create_experiment.call_args.kwargs
         assert "transfer_validation" in call_kwargs["tags"]
@@ -291,6 +314,8 @@ class TestFullPipelineHappyPath:
 
 
 class TestValidationSkippedBelowThreshold:
+    """Verify that OrcaLab is not called when the score is below the threshold."""
+
     @pytest.mark.asyncio
     async def test_experiment_result_none_when_score_below_threshold(
         self,
@@ -301,6 +326,7 @@ class TestValidationSkippedBelowThreshold:
         target_id: UUID,
         low_score: TransferScore,
     ) -> None:
+        """experiment_result is None and OrcaLab is not called when score < 0.4."""
         strategy = MagicMock()
         strategy.score_transfer = MagicMock(return_value=low_score)
         pl = TransferPipeline(
@@ -321,6 +347,7 @@ class TestValidationSkippedBelowThreshold:
         source_id: UUID,
         target_id: UUID,
     ) -> None:
+        """experiment_result is None and OrcaLab is not called when validate=False."""
         result = await pipeline.recommend_and_validate(
             str(source_id), str(target_id), validate=False
         )
@@ -337,6 +364,7 @@ class TestValidationSkippedBelowThreshold:
         target_id: UUID,
         low_score: TransferScore,
     ) -> None:
+        """The transfer mapping is persisted even when OrcaLab validation is skipped."""
         strategy = MagicMock()
         strategy.score_transfer = MagicMock(return_value=low_score)
         pl = TransferPipeline(
@@ -355,6 +383,8 @@ class TestValidationSkippedBelowThreshold:
 
 
 class TestOrcaLabTimeout:
+    """Verify graceful handling of OrcaLab timeouts."""
+
     @pytest.mark.asyncio
     async def test_timeout_propagated_as_timeout_error(
         self,
@@ -365,6 +395,7 @@ class TestOrcaLabTimeout:
         source_id: UUID,
         target_id: UUID,
     ) -> None:
+        """Pipeline completes without raising when OrcaLab times out; experiment_result is None."""
         mock_orcalab.wait_for_completion = AsyncMock(side_effect=TimeoutError("timed out"))
         pl = TransferPipeline(
             orcamind_client=mock_orcamind,
@@ -387,6 +418,7 @@ class TestOrcaLabTimeout:
         source_id: UUID,
         target_id: UUID,
     ) -> None:
+        """validated_performance in the mapping metadata is None after a timeout."""
         # create_experiment succeeds, wait_for_completion times out
         mock_orcalab.wait_for_completion = AsyncMock(side_effect=TimeoutError("timed out"))
         pl = TransferPipeline(
@@ -406,6 +438,8 @@ class TestOrcaLabTimeout:
 
 
 class TestOrcaMindUnavailable:
+    """Verify that OrcaMind connectivity failures surface as ServiceUnavailableError."""
+
     @pytest.mark.asyncio
     async def test_connect_error_raises_service_unavailable(
         self,
@@ -415,6 +449,7 @@ class TestOrcaMindUnavailable:
         source_id: UUID,
         target_id: UUID,
     ) -> None:
+        """httpx.ConnectError from OrcaMind is wrapped in ServiceUnavailableError."""
         orcamind = AsyncMock()
         orcamind.get_best_model = AsyncMock(
             side_effect=httpx.ConnectError("Connection refused")
@@ -437,6 +472,7 @@ class TestOrcaMindUnavailable:
         source_id: UUID,
         target_id: UUID,
     ) -> None:
+        """A 5xx HTTP response from OrcaMind is wrapped in ServiceUnavailableError."""
         orcamind = AsyncMock()
         resp = MagicMock()
         resp.status_code = 503
@@ -459,12 +495,15 @@ class TestOrcaMindUnavailable:
 
 
 class TestTaskNotFound:
+    """Verify that missing source or target tasks raise ValueError."""
+
     @pytest.mark.asyncio
     async def test_missing_source_task_raises_value_error(
         self,
         pipeline: TransferPipeline,
         target_id: UUID,
     ) -> None:
+        """ValueError is raised when the source task UUID is not in the repository."""
         with pytest.raises(ValueError, match="Source task"):
             await pipeline.recommend_and_validate(str(uuid4()), str(target_id))
 
@@ -474,6 +513,7 @@ class TestTaskNotFound:
         pipeline: TransferPipeline,
         source_id: UUID,
     ) -> None:
+        """ValueError is raised when the target task UUID is not in the repository."""
         with pytest.raises(ValueError, match="Target task"):
             await pipeline.recommend_and_validate(str(source_id), str(uuid4()))
 
@@ -484,6 +524,8 @@ class TestTaskNotFound:
 
 
 class TestStrategySelection:
+    """Verify that the chosen strategy is correctly applied and persisted."""
+
     @pytest.mark.asyncio
     async def test_default_strategy_is_feature(
         self,
@@ -494,6 +536,7 @@ class TestStrategySelection:
         source_id: UUID,
         target_id: UUID,
     ) -> None:
+        """The default strategy_name is 'feature', reflected in the persisted mapping."""
         pl = TransferPipeline(
             orcamind_client=mock_orcamind,
             orcalab_client=mock_orcalab,
@@ -511,6 +554,7 @@ class TestStrategySelection:
         source_id: UUID,
         target_id: UUID,
     ) -> None:
+        """KeyError is raised when the requested strategy is not registered."""
         with pytest.raises(KeyError):
             await pipeline.recommend_and_validate(
                 str(source_id), str(target_id), strategy_name="nonexistent"

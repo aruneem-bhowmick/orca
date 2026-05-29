@@ -17,6 +17,8 @@ from orcanet.transfer.types import TransferScore
 
 
 class TestTransferScore:
+    """Tests for POST /api/v1/transfer/score."""
+
     async def test_returns_score_for_valid_tasks(
         self,
         client: AsyncClient,
@@ -24,6 +26,7 @@ class TestTransferScore:
         target_task_id: UUID,
         mock_transfer_score: TransferScore,
     ) -> None:
+        """200 response with score fields for two known tasks."""
         response = await client.post(
             "/api/v1/transfer/score",
             json={
@@ -45,6 +48,7 @@ class TestTransferScore:
         source_task_id: UUID,
         target_task_id: UUID,
     ) -> None:
+        """400 response when the requested strategy is not registered."""
         response = await client.post(
             "/api/v1/transfer/score",
             json={
@@ -61,6 +65,7 @@ class TestTransferScore:
         client: AsyncClient,
         target_task_id: UUID,
     ) -> None:
+        """404 response when the source task UUID is not in the repository."""
         response = await client.post(
             "/api/v1/transfer/score",
             json={
@@ -76,6 +81,7 @@ class TestTransferScore:
         client: AsyncClient,
         source_task_id: UUID,
     ) -> None:
+        """404 response when the target task UUID is not in the repository."""
         response = await client.post(
             "/api/v1/transfer/score",
             json={
@@ -88,12 +94,15 @@ class TestTransferScore:
 
 
 class TestTransferRecommend:
+    """Tests for POST /api/v1/transfer/recommend."""
+
     async def test_returns_recommendation(
         self,
         client: AsyncClient,
         target_task_id: UUID,
         source_task_id: UUID,
     ) -> None:
+        """200 response containing top_sources and recommended_strategy fields."""
         response = await client.post(
             "/api/v1/transfer/recommend",
             json={
@@ -116,6 +125,7 @@ class TestTransferRecommend:
         mock_agent: AsyncMock,
         target_task_id: UUID,
     ) -> None:
+        """502 response when the reasoning agent raises an unexpected exception."""
         mock_agent.recommend_transfer.side_effect = RuntimeError("LLM down")
         response = await client.post(
             "/api/v1/transfer/recommend",
@@ -128,6 +138,8 @@ class TestTransferRecommend:
 
 
 class TestGetTransferMapping:
+    """Tests for GET /api/v1/transfer/{mapping_id}."""
+
     async def test_returns_mapping_for_known_id(
         self,
         client: AsyncClient,
@@ -137,6 +149,7 @@ class TestGetTransferMapping:
         now,
         mock_session: AsyncMock,
     ) -> None:
+        """200 response with mapping fields when the mapping ID exists."""
         from orca_shared.registry.models import TransferMapping as TransferMappingORM
 
         orm_row = MagicMock(spec=TransferMappingORM)
@@ -163,6 +176,7 @@ class TestGetTransferMapping:
         client: AsyncClient,
         mock_session: AsyncMock,
     ) -> None:
+        """404 response when no mapping row matches the given ID."""
         result_mock = MagicMock()
         result_mock.scalar_one_or_none.return_value = None
         mock_session.execute = AsyncMock(return_value=result_mock)
@@ -171,6 +185,7 @@ class TestGetTransferMapping:
         assert response.status_code == 404
 
     async def test_invalid_uuid_returns_422(self, client: AsyncClient) -> None:
+        """422 response when the mapping_id path parameter is not a valid UUID."""
         response = await client.get("/api/v1/transfer/not-a-uuid")
         assert response.status_code == 422
 
@@ -185,6 +200,7 @@ class TestValidateTransfer:
         score: float = 0.78,
         with_experiment: bool = True,
     ) -> TransferValidationResult:
+        """Build a canned :class:`TransferValidationResult` for use as a mock return value."""
         now = datetime.now(timezone.utc)
         ts = TransferScore(
             overall=score,
@@ -227,6 +243,7 @@ class TestValidateTransfer:
         source_task_id: UUID,
         target_task_id: UUID,
     ) -> None:
+        """200 response containing score, mapping, and experiment_result fields."""
         from orcanet.api.deps import get_transfer_pipeline
 
         pipeline_mock = AsyncMock()
@@ -265,6 +282,7 @@ class TestValidateTransfer:
         source_task_id: UUID,
         target_task_id: UUID,
     ) -> None:
+        """200 response with null experiment_result when validate=false is passed."""
         from orcanet.api.deps import get_transfer_pipeline
 
         pipeline_mock = AsyncMock()
@@ -301,6 +319,7 @@ class TestValidateTransfer:
         source_task_id: UUID,
         target_task_id: UUID,
     ) -> None:
+        """503 response when the pipeline raises ServiceUnavailableError."""
         from orcanet.api.deps import get_transfer_pipeline
 
         pipeline_mock = AsyncMock()
@@ -332,6 +351,7 @@ class TestValidateTransfer:
         source_task_id: UUID,
         target_task_id: UUID,
     ) -> None:
+        """404 response when the pipeline raises ValueError for a missing task."""
         from orcanet.api.deps import get_transfer_pipeline
 
         pipeline_mock = AsyncMock()
@@ -362,6 +382,7 @@ class TestValidateTransfer:
         source_task_id: UUID,
         target_task_id: UUID,
     ) -> None:
+        """400 response when the pipeline raises KeyError for an unknown strategy."""
         from orcanet.api.deps import get_transfer_pipeline
 
         pipeline_mock = AsyncMock()
