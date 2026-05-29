@@ -2275,7 +2275,7 @@ Eight live endpoints served by FastAPI, documented at `GET /docs`. The service r
 |---|---|
 | `api/main.py` | `create_app()` factory; ASGI lifespan initialises DB engine, `CrossDomainEmbedder`, FAISS index, `HybridRetriever`, `OrcaNetAgent`, `OrcaMindClient`, `OrcaLabClient`, and transfer strategies dict |
 | `api/deps.py` | `Depends()` providers for all services; `get_orcanet_agent()` validates the `X-LLM-Provider` header against the allowed set and injects a request-scoped `TaskRepository` into override agents; `get_transfer_pipeline()` constructs a `TransferPipeline` wired to `app.state` clients |
-| `api/schemas.py` | `TransferScoreRequest`, `TransferRecommendRequest`, `TransferValidateRequest` (`run_validation` field aliased as `validate`), `RetrieveRequest`, `EmbedRequest` (XOR validation + 25-dim pin on `statistical_features`), `ExplainRequest`, `EmbedResponse`, `ExplainResponse` |
+| `api/schemas.py` | `TransferScoreRequest`, `TransferRecommendRequest`, `TransferValidateRequest` (`run_validation` field aliased as `validate`), `RetrieveRequest`, `EmbedRequest` (XOR validation + 25-dim pin on `statistical_features`), `ExplainRequest`, `EmbedResponse`, `ExplainResponse`, `TransferScoreResponse`, `TransferValidateResponse` (typed `response_model` for the validate endpoint) |
 | `api/middleware.py` | CORS (`CORS_ORIGINS` env) + request-logging `BaseHTTPMiddleware` |
 | `api/routers/transfer.py` | Score, recommend, validate, and mapping lookup endpoints |
 | `integration/pipeline.py` | `TransferPipeline` orchestrator; `TransferValidationResult` schema; `ServiceUnavailableError` |

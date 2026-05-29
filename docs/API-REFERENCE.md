@@ -669,7 +669,7 @@ Runs the full `TransferPipeline`: scores the transfer, optionally triggers an Or
 | `strategy`       | `string`  | `"feature"` | Transfer strategy — `"feature"`, `"weight"`, or `"architecture"`        |
 | `validate`       | `boolean` | `true`     | When `true` and `score.overall > 0.4`, triggers an OrcaLab experiment   |
 
-**Response** — `200 OK`
+**Response** — `200 OK` — `TransferValidateResponse`
 
 ```json
 {
