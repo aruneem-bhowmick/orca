@@ -3,7 +3,7 @@
 All three are clients backed by httpx.AsyncClient. Tests cover:
   - Constructor URL normalisation
   - httpx Timeout and Limits configuration
-  - HTTP behaviour for each OrcaMindClient method (via respx mocking)
+  - HTTP behaviour for OrcaMindClient and OrcaLabClient (via respx mocking)
   - aclose() delegates to the underlying httpx client
   - Async context manager protocol
 """
@@ -24,7 +24,7 @@ from orca_shared.schemas.embedding import Embedding
 from orca_shared.schemas.metrics import PerformanceMetrics
 from orca_shared.schemas.model import ModelSummary
 from orca_shared.schemas.recommendation import FeedbackRequest, ModelRecommendation, RecommendationRequest
-from orca_shared.schemas.training import TrainingConfig
+from orca_shared.schemas.training import ExperimentResult, TrainingConfig
 
 # Shared test UUIDs
 TASK_ID = uuid.uuid4()
@@ -242,14 +242,139 @@ class TestOrcaLabClientConstruction:
         assert limits.max_connections == 20
 
 
-class TestOrcaLabClientStubs:
-    @pytest.mark.asyncio
-    async def test_create_experiment_raises(self):
-        c = OrcaLabClient("http://lab")
-        cfg = TrainingConfig()
-        with pytest.raises(NotImplementedError):
-            await c.create_experiment(TASK_ID, MODEL_ID, cfg)
+def _experiment_json(experiment_id: uuid.UUID = EXPERIMENT_ID, status: str = "COMPLETED") -> dict:
+    return {
+        "experiment_id": str(experiment_id),
+        "task_id": str(TASK_ID),
+        "model_id": str(MODEL_ID),
+        "status": status,
+        "mlflow_run_id": None,
+        "started_at": NOW.isoformat(),
+        "completed_at": NOW.isoformat(),
+        "metrics": {"accuracy": 0.91},
+    }
 
+
+class TestOrcaLabClientHTTP:
+    @pytest.mark.asyncio
+    async def test_create_experiment_posts_and_returns_id(self):
+        with respx.mock(base_url="http://lab") as rm:
+            rm.post("/api/v1/experiments").respond(
+                200, json={"experiment_id": str(EXPERIMENT_ID)}
+            )
+            c = OrcaLabClient("http://lab")
+            result = await c.create_experiment(
+                task_id=str(TASK_ID),
+                model_config={"model_id": str(MODEL_ID), "name": "resnet18"},
+                tags=["transfer_validation"],
+            )
+        assert result == str(EXPERIMENT_ID)
+
+    @pytest.mark.asyncio
+    async def test_create_experiment_includes_model_id_in_payload(self):
+        with respx.mock(base_url="http://lab") as rm:
+            route = rm.post("/api/v1/experiments").respond(
+                200, json={"experiment_id": str(EXPERIMENT_ID)}
+            )
+            c = OrcaLabClient("http://lab")
+            await c.create_experiment(
+                task_id=str(TASK_ID),
+                model_config={"model_id": str(MODEL_ID), "name": "resnet18"},
+                tags=[],
+            )
+        sent = route.calls[0].request
+        import json as _json
+        body = _json.loads(sent.content)
+        assert body["model_id"] == str(MODEL_ID)
+        assert body["task_id"] == str(TASK_ID)
+
+    @pytest.mark.asyncio
+    async def test_create_experiment_accepts_pydantic_model(self):
+        from orca_shared.schemas.model import ModelSummary as MS
+        model = MS(model_id=MODEL_ID, name="vgg", architecture="vgg")
+        with respx.mock(base_url="http://lab") as rm:
+            rm.post("/api/v1/experiments").respond(
+                200, json={"experiment_id": str(EXPERIMENT_ID)}
+            )
+            c = OrcaLabClient("http://lab")
+            result = await c.create_experiment(
+                task_id=str(TASK_ID),
+                model_config=model,
+                tags=["test"],
+            )
+        assert result == str(EXPERIMENT_ID)
+
+    @pytest.mark.asyncio
+    async def test_create_experiment_raises_on_4xx(self):
+        with respx.mock(base_url="http://lab") as rm:
+            rm.post("/api/v1/experiments").respond(422)
+            c = OrcaLabClient("http://lab")
+            with pytest.raises(httpx.HTTPStatusError):
+                await c.create_experiment(str(TASK_ID), {}, [])
+
+    @pytest.mark.asyncio
+    async def test_wait_for_completion_returns_on_completed_status(self):
+        with respx.mock(base_url="http://lab") as rm:
+            rm.get(f"/api/v1/experiments/{EXPERIMENT_ID}").respond(
+                200, json=_experiment_json(status="COMPLETED")
+            )
+            c = OrcaLabClient("http://lab")
+            result = await c.wait_for_completion(str(EXPERIMENT_ID), timeout=60, poll_interval=1)
+        assert isinstance(result, ExperimentResult)
+        assert result.status == "COMPLETED"
+
+    @pytest.mark.asyncio
+    async def test_wait_for_completion_returns_on_failed_status(self):
+        with respx.mock(base_url="http://lab") as rm:
+            rm.get(f"/api/v1/experiments/{EXPERIMENT_ID}").respond(
+                200, json=_experiment_json(status="FAILED")
+            )
+            c = OrcaLabClient("http://lab")
+            result = await c.wait_for_completion(str(EXPERIMENT_ID), timeout=60, poll_interval=1)
+        assert result.status == "FAILED"
+
+    @pytest.mark.asyncio
+    async def test_wait_for_completion_polls_until_terminal(self):
+        """Verify that polling continues through non-terminal statuses."""
+        responses = [
+            _experiment_json(status="running"),
+            _experiment_json(status="running"),
+            _experiment_json(status="COMPLETED"),
+        ]
+        call_count = 0
+
+        async def _side_effect(request, *args, **kwargs):
+            nonlocal call_count
+            resp = responses[min(call_count, len(responses) - 1)]
+            call_count += 1
+            return httpx.Response(200, json=resp)
+
+        with respx.mock(base_url="http://lab") as rm:
+            rm.get(f"/api/v1/experiments/{EXPERIMENT_ID}").mock(side_effect=_side_effect)
+            c = OrcaLabClient("http://lab")
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                result = await c.wait_for_completion(
+                    str(EXPERIMENT_ID), timeout=300, poll_interval=1
+                )
+        assert result.status == "COMPLETED"
+        assert call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_wait_for_completion_raises_timeout_error(self):
+        """TimeoutError raised when deadline passes with non-terminal status."""
+        with respx.mock(base_url="http://lab") as rm:
+            rm.get(f"/api/v1/experiments/{EXPERIMENT_ID}").respond(
+                200, json=_experiment_json(status="running")
+            )
+            c = OrcaLabClient("http://lab")
+            with patch("asyncio.sleep", new_callable=AsyncMock):
+                with pytest.raises(TimeoutError, match=str(EXPERIMENT_ID)):
+                    await c.wait_for_completion(
+                        str(EXPERIMENT_ID), timeout=0, poll_interval=1
+                    )
+
+
+class TestOrcaLabClientStubs:
     @pytest.mark.asyncio
     async def test_start_sweep_raises(self):
         c = OrcaLabClient("http://lab")
@@ -261,12 +386,6 @@ class TestOrcaLabClientStubs:
         c = OrcaLabClient("http://lab")
         with pytest.raises(NotImplementedError):
             await c.get_sweep_status("sweep-xyz")
-
-    @pytest.mark.asyncio
-    async def test_wait_for_completion_raises(self):
-        c = OrcaLabClient("http://lab")
-        with pytest.raises(NotImplementedError):
-            await c.wait_for_completion("sweep-xyz")
 
 
 class TestOrcaLabClientLifecycle:
