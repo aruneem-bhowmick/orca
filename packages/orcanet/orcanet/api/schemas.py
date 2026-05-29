@@ -54,4 +54,6 @@ class TransferValidateRequest(BaseModel):
     source_task_id: str
     target_task_id: str
     strategy: str = "feature"
-    validate: bool = True
+    run_validation: bool = Field(default=True, alias="validate")
+
+    model_config = {"populate_by_name": True}

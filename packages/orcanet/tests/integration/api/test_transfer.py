@@ -222,21 +222,18 @@ class TestValidateTransfer:
     @pytest.mark.asyncio
     async def test_returns_200_with_full_result(
         self,
+        app,
         client: AsyncClient,
         source_task_id: UUID,
         target_task_id: UUID,
     ) -> None:
         from orcanet.api.deps import get_transfer_pipeline
-        from tests.integration.api.conftest import _build_app
-        from unittest.mock import AsyncMock, MagicMock
-        from httpx import ASGITransport, AsyncClient as HXClient
 
         pipeline_mock = AsyncMock()
         pipeline_mock.recommend_and_validate = AsyncMock(
             return_value=self._make_pipeline_result(source_task_id, target_task_id)
         )
 
-        app = client.transport.app  # type: ignore[attr-defined]
         app.dependency_overrides[get_transfer_pipeline] = lambda: pipeline_mock
 
         try:
@@ -263,6 +260,7 @@ class TestValidateTransfer:
     @pytest.mark.asyncio
     async def test_returns_200_without_experiment_when_validate_false(
         self,
+        app,
         client: AsyncClient,
         source_task_id: UUID,
         target_task_id: UUID,
@@ -276,7 +274,6 @@ class TestValidateTransfer:
             )
         )
 
-        app = client.transport.app  # type: ignore[attr-defined]
         app.dependency_overrides[get_transfer_pipeline] = lambda: pipeline_mock
 
         try:
@@ -299,6 +296,7 @@ class TestValidateTransfer:
     @pytest.mark.asyncio
     async def test_service_unavailable_returns_503(
         self,
+        app,
         client: AsyncClient,
         source_task_id: UUID,
         target_task_id: UUID,
@@ -310,7 +308,6 @@ class TestValidateTransfer:
             side_effect=ServiceUnavailableError("OrcaMind is unreachable")
         )
 
-        app = client.transport.app  # type: ignore[attr-defined]
         app.dependency_overrides[get_transfer_pipeline] = lambda: pipeline_mock
 
         try:
@@ -330,6 +327,7 @@ class TestValidateTransfer:
     @pytest.mark.asyncio
     async def test_missing_task_returns_404(
         self,
+        app,
         client: AsyncClient,
         source_task_id: UUID,
         target_task_id: UUID,
@@ -341,7 +339,6 @@ class TestValidateTransfer:
             side_effect=ValueError("Source task not found")
         )
 
-        app = client.transport.app  # type: ignore[attr-defined]
         app.dependency_overrides[get_transfer_pipeline] = lambda: pipeline_mock
 
         try:
@@ -360,6 +357,7 @@ class TestValidateTransfer:
     @pytest.mark.asyncio
     async def test_unknown_strategy_returns_400(
         self,
+        app,
         client: AsyncClient,
         source_task_id: UUID,
         target_task_id: UUID,
@@ -371,7 +369,6 @@ class TestValidateTransfer:
             side_effect=KeyError("nonexistent")
         )
 
-        app = client.transport.app  # type: ignore[attr-defined]
         app.dependency_overrides[get_transfer_pipeline] = lambda: pipeline_mock
 
         try:

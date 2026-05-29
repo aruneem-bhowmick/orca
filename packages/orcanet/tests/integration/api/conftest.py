@@ -278,8 +278,8 @@ def _build_app(
     return app
 
 
-@pytest_asyncio.fixture
-async def client(
+@pytest.fixture
+def app(
     mock_session: AsyncMock,
     mock_task_repo: AsyncMock,
     mock_agent: AsyncMock,
@@ -288,8 +288,8 @@ async def client(
     mock_transfer_strategies: dict,
     mock_orcamind_client: AsyncMock,
     mock_orcalab_client: AsyncMock,
-) -> AsyncClient:
-    app = _build_app(
+):
+    return _build_app(
         mock_session,
         mock_task_repo,
         mock_agent,
@@ -299,5 +299,9 @@ async def client(
         mock_orcamind_client,
         mock_orcalab_client,
     )
+
+
+@pytest_asyncio.fixture
+async def client(app) -> AsyncClient:
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac

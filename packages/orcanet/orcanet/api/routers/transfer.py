@@ -100,7 +100,7 @@ async def validate_transfer(
             source_task_id=body.source_task_id,
             target_task_id=body.target_task_id,
             strategy_name=body.strategy,
-            validate=body.validate,
+            validate=body.run_validation,
         )
     except ServiceUnavailableError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
