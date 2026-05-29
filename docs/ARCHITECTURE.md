@@ -155,9 +155,14 @@ orca/
 │       │   │   └── multi_task_transfer.py  # _get_backbone_out_dim, MultiTaskModel (nn.ModuleDict heads, compute_loss, compute_uncertainty_loss with nn.ParameterDict log_sigmas), MultiTaskTransfer (add_task, score_transfer via CrossDomainEmbedder, execute_transfer, update_gradnorm_weights)
 │       │   ├── retrieval/            # QueryExpander, LLMRanker, HybridRetriever — three-stage async pipeline (implemented)
 │       │   │   └── __init__.py       # Public re-exports: QueryExpander, LLMRanker, HybridRetriever
-│       │   ├── reasoning/            # LangChain ReAct agent, Pydantic-validated response models, retry logic (planned)
+│       │   ├── reasoning/            # LangChain ReAct agent, Pydantic-validated response models, retry logic (implemented)
 │       │   │   └── prompts/          # Transfer explanation, task similarity, architecture recommendation templates
-│       │   ├── api/                  # FastAPI service (8 endpoints) — port 8002 (planned)
+│       │   ├── api/                  # FastAPI service — 8 live endpoints on port 8002
+│       │   │   ├── main.py           # create_app() factory; ASGI lifespan initialises all singletons; GET /, GET /health
+│       │   │   ├── deps.py           # Depends() providers; X-LLM-Provider header override in get_orcanet_agent()
+│       │   │   ├── schemas.py        # TransferScoreRequest, TransferRecommendRequest, RetrieveRequest, EmbedRequest, ExplainRequest
+│       │   │   ├── middleware.py     # CORS + RequestLoggingMiddleware
+│       │   │   └── routers/          # transfer.py, retrieve.py, explain.py, embed.py
 │       │   └── cli.py                # Typer CLI — serve and version commands
 │       ├── config/                   # Hydra YAML configs
 │       │   ├── config.yaml           # Root: llm, retrieval thresholds, orcamind/orcalab URLs
@@ -216,7 +221,7 @@ orca/
 - **FastAPI** + **Uvicorn** for REST APIs; **WebSockets** for real-time metric streaming
 - **Typer** + **Rich** for the CLI
 - **Streamlit** + **Plotly** for the analytics dashboard
-- **LangChain** (`langchain`, `langchain-openai`, `langchain-anthropic`) for OrcaNet query expansion, LLM-based candidate re-ranking (`LLMRanker`), and the planned ReAct reasoning agent
+- **LangChain** (`langchain`, `langchain-openai`, `langchain-anthropic`) for OrcaNet query expansion, LLM-based candidate re-ranking (`LLMRanker`), and the `OrcaNetAgent` ReAct reasoning agent
 
 ### Experiment Orchestration (OrcaLab)
 
