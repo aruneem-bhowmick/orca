@@ -79,7 +79,7 @@ class OrcaLabClient(_BaseAsyncClient):
             TimeoutError: When the experiment does not complete within *timeout*.
             httpx.HTTPStatusError: On non-2xx responses from OrcaLab.
         """
-        loop = asyncio.get_event_loop()
+        loop = asyncio.get_running_loop()
         deadline = loop.time() + timeout
 
         while True:
