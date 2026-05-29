@@ -14,7 +14,7 @@ from orca_shared.registry.repository import TaskRepository
 from orcanet.api.deps import get_cross_domain_embedder, get_task_repo
 from orcanet.api.schemas import EmbedRequest, EmbedResponse
 from orcanet.embeddings.cross_domain import CrossDomainEmbedder
-from orcanet.retrieval.retriever import _task_to_feature_vector
+from orcanet.retrieval.retriever import task_to_feature_vector
 
 logger = logging.getLogger("orcanet.api")
 
@@ -38,7 +38,7 @@ async def cross_domain_embed(
         if task is None:
             raise HTTPException(status_code=404, detail=f"Task {body.task_id} not found")
 
-        feature_vec = _task_to_feature_vector(task)
+        feature_vec = task_to_feature_vector(task)
     else:
         feature_vec = np.array(body.statistical_features, dtype=np.float32)
 

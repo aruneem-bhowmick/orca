@@ -1,4 +1,4 @@
-"""Unit tests for HybridRetriever, _task_to_feature_vector, and _deduplicate_and_sort."""
+"""Unit tests for HybridRetriever, task_to_feature_vector, and _deduplicate_and_sort."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ from orca_shared.schemas.task import Task
 from orcanet.retrieval.retriever import (
     HybridRetriever,
     _deduplicate_and_sort,
-    _task_to_feature_vector,
+    task_to_feature_vector,
 )
 
 _NOW = datetime(2024, 1, 1)
@@ -82,22 +82,22 @@ def _build_retriever(mocks: SimpleNamespace, **cfg_overrides) -> HybridRetriever
 
 
 # ---------------------------------------------------------------------------
-# _task_to_feature_vector
+# task_to_feature_vector
 # ---------------------------------------------------------------------------
 
 
 class TestTaskToFeatureVector:
     def test_returns_25_dim_float32_vector(self) -> None:
-        vec = _task_to_feature_vector(_make_task())
+        vec = task_to_feature_vector(_make_task())
         assert vec.shape == (25,)
         assert vec.dtype.name == "float32"
 
     def test_n_samples_encoded_as_log1p(self) -> None:
-        vec = _task_to_feature_vector(_make_task(n_samples=1000))
+        vec = task_to_feature_vector(_make_task(n_samples=1000))
         assert vec[0] == pytest.approx(math.log1p(1000))
 
     def test_none_fields_produce_zeros(self) -> None:
-        vec = _task_to_feature_vector(
+        vec = task_to_feature_vector(
             _make_task(n_samples=None, n_features=None, n_classes=None)
         )
         assert (vec == 0.0).all()

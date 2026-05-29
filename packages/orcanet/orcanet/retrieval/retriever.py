@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 _FEATURE_DIM = 25  # must match CrossDomainEmbedder default input_dim
 
 
-def _task_to_feature_vector(task: Task) -> np.ndarray:
+def task_to_feature_vector(task: Task) -> np.ndarray:
     """Build a 25-dim float32 feature vector from a Task's statistical fields."""
     vec = np.zeros(_FEATURE_DIM, dtype=np.float32)
     if task.n_samples is not None:
@@ -81,7 +81,7 @@ class HybridRetriever:
         Stage 3 — optional LLM re-rank.
         """
         # Stage 1: FAISS vector similarity
-        feature_vec = _task_to_feature_vector(query_task)
+        feature_vec = task_to_feature_vector(query_task)
         query_tensor = torch.from_numpy(feature_vec).unsqueeze(0)
         embedding = self._embedder.embed(query_tensor).squeeze(0).detach().numpy()
         candidate_ids: list[tuple[str, float]] = self._index.search(
