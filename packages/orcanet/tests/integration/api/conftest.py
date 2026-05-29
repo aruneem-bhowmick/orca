@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 from uuid import UUID, uuid4
 
 import pytest
+import pytest_asyncio
 import torch
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -277,7 +278,7 @@ def _build_app(
     return app
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def client(
     mock_session: AsyncMock,
     mock_task_repo: AsyncMock,
