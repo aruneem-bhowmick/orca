@@ -13,6 +13,7 @@ from orca_shared.clients.orcalab_client import OrcaLabClient
 from orca_shared.clients.orcamind_client import OrcaMindClient
 from orca_shared.registry.repository import TaskRepository
 from orcanet.embeddings.cross_domain import CrossDomainEmbedder
+from orcanet.integration.pipeline import TransferPipeline
 from orcanet.reasoning.agent import OrcaNetAgent
 from orcanet.retrieval.retriever import HybridRetriever
 from orcanet.transfer.base import TransferStrategy
@@ -55,6 +56,19 @@ def get_orcalab_client(request: Request) -> OrcaLabClient:
 
 def get_transfer_strategies(request: Request) -> dict[str, TransferStrategy]:
     return request.app.state.transfer_strategies
+
+
+def get_transfer_pipeline(
+    request: Request,
+    task_repo: TaskRepository = Depends(get_task_repo),
+) -> TransferPipeline:
+    """Build a :class:`~orcanet.integration.pipeline.TransferPipeline` for the current request."""
+    return TransferPipeline(
+        orcamind_client=request.app.state.orcamind_client,
+        orcalab_client=request.app.state.orcalab_client,
+        transfer_strategies=request.app.state.transfer_strategies,
+        task_repository=task_repo,
+    )
 
 
 _ALLOWED_LLM_PROVIDERS = frozenset({"openai", "anthropic", "local"})

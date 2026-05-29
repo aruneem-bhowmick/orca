@@ -48,3 +48,10 @@ class EmbedResponse(BaseModel):
 
 class ExplainResponse(BaseModel):
     explanation: str
+
+
+class TransferValidateRequest(BaseModel):
+    source_task_id: str
+    target_task_id: str
+    strategy: str = "feature"
+    validate: bool = True
