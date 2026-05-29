@@ -14,12 +14,14 @@ from orca_shared.registry.models import (
     Performance as PerformanceORM,
     SearchSpace as SearchSpaceORM,
     Task as TaskORM,
+    TransferMapping as TransferMappingORM,
 )
 from orca_shared.schemas.embedding import Embedding
 from orca_shared.schemas.metrics import MetricPoint, PerformanceMetrics, PerformanceSummary
 from orca_shared.schemas.search_space import SearchSpaceRecord
 from orca_shared.schemas.task import Task, TaskCreate, TaskSummary
 from orca_shared.schemas.training import ExperimentResult
+from orca_shared.schemas.transfer import TransferMapping
 
 
 class TaskRepository:
@@ -81,6 +83,28 @@ class TaskRepository:
             .where(TaskORM.task_id == task_id)
             .values(embedding_id=embedding_id, updated_at=datetime.now(timezone.utc))
         )
+
+    async def save_transfer_mapping(
+        self,
+        source_task_id: uuid.UUID,
+        target_task_id: uuid.UUID,
+        transfer_score: float,
+        transfer_type: str,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> TransferMapping:
+        """Persist a new transfer mapping and return the stored record."""
+        row = TransferMappingORM(
+            mapping_id=uuid.uuid4(),
+            source_task_id=source_task_id,
+            target_task_id=target_task_id,
+            transfer_score=transfer_score,
+            transfer_type=transfer_type,
+            mapping_metadata=metadata,
+            created_at=datetime.now(timezone.utc),
+        )
+        self._session.add(row)
+        await self._session.flush()
+        return TransferMapping.model_validate(row)
 
 
 class ExperimentRepository:
