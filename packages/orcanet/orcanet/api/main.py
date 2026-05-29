@@ -55,15 +55,18 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     llm_provider = os.environ.get("ORCANET_LLM_PROVIDER", "openai")
     llm_api_key = os.environ.get("ORCANET_LLM_API_KEY")
 
+    transfer_strategies = {
+        "feature": FeatureTransfer(),
+        "weight": WeightTransfer(),
+        "architecture": ArchitectureTransfer(),
+    }
+
     app.state.agent = OrcaNetAgent(
         llm_provider=llm_provider,
         api_key=llm_api_key,
-        transfer_strategies={
-            "feature": FeatureTransfer(),
-            "weight": WeightTransfer(),
-            "architecture": ArchitectureTransfer(),
-        },
+        transfer_strategies=transfer_strategies,
     )
+    app.state.transfer_strategies = transfer_strategies
 
     expander = QueryExpander(app.state.agent.llm)
     ranker = LLMRanker(app.state.agent.llm)
@@ -80,12 +83,6 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         )
     else:
         app.state.retriever = None
-
-    app.state.transfer_strategies = {
-        "feature": FeatureTransfer(),
-        "weight": WeightTransfer(),
-        "architecture": ArchitectureTransfer(),
-    }
 
     orcamind_url = os.environ.get("ORCAMIND_URL", _DEFAULT_ORCAMIND_URL)
     orcalab_url = os.environ.get("ORCALAB_URL", _DEFAULT_ORCALAB_URL)
