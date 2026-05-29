@@ -55,22 +55,37 @@ def get_transfer_strategies(request: Request) -> dict[str, TransferStrategy]:
     return request.app.state.transfer_strategies
 
 
-def get_orcanet_agent(request: Request) -> OrcaNetAgent:
+_ALLOWED_LLM_PROVIDERS = frozenset({"openai", "anthropic", "local"})
+
+
+async def get_orcanet_agent(
+    request: Request,
+    task_repo: TaskRepository = Depends(get_task_repo),
+) -> OrcaNetAgent:
     """Return the shared agent, or a fresh one for per-request provider overrides.
 
-    Reads ``X-LLM-Provider`` header. If set, constructs a new ``OrcaNetAgent``
-    using that provider and the API key from the environment so that individual
-    requests can target different LLM backends without restarting the service.
+    Reads ``X-LLM-Provider`` header. If set, the value must be one of
+    ``openai``, ``anthropic``, or ``local``; any other value raises 400.
+    The override agent receives the same request-scoped ``TaskRepository``
+    as the shared agent so all tool capabilities remain intact.
     """
     header_provider = request.headers.get("X-LLM-Provider", "").strip()
     if header_provider:
+        if header_provider not in _ALLOWED_LLM_PROVIDERS:
+            raise HTTPException(
+                status_code=400,
+                detail=(
+                    f"X-LLM-Provider {header_provider!r} is not supported. "
+                    f"Allowed values: {sorted(_ALLOWED_LLM_PROVIDERS)}"
+                ),
+            )
         logger.debug("X-LLM-Provider override: %s", header_provider)
         return OrcaNetAgent(
             llm_provider=header_provider,
             api_key=os.environ.get("ORCANET_LLM_API_KEY"),
             retriever=getattr(request.app.state, "retriever", None),
             embedder=getattr(request.app.state, "embedder", None),
-            task_repository=None,
+            task_repository=task_repo,
             transfer_strategies=request.app.state.transfer_strategies,
             orcamind_client=request.app.state.orcamind_client,
         )
