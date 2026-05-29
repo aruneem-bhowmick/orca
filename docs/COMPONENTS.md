@@ -1290,7 +1290,7 @@ orcanet/
 ├── embeddings/    # CrossDomainEmbedder (DANN, implemented), TextTaskEmbedder (sentence-transformers + stats fusion, implemented), ArchitectureEmbedder (GNN-based, implemented)
 ├── transfer/      # CKA feature transfer, weight transfer, architecture transfer, multi-task transfer (all implemented)
 ├── retrieval/     # QueryExpander, LLMRanker, HybridRetriever — three-stage async pipeline (implemented)
-├── reasoning/     # LangChain ReAct agent, Pydantic response models, retry logic (planned)
+├── reasoning/     # LangChain ReAct agent, Pydantic response models, retry logic (implemented)
 │   └── prompts/   # Prompt templates: transfer explanation, task similarity, architecture recommendation
 ├── api/           # FastAPI service — 8 live endpoints on port 8002 (main.py, deps.py, schemas.py, middleware.py, routers/)
 └── cli.py         # Typer CLI — serve and version commands
