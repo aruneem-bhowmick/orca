@@ -2217,7 +2217,7 @@ Returned by `TransferPipeline.recommend_and_validate`. All fields are set even o
 
 | Field | Type | Description |
 |---|---|---|
-| `score` | `TransferScore` | CKA-based transfer score produced by the chosen strategy |
+| `score` | `TransferScore` | Transfer score produced by the chosen strategy |
 | `experiment_result` | `ExperimentResult \| None` | OrcaLab experiment result, or `None` when validation was skipped or timed out |
 | `mapping` | `TransferMapping` | Persisted `TransferMapping` row written to the database regardless of experiment outcome |
 | `improvement_over_baseline` | `float \| None` | `accuracy − baseline_accuracy` from `experiment_result.metrics`; `None` when either metric is absent |
@@ -2261,7 +2261,7 @@ Eight live endpoints served by FastAPI, documented at `GET /docs`. The service r
 |---|---|---|---|
 | `GET` | `/` | 200 | Service info `{name, version, status}` |
 | `GET` | `/health` | 200 | Parallel health probe — `{status, orcamind, orcalab, llm}`; `llm` is `null` unless `?deep=true`; always 200 even when degraded |
-| `POST` | `/api/v1/transfer/score` | 200 / 400 / 404 | CKA-based transfer score between two registered tasks; 400 for unknown strategy, 404 for missing task |
+| `POST` | `/api/v1/transfer/score` | 200 / 400 / 404 | Transfer score between two registered tasks using the chosen strategy; 400 for unknown strategy, 404 for missing task |
 | `POST` | `/api/v1/transfer/recommend` | 200 / 502 | `OrcaNetAgent` recommendation; supports `X-LLM-Provider` header override; 502 on agent error |
 | `POST` | `/api/v1/transfer/validate` | 200 / 400 / 404 / 503 | Three-way pipeline: score → optional OrcaLab experiment → persist `TransferMapping`; 503 when OrcaMind is unreachable, 400 for unknown strategy, 404 for missing task |
 | `GET` | `/api/v1/transfer/{mapping_id}` | 200 / 404 / 422 | Stored `TransferMapping` record from DB; 404 when not found |

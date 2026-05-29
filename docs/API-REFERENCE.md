@@ -683,7 +683,7 @@ Runs the full `TransferPipeline`: scores the transfer, optionally triggers an Or
     "experiment_id": "uuid",
     "task_id":       "uuid",
     "model_id":      null,
-    "status":        "COMPLETED",
+    "status":        "completed",
     "metrics":       { "accuracy": 0.90, "baseline_accuracy": 0.78 }
   },
   "mapping": {
