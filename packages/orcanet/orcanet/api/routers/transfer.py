@@ -1,4 +1,4 @@
-"""Transfer scoring, recommendation, and mapping lookup endpoints."""
+"""Transfer scoring, recommendation, validation, and mapping lookup endpoints."""
 
 from __future__ import annotations
 
@@ -16,9 +16,17 @@ from orcanet.api.deps import (
     get_db,
     get_orcanet_agent,
     get_task_repo,
+    get_transfer_pipeline,
     get_transfer_strategies,
 )
-from orcanet.api.schemas import TransferRecommendRequest, TransferScoreRequest
+from orcanet.api.schemas import (
+    TransferRecommendRequest,
+    TransferScoreRequest,
+    TransferScoreResponse,
+    TransferValidateRequest,
+    TransferValidateResponse,
+)
+from orcanet.integration.pipeline import ServiceUnavailableError, TransferPipeline
 from orcanet.reasoning.agent import OrcaNetAgent
 from orcanet.reasoning.validators import TransferRecommendationResponse
 from orcanet.transfer.base import TransferStrategy
@@ -81,6 +89,43 @@ async def recommend_transfer(
     except Exception as exc:
         logger.error("Agent failed during recommend_transfer: %s", exc)
         raise HTTPException(status_code=502, detail="LLM agent error") from exc
+
+
+@router.post("/validate", response_model=TransferValidateResponse)
+async def validate_transfer(
+    body: TransferValidateRequest,
+    pipeline: TransferPipeline = Depends(get_transfer_pipeline),
+) -> TransferValidateResponse:
+    """Run the full three-way transfer pipeline and persist the result.
+
+    Scores the transfer, optionally triggers an OrcaLab validation experiment,
+    and saves a transfer mapping to the database regardless of the outcome.
+    """
+    try:
+        result = await pipeline.recommend_and_validate(
+            source_task_id=body.source_task_id,
+            target_task_id=body.target_task_id,
+            strategy_name=body.strategy,
+            validate=body.run_validation,
+        )
+    except ServiceUnavailableError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except KeyError as exc:
+        raise HTTPException(status_code=400, detail=f"Unknown strategy: {exc}") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+    return TransferValidateResponse(
+        score=TransferScoreResponse(
+            overall=result.score.overall,
+            layer_scores=result.score.layer_scores,
+            recommended_layers=result.score.recommended_layers,
+            reasoning=result.score.reasoning,
+        ),
+        experiment_result=result.experiment_result,
+        mapping=result.mapping,
+        improvement_over_baseline=result.improvement_over_baseline,
+    )
 
 
 @router.get("/{mapping_id}", response_model=TransferMapping)

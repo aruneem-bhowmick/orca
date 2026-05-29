@@ -47,21 +47,25 @@ from orcanet.transfer.types import TransferScore
 
 @pytest.fixture
 def source_task_id() -> UUID:
+    """Provide a random UUID representing the source task."""
     return uuid4()
 
 
 @pytest.fixture
 def target_task_id() -> UUID:
+    """Provide a random UUID representing the target task."""
     return uuid4()
 
 
 @pytest.fixture
 def mapping_id() -> UUID:
+    """Provide a random UUID representing a transfer mapping."""
     return uuid4()
 
 
 @pytest.fixture
 def now() -> datetime:
+    """Provide the current UTC datetime for use as a consistent timestamp."""
     return datetime.now(timezone.utc)
 
 
@@ -72,6 +76,7 @@ def now() -> datetime:
 
 @pytest.fixture
 def source_task(source_task_id: UUID, now: datetime) -> Task:
+    """Return a vision-domain classification task keyed to *source_task_id*."""
     return Task(
         task_id=source_task_id,
         name="source-task",
@@ -90,6 +95,7 @@ def source_task(source_task_id: UUID, now: datetime) -> Task:
 
 @pytest.fixture
 def target_task(target_task_id: UUID, now: datetime) -> Task:
+    """Return an NLP-domain classification task keyed to *target_task_id*."""
     return Task(
         task_id=target_task_id,
         name="target-task",
@@ -113,6 +119,7 @@ def target_task(target_task_id: UUID, now: datetime) -> Task:
 
 @pytest.fixture
 def canned_recommendation(source_task_id: UUID) -> TransferRecommendationResponse:
+    """Return a pre-built agent recommendation response for *source_task_id*."""
     return TransferRecommendationResponse(
         top_sources=[
             SourceTaskRecommendation(
@@ -136,6 +143,7 @@ def canned_recommendation(source_task_id: UUID) -> TransferRecommendationRespons
 
 
 def _make_execute_result(rows=(), scalar_one_or_none=None) -> MagicMock:
+    """Return a mock SQLAlchemy execute result with configurable rows and scalar."""
     result = MagicMock()
     result.scalars.return_value = iter(rows)
     result.scalar_one_or_none.return_value = scalar_one_or_none
@@ -144,6 +152,7 @@ def _make_execute_result(rows=(), scalar_one_or_none=None) -> MagicMock:
 
 @pytest.fixture
 def mock_session() -> AsyncMock:
+    """Return a mock AsyncSession with add, flush, and execute pre-configured."""
     session = AsyncMock(spec=AsyncSession)
     session.add = MagicMock()
     session.flush = AsyncMock()
@@ -158,6 +167,7 @@ def mock_session() -> AsyncMock:
 
 @pytest.fixture
 def mock_task_repo(source_task: Task, target_task: Task) -> AsyncMock:
+    """Return a mock TaskRepository pre-seeded with source and target tasks."""
     repo = AsyncMock(spec=TaskRepository)
 
     async def _get_by_id(task_id: UUID):
@@ -173,6 +183,7 @@ def mock_task_repo(source_task: Task, target_task: Task) -> AsyncMock:
 
 @pytest.fixture
 def mock_agent(canned_recommendation: TransferRecommendationResponse) -> AsyncMock:
+    """Return a mock OrcaNetAgent whose recommend_transfer returns *canned_recommendation*."""
     agent = AsyncMock()
     agent.recommend_transfer = AsyncMock(return_value=canned_recommendation)
     agent.llm = AsyncMock()
@@ -181,6 +192,7 @@ def mock_agent(canned_recommendation: TransferRecommendationResponse) -> AsyncMo
 
 @pytest.fixture
 def mock_retriever(source_task: Task) -> AsyncMock:
+    """Return a mock HybridRetriever that returns *source_task* with a 0.9 similarity score."""
     retriever = AsyncMock()
     retriever.retrieve = AsyncMock(
         return_value=[(source_task, 0.9, "vector similarity")]
@@ -193,6 +205,7 @@ def mock_retriever(source_task: Task) -> AsyncMock:
 
 @pytest.fixture
 def mock_embedder() -> MagicMock:
+    """Return a mock CrossDomainEmbedder whose embed method returns a zero tensor."""
     embedder = MagicMock()
     embedder.embed = MagicMock(return_value=torch.zeros(1, 64))
     return embedder
@@ -200,6 +213,7 @@ def mock_embedder() -> MagicMock:
 
 @pytest.fixture
 def mock_transfer_score() -> TransferScore:
+    """Return a canned TransferScore with overall 0.72 for use by strategy mocks."""
     return TransferScore(
         overall=0.72,
         layer_scores={"layer1": 0.8, "layer2": 0.64},
@@ -210,6 +224,7 @@ def mock_transfer_score() -> TransferScore:
 
 @pytest.fixture
 def mock_transfer_strategies(mock_transfer_score: TransferScore) -> dict:
+    """Return a strategy registry mapping feature/weight/architecture to the same mock."""
     strategy = MagicMock()
     strategy.score_transfer = MagicMock(return_value=mock_transfer_score)
     return {"feature": strategy, "weight": strategy, "architecture": strategy}
@@ -217,11 +232,13 @@ def mock_transfer_strategies(mock_transfer_score: TransferScore) -> dict:
 
 @pytest.fixture
 def mock_orcamind_client() -> AsyncMock:
+    """Return a bare mock for the OrcaMind client."""
     return AsyncMock()
 
 
 @pytest.fixture
 def mock_orcalab_client() -> AsyncMock:
+    """Return a bare mock for the OrcaLab client."""
     return AsyncMock()
 
 
@@ -242,6 +259,7 @@ def _build_app(
     orcamind_url: str = "http://orcamind-test",
     orcalab_url: str = "http://orcalab-test",
 ) -> object:
+    """Create a FastAPI app instance with all dependencies overridden by mocks."""
     app = create_app()
 
     mock_engine = MagicMock()
@@ -278,8 +296,8 @@ def _build_app(
     return app
 
 
-@pytest_asyncio.fixture
-async def client(
+@pytest.fixture
+def app(
     mock_session: AsyncMock,
     mock_task_repo: AsyncMock,
     mock_agent: AsyncMock,
@@ -288,8 +306,9 @@ async def client(
     mock_transfer_strategies: dict,
     mock_orcamind_client: AsyncMock,
     mock_orcalab_client: AsyncMock,
-) -> AsyncClient:
-    app = _build_app(
+):
+    """Provide the FastAPI app instance with all state and dependency overrides applied."""
+    return _build_app(
         mock_session,
         mock_task_repo,
         mock_agent,
@@ -299,5 +318,10 @@ async def client(
         mock_orcamind_client,
         mock_orcalab_client,
     )
+
+
+@pytest_asyncio.fixture
+async def client(app) -> AsyncClient:
+    """Yield an httpx AsyncClient that routes requests through the test app via ASGI."""
     async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as ac:
         yield ac

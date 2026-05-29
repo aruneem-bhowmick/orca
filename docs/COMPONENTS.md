@@ -28,7 +28,7 @@ Seven fully-typed `Mapped[]` models backed by PostgreSQL:
 
 Async repository pattern over all tables:
 
-- `TaskRepository` — `list_all()`, `list_by_domain()`, `list_by_type()`, `get_by_id()`, `create()`, `update_embedding()`
+- `TaskRepository` — `list_all()`, `list_by_domain()`, `list_by_type()`, `get_by_id()`, `create()`, `update_embedding()`, `save_transfer_mapping(source_task_id, target_task_id, transfer_score, transfer_type, metadata) → TransferMapping`
 - `ExperimentRepository` — `create()`, `get_by_id()`, `list_by_task()`, `list_all(limit, offset)`, `update_status()`, `update_status_if_current(experiment_id, from_status, to_status) -> bool`, `mark_complete()`, `update_metrics(experiment_id, metrics) -> None`
 - `PerformanceRepository` — `log_metric()`, `get_final_metrics()`, `get_history()`, `list_all_with_context()`
 - `EmbeddingRepository` — `create()`, `get_by_id()`
@@ -83,7 +83,11 @@ Async `httpx`-based clients for inter-service calls:
   - `submit_feedback(req)` — `POST /api/v1/feedback` → `None`
   - `find_similar_tasks(embedding, top_k)` — `POST /api/v1/similar-tasks` → `list[SimilarityResult]`
   - `get_best_model(task_id)` — composes `embed_task` + `recommend_model(top_k=1)` → `ModelSummary`
-- `OrcaLabClient`: adaptive search calls (stub, planned)
+- `OrcaLabClient`: async HTTP client for the OrcaLab experiment orchestration service. Two methods are fully implemented; two remain as stubs:
+  - `create_experiment(task_id, model_config, tags)` — `POST /api/v1/experiments`. Serialises `model_config` (accepts Pydantic models or plain dicts) and forwards `model_id` when present. Returns the `experiment_id` string from the response.
+  - `wait_for_completion(experiment_id, timeout=3600, poll_interval=30)` — polls `GET /api/v1/experiments/{id}` until status is in `{COMPLETED, FAILED, CANCELLED}`. Raises `TimeoutError` when the deadline is exceeded; the final poll sleeps at most the remaining time so the error fires promptly.
+  - `start_sweep(experiment_id, search_space)` — stub, raises `NotImplementedError`
+  - `get_sweep_status(sweep_id)` — stub, raises `NotImplementedError`
 - `OrcaNetClient`: transfer scoring calls (stub, planned)
 
 ---
@@ -2199,6 +2203,56 @@ Three string constants exported from `orcanet.reasoning.prompts`:
 | `TASK_SIMILARITY_TEMPLATE` | `task_similarity` | Assesses structural similarity between two tasks based on domain, feature space, and class distribution |
 | `ARCHITECTURE_RECOMMENDATION_TEMPLATE` | `architecture_recommendation` | Recommends an architecture for the target task given similar-task performance history and computational constraints |
 
+#### `orcanet.integration` — Three-Way Pipeline
+
+The `integration/` module coordinates OrcaNet, OrcaMind, and OrcaLab into a single end-to-end transfer-validation workflow. All public names are importable from `orcanet.integration`.
+
+```python
+from orcanet.integration import ServiceUnavailableError, TransferPipeline, TransferValidationResult
+```
+
+##### `TransferValidationResult` (Pydantic model)
+
+Returned by `TransferPipeline.recommend_and_validate`. All fields are set even on partial success (e.g. when OrcaLab times out, `experiment_result` is `None` but `mapping` is always populated).
+
+| Field | Type | Description |
+|---|---|---|
+| `score` | `TransferScore` | Transfer score produced by the chosen strategy |
+| `experiment_result` | `ExperimentResult \| None` | OrcaLab experiment result, or `None` when validation was skipped or timed out |
+| `mapping` | `TransferMapping` | Persisted `TransferMapping` row written to the database regardless of experiment outcome |
+| `improvement_over_baseline` | `float \| None` | `accuracy − baseline_accuracy` from `experiment_result.metrics`; `None` when either metric is absent |
+
+##### `TransferPipeline`
+
+Orchestrates the four-step transfer-validation workflow.
+
+```python
+pipeline = TransferPipeline(
+    orcamind_client=orcamind_client,
+    orcalab_client=orcalab_client,
+    transfer_strategies={"feature": FeatureTransfer(...)},
+    task_repository=task_repo,
+)
+result = await pipeline.recommend_and_validate(
+    source_task_id="uuid-str",
+    target_task_id="uuid-str",
+    strategy_name="feature",
+    validate=True,
+)
+```
+
+**`recommend_and_validate` execution steps:**
+
+1. **Resolve tasks** — calls `task_repository.get_by_id()` for both IDs; raises `ValueError` if either is absent.
+2. **Get best model** — calls `orcamind_client.get_best_model(source_task_id)`; wraps `httpx.ConnectError`, `httpx.TimeoutException`, and 5xx `HTTPStatusError` in `ServiceUnavailableError`.
+3. **Score transfer** — calls `transfer_strategies[strategy_name].score_transfer(source_task, target_task)` using the selected strategy; raises `KeyError` for an unknown name.
+4. **Optionally validate** — when `validate=True` and `score.overall > 0.4`, calls `orcalab_client.create_experiment(...)` tagged `["transfer_validation", "source:<id>", "strategy:<name>"]`, then `orcalab_client.wait_for_completion(experiment_id, timeout=3600)`. A `TimeoutError` from `wait_for_completion` is caught, logged, and sets `experiment_result = None` so the pipeline always completes.
+5. **Persist mapping** — calls `task_repository.save_transfer_mapping(...)` with the score, strategy name, and experiment metadata; the mapping is written regardless of whether validation ran or timed out.
+
+##### `ServiceUnavailableError`
+
+Raised when OrcaMind is unreachable or returns a server error. The `/api/v1/transfer/validate` endpoint maps this to **HTTP 503**.
+
 #### `orcanet.api` — FastAPI Service (port 8002)
 
 Eight live endpoints served by FastAPI, documented at `GET /docs`. The service runs on port 8002 by default and is launched via `orcanet serve` or `uvicorn orcanet.api.main:app`. See [API Reference](API-REFERENCE.md#orcanet-api----port-8002) for full request/response schema details.
@@ -2207,8 +2261,9 @@ Eight live endpoints served by FastAPI, documented at `GET /docs`. The service r
 |---|---|---|---|
 | `GET` | `/` | 200 | Service info `{name, version, status}` |
 | `GET` | `/health` | 200 | Parallel health probe — `{status, orcamind, orcalab, llm}`; `llm` is `null` unless `?deep=true`; always 200 even when degraded |
-| `POST` | `/api/v1/transfer/score` | 200 / 400 / 404 | CKA-based transfer score between two registered tasks; 400 for unknown strategy, 404 for missing task |
+| `POST` | `/api/v1/transfer/score` | 200 / 400 / 404 | Transfer score between two registered tasks using the chosen strategy; 400 for unknown strategy, 404 for missing task |
 | `POST` | `/api/v1/transfer/recommend` | 200 / 502 | `OrcaNetAgent` recommendation; supports `X-LLM-Provider` header override; 502 on agent error |
+| `POST` | `/api/v1/transfer/validate` | 200 / 400 / 404 / 503 | Three-way pipeline: score → optional OrcaLab experiment → persist `TransferMapping`; 503 when OrcaMind is unreachable, 400 for unknown strategy, 404 for missing task |
 | `GET` | `/api/v1/transfer/{mapping_id}` | 200 / 404 / 422 | Stored `TransferMapping` record from DB; 404 when not found |
 | `POST` | `/api/v1/retrieve` | 200 / 404 | Three-stage hybrid retrieval; LLM query expansion when `query_description` is provided |
 | `POST` | `/api/v1/explain` | 200 / 502 | LLM-generated explanation for a source→target transfer; supports `X-LLM-Provider` header; 502 on parse failure |
@@ -2219,10 +2274,11 @@ Eight live endpoints served by FastAPI, documented at `GET /docs`. The service r
 | File | Role |
 |---|---|
 | `api/main.py` | `create_app()` factory; ASGI lifespan initialises DB engine, `CrossDomainEmbedder`, FAISS index, `HybridRetriever`, `OrcaNetAgent`, `OrcaMindClient`, `OrcaLabClient`, and transfer strategies dict |
-| `api/deps.py` | `Depends()` providers for all services; `get_orcanet_agent()` validates the `X-LLM-Provider` header against the allowed set and injects a request-scoped `TaskRepository` into override agents |
-| `api/schemas.py` | `TransferScoreRequest`, `TransferRecommendRequest`, `RetrieveRequest`, `EmbedRequest` (XOR validation + 25-dim pin on `statistical_features`), `ExplainRequest`, `EmbedResponse`, `ExplainResponse` |
+| `api/deps.py` | `Depends()` providers for all services; `get_orcanet_agent()` validates the `X-LLM-Provider` header against the allowed set and injects a request-scoped `TaskRepository` into override agents; `get_transfer_pipeline()` constructs a `TransferPipeline` wired to `app.state` clients |
+| `api/schemas.py` | `TransferScoreRequest`, `TransferRecommendRequest`, `TransferValidateRequest` (`run_validation` field aliased as `validate`), `RetrieveRequest`, `EmbedRequest` (XOR validation + 25-dim pin on `statistical_features`), `ExplainRequest`, `EmbedResponse`, `ExplainResponse`, `TransferScoreResponse`, `TransferValidateResponse` (typed `response_model` for the validate endpoint) |
 | `api/middleware.py` | CORS (`CORS_ORIGINS` env) + request-logging `BaseHTTPMiddleware` |
-| `api/routers/transfer.py` | Score, recommend, and mapping lookup endpoints |
+| `api/routers/transfer.py` | Score, recommend, validate, and mapping lookup endpoints |
+| `integration/pipeline.py` | `TransferPipeline` orchestrator; `TransferValidationResult` schema; `ServiceUnavailableError` |
 | `api/routers/retrieve.py` | Retrieve endpoint; delegates to `HybridRetriever` |
 | `api/routers/explain.py` | Explain endpoint; catches `LLMParsingError` → 502 |
 | `api/routers/embed.py` | Cross-domain embed endpoint; accepts task ID or raw feature vector |
