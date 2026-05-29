@@ -19,7 +19,13 @@ from orcanet.api.deps import (
     get_transfer_pipeline,
     get_transfer_strategies,
 )
-from orcanet.api.schemas import TransferRecommendRequest, TransferScoreRequest, TransferValidateRequest
+from orcanet.api.schemas import (
+    TransferRecommendRequest,
+    TransferScoreRequest,
+    TransferScoreResponse,
+    TransferValidateRequest,
+    TransferValidateResponse,
+)
 from orcanet.integration.pipeline import ServiceUnavailableError, TransferPipeline
 from orcanet.reasoning.agent import OrcaNetAgent
 from orcanet.reasoning.validators import TransferRecommendationResponse
@@ -85,11 +91,11 @@ async def recommend_transfer(
         raise HTTPException(status_code=502, detail="LLM agent error") from exc
 
 
-@router.post("/validate")
+@router.post("/validate", response_model=TransferValidateResponse)
 async def validate_transfer(
     body: TransferValidateRequest,
     pipeline: TransferPipeline = Depends(get_transfer_pipeline),
-) -> dict:
+) -> TransferValidateResponse:
     """Run the full three-way transfer pipeline and persist the result.
 
     Scores the transfer, optionally triggers an OrcaLab validation experiment,
@@ -109,21 +115,17 @@ async def validate_transfer(
     except ValueError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
 
-    return {
-        "score": {
-            "overall": result.score.overall,
-            "layer_scores": result.score.layer_scores,
-            "recommended_layers": result.score.recommended_layers,
-            "reasoning": result.score.reasoning,
-        },
-        "experiment_result": (
-            result.experiment_result.model_dump(mode="json")
-            if result.experiment_result is not None
-            else None
+    return TransferValidateResponse(
+        score=TransferScoreResponse(
+            overall=result.score.overall,
+            layer_scores=result.score.layer_scores,
+            recommended_layers=result.score.recommended_layers,
+            reasoning=result.score.reasoning,
         ),
-        "mapping": result.mapping.model_dump(mode="json"),
-        "improvement_over_baseline": result.improvement_over_baseline,
-    }
+        experiment_result=result.experiment_result,
+        mapping=result.mapping,
+        improvement_over_baseline=result.improvement_over_baseline,
+    )
 
 
 @router.get("/{mapping_id}", response_model=TransferMapping)
