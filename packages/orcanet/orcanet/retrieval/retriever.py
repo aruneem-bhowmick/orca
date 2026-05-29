@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 _FEATURE_DIM = 25  # must match CrossDomainEmbedder default input_dim
 
 
-def _task_to_feature_vector(task: Task) -> np.ndarray:
+def task_to_feature_vector(task: Task) -> np.ndarray:
     """Build a 25-dim float32 feature vector from a Task's statistical fields."""
     vec = np.zeros(_FEATURE_DIM, dtype=np.float32)
     if task.n_samples is not None:
@@ -74,14 +74,19 @@ class HybridRetriever:
         self,
         query_task: Task,
         filters: dict | None = None,
+        task_repository: TaskRepository | None = None,
     ) -> list[tuple[Task, float, str]]:
         """Return up to *top_k_final* (task, score, reasoning) tuples.
 
         Stage 1 — FAISS vector similarity; Stage 2 — metadata filter + threshold;
         Stage 3 — optional LLM re-rank.
+
+        ``task_repository`` overrides the instance-level repo so a request-scoped
+        session can be used without mutating shared state.
         """
+        repo = task_repository if task_repository is not None else self._repo
         # Stage 1: FAISS vector similarity
-        feature_vec = _task_to_feature_vector(query_task)
+        feature_vec = task_to_feature_vector(query_task)
         query_tensor = torch.from_numpy(feature_vec).unsqueeze(0)
         embedding = self._embedder.embed(query_tensor).squeeze(0).detach().numpy()
         candidate_ids: list[tuple[str, float]] = self._index.search(
@@ -94,7 +99,7 @@ class HybridRetriever:
 
         # Stage 2: Batch fetch + threshold filter + metadata filter
         fetched = await asyncio.gather(
-            *[self._repo.get_by_id(UUID(tid)) for tid in score_by_id],
+            *[repo.get_by_id(UUID(tid)) for tid in score_by_id],
             return_exceptions=True,
         )
         candidates: list[Task] = []
@@ -128,12 +133,13 @@ class HybridRetriever:
         self,
         query_description: str,
         query_task: Task,
+        task_repository: TaskRepository | None = None,
     ) -> list[tuple[Task, float, str]]:
         """Expand *query_description* and aggregate results across all expansions."""
         expansions = await self._expander.expand(query_description)
         all_results: list[tuple[Task, float, str]] = []
         for description in [query_description, *expansions]:
             query_variant = query_task.model_copy(update={"name": description})
-            results = await self.retrieve(query_variant)
+            results = await self.retrieve(query_variant, task_repository=task_repository)
             all_results.extend(results)
         return _deduplicate_and_sort(all_results)[: self.top_k_final]

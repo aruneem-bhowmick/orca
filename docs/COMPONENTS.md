@@ -1281,7 +1281,7 @@ All external service URLs (Prefect API, OrcaMind API) are resolved via `${oc.env
 
 ## `orcanet` — Cross-Domain Knowledge Transfer Agent
 
-OrcaNet is the third component of the Orca ecosystem. It orchestrates OrcaMind and OrcaLab to deliver end-to-end cross-domain knowledge transfer: retrieving proven model configurations from one domain and adapting them to a new target task, validated through a real OrcaLab experiment. The embeddings namespace (DANN, text, GNN-based architecture embedders), the transfer namespace (CKA feature transfer, weight transfer, architecture transfer, multi-task transfer), and the retrieval namespace (FAISS vector search, metadata filtering, LLM re-ranking) are all fully implemented. The reasoning agent and FastAPI service are in progress.
+OrcaNet is the third component of the Orca ecosystem. It orchestrates OrcaMind and OrcaLab to deliver end-to-end cross-domain knowledge transfer: retrieving proven model configurations from one domain and adapting them to a new target task, validated through a real OrcaLab experiment. All namespaces are fully implemented: embeddings (DANN, text, GNN-based architecture embedders), transfer (CKA feature transfer, weight transfer, architecture transfer, multi-task transfer), retrieval (FAISS vector search, metadata filtering, LLM re-ranking), reasoning (LangChain ReAct agent with retry and structured output), and the FastAPI HTTP service on port 8002.
 
 ### Package Structure
 
@@ -1290,9 +1290,9 @@ orcanet/
 ├── embeddings/    # CrossDomainEmbedder (DANN, implemented), TextTaskEmbedder (sentence-transformers + stats fusion, implemented), ArchitectureEmbedder (GNN-based, implemented)
 ├── transfer/      # CKA feature transfer, weight transfer, architecture transfer, multi-task transfer (all implemented)
 ├── retrieval/     # QueryExpander, LLMRanker, HybridRetriever — three-stage async pipeline (implemented)
-├── reasoning/     # LangChain ReAct agent, Pydantic response models, retry logic (planned)
+├── reasoning/     # LangChain ReAct agent, Pydantic response models, retry logic (implemented)
 │   └── prompts/   # Prompt templates: transfer explanation, task similarity, architecture recommendation
-├── api/           # FastAPI service (8 endpoints) — port 8002
+├── api/           # FastAPI service — 8 live endpoints on port 8002 (main.py, deps.py, schemas.py, middleware.py, routers/)
 └── cli.py         # Typer CLI — serve and version commands
 ```
 
@@ -2199,20 +2199,45 @@ Three string constants exported from `orcanet.reasoning.prompts`:
 | `TASK_SIMILARITY_TEMPLATE` | `task_similarity` | Assesses structural similarity between two tasks based on domain, feature space, and class distribution |
 | `ARCHITECTURE_RECOMMENDATION_TEMPLATE` | `architecture_recommendation` | Recommends an architecture for the target task given similar-task performance history and computational constraints |
 
-#### `orcanet.api` — FastAPI Service (scaffolded, port 8002)
+#### `orcanet.api` — FastAPI Service (port 8002)
 
-Planned 8-endpoint FastAPI service. See [API Reference](API-REFERENCE.md#orcanet-api----port-8002) for the full request/response schema for each endpoint.
+Eight live endpoints served by FastAPI, documented at `GET /docs`. The service runs on port 8002 by default and is launched via `orcanet serve` or `uvicorn orcanet.api.main:app`. See [API Reference](API-REFERENCE.md#orcanet-api----port-8002) for full request/response schema details.
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/` | Service info (name, version, status) |
-| `GET` | `/health` | Liveness probe — reports connectivity to OrcaMind and OrcaLab |
-| `POST` | `/api/v1/transfer` | Initiate a transfer recommendation (retrieve → score → optionally validate) |
-| `GET` | `/api/v1/transfer/{id}` | Poll transfer recommendation status |
-| `POST` | `/api/v1/similar-tasks` | Three-stage hybrid retrieval of similar source tasks |
-| `POST` | `/api/v1/recommend-architecture` | Retrieve and rank architectures for a target task |
-| `POST` | `/api/v1/explain-transfer` | LLM-generated explanation for a source–target transfer pair |
-| `GET` | `/api/v1/transfer-mappings` | Paginated list of persisted transfer score records |
+| Method | Path | Status | Description |
+|---|---|---|---|
+| `GET` | `/` | 200 | Service info `{name, version, status}` |
+| `GET` | `/health` | 200 | Parallel health probe — `{status, orcamind, orcalab, llm}`; `llm` is `null` unless `?deep=true`; always 200 even when degraded |
+| `POST` | `/api/v1/transfer/score` | 200 / 400 / 404 | CKA-based transfer score between two registered tasks; 400 for unknown strategy, 404 for missing task |
+| `POST` | `/api/v1/transfer/recommend` | 200 / 502 | `OrcaNetAgent` recommendation; supports `X-LLM-Provider` header override; 502 on agent error |
+| `GET` | `/api/v1/transfer/{mapping_id}` | 200 / 404 / 422 | Stored `TransferMapping` record from DB; 404 when not found |
+| `POST` | `/api/v1/retrieve` | 200 / 404 | Three-stage hybrid retrieval; LLM query expansion when `query_description` is provided |
+| `POST` | `/api/v1/explain` | 200 / 502 | LLM-generated explanation for a source→target transfer; supports `X-LLM-Provider` header; 502 on parse failure |
+| `POST` | `/api/v1/cross-domain-embed` | 200 / 404 / 422 | 64-dim L2-normalised embedding from `CrossDomainEmbedder`; accepts `task_id` or `statistical_features` |
+
+**Implementation structure:**
+
+| File | Role |
+|---|---|
+| `api/main.py` | `create_app()` factory; ASGI lifespan initialises DB engine, `CrossDomainEmbedder`, FAISS index, `HybridRetriever`, `OrcaNetAgent`, `OrcaMindClient`, `OrcaLabClient`, and transfer strategies dict |
+| `api/deps.py` | `Depends()` providers for all services; `get_orcanet_agent()` validates the `X-LLM-Provider` header against the allowed set and injects a request-scoped `TaskRepository` into override agents |
+| `api/schemas.py` | `TransferScoreRequest`, `TransferRecommendRequest`, `RetrieveRequest`, `EmbedRequest` (XOR validation + 25-dim pin on `statistical_features`), `ExplainRequest`, `EmbedResponse`, `ExplainResponse` |
+| `api/middleware.py` | CORS (`CORS_ORIGINS` env) + request-logging `BaseHTTPMiddleware` |
+| `api/routers/transfer.py` | Score, recommend, and mapping lookup endpoints |
+| `api/routers/retrieve.py` | Retrieve endpoint; delegates to `HybridRetriever` |
+| `api/routers/explain.py` | Explain endpoint; catches `LLMParsingError` → 502 |
+| `api/routers/embed.py` | Cross-domain embed endpoint; accepts task ID or raw feature vector |
+
+**`X-LLM-Provider` header override** — any request to `/transfer/recommend` or `/explain` may include this header set to `openai`, `anthropic`, or `local`. Values outside this closed set return **400** immediately. When a valid provider is present, `get_orcanet_agent()` constructs a fresh `OrcaNetAgent` using that provider, the `ORCANET_LLM_API_KEY` environment variable, and a request-scoped `TaskRepository` — so override agents retain full task-lookup and transfer-scoring capabilities, identical to the shared singleton.
+
+**Health check internals** — `GET /health` fires two concurrent tasks via `asyncio.gather`:
+1. `httpx.AsyncClient.get(orcamind_url + "/health")` with 3 s timeout
+2. `httpx.AsyncClient.get(orcalab_url + "/health")` with 3 s timeout
+
+The LLM check (`agent.llm.ainvoke("ping")`, 5 s timeout via `asyncio.wait_for`) is opt-in and only runs when the `?deep=true` query parameter is supplied. Omitting it avoids recurring token costs from frequent load-balancer probes. The `llm` field in the response is `null` for shallow probes. Any exception sets the corresponding flag to `false`. The endpoint never returns a non-200 status.
+
+**Lifespan shutdown** — the three cleanup tasks (`engine.dispose()`, `orcamind_client.aclose()`, `orcalab_client.aclose()`) run concurrently via `asyncio.gather(return_exceptions=True)` so a failure in any one does not prevent the others from completing.
+
+**Integration test suite** — `tests/integration/api/` uses `httpx.AsyncClient` + `ASGITransport` (no lifespan). All services are pre-populated via `app.dependency_overrides` and manual `app.state` assignment. OrcaMind/OrcaLab HTTP calls in the health tests are intercepted by `respx`. The async `client` fixture is decorated with `@pytest_asyncio.fixture` for compatibility with pytest-asyncio strict mode. Coverage of the new API code exceeds 90 %.
 
 ### CLI (`orcanet`)
 

@@ -513,139 +513,232 @@ Returns mean metric values grouped by `(task_name, architecture)` — the data s
 
 ## OrcaNet API — port 8002
 
-> The OrcaNet HTTP API is currently scaffolded; endpoint implementations are in progress. The retrieval Python module (`orcanet.retrieval`) is fully implemented and documented in [OrcaNet Retrieval Python API](#orcanet-retrieval-python-api) below.
+OrcaNet exposes a FastAPI HTTP service for cross-domain transfer scoring, LLM-powered recommendations, task retrieval, and domain-invariant embedding. All endpoints are live and covered by integration tests.
 
-OrcaNet orchestrates OrcaMind and OrcaLab to deliver end-to-end cross-domain knowledge transfer. It retrieves the best-performing model config for a source task from OrcaMind, scores transferability via Centered Kernel Alignment (CKA), dispatches a validation experiment to OrcaLab when the transfer score exceeds the threshold, and returns a structured recommendation with an LLM-generated explanation.
+The `X-LLM-Provider` request header can be set to `openai`, `anthropic`, or `local` on any endpoint that invokes the reasoning agent (`/transfer/recommend`, `/explain`) to override the default LLM provider configured at startup without restarting the service. Values outside this set are rejected with **400**.
 
-### Transfer
+### Root and health
 
-#### `POST /api/v1/transfer` — Recommend a transfer
+#### `GET /` — Service info
 
-Status: **202 Accepted**
+```json
+{ "name": "OrcaNet", "version": "1.0.0", "status": "ok" }
+```
 
-Scores transferability from all candidate source tasks to the given target task, optionally validates the best candidate via OrcaLab, and returns the top recommendation with a reasoning trace.
+---
 
-**Request body** — `TransferRequest`
+#### `GET /health` — Dependency health check
+
+Checks OrcaMind (`GET <orcamind_url>/health`, 3 s timeout) and OrcaLab (`GET <orcalab_url>/health`, 3 s timeout) in parallel. The LLM backend check (`agent.llm.ainvoke("ping")`, 5 s timeout) is **opt-in** to avoid recurring token costs from frequent load-balancer probes.
+
+**Query parameters**
+
+| Parameter | Type   | Default | Description                                        |
+|-----------|--------|---------|----------------------------------------------------|
+| `deep`    | `bool` | `false` | When `true`, also probes the LLM backend           |
+
+**Response**
 
 ```json
 {
-  "target_task_id":      "uuid",
-  "top_k":               5,
-  "min_transfer_score":  0.4,
-  "run_validation":      true
+  "status":   "healthy | degraded",
+  "orcamind": true,
+  "orcalab":  true,
+  "llm":      true
 }
 ```
 
-| Field                | Type      | Default | Description |
-|----------------------|-----------|---------|-------------|
-| `target_task_id`     | `string`  | —       | UUID of the target task already registered in OrcaMind |
-| `top_k`              | `int`     | `5`     | Number of source candidates to retrieve from the hybrid retrieval stage |
-| `min_transfer_score` | `float`   | `0.4`   | Candidates with CKA score below this are not dispatched to OrcaLab for validation |
-| `run_validation`     | `bool`    | `true`  | When `false`, returns the recommendation without waiting for an OrcaLab experiment |
+`llm` is `null` when `deep=false` (the LLM check was not performed). `status` is `"degraded"` when any checked component is unreachable; the endpoint always returns **200**.
 
-**Response** — `TransferRecommendation`
+**Examples**
+
+```http
+GET /health          → shallow probe; llm: null
+GET /health?deep=true → full probe; llm: true|false
+```
+
+---
+
+### Transfer
+
+#### `POST /api/v1/transfer/score` — Score transfer between two tasks
+
+**Request body** — `TransferScoreRequest`
 
 ```json
 {
-  "recommendation_id":  "uuid",
-  "target_task_id":     "uuid",
-  "source_task_id":     "uuid",
-  "transfer_score":     0.72,
-  "model_config":       { "architecture": "resnet18", "config": {} },
-  "validation_result":  { "experiment_id": "uuid", "metrics": {} },
-  "explanation":        "string",
-  "status":             "completed | pending | failed"
+  "source_task_id": "uuid-string",
+  "target_task_id": "uuid-string",
+  "strategy":       "feature"
+}
+```
+
+| Field            | Type     | Default     | Valid values                              |
+|------------------|----------|-------------|-------------------------------------------|
+| `source_task_id` | `string` | —           | UUID of a registered task                 |
+| `target_task_id` | `string` | —           | UUID of a registered task                 |
+| `strategy`       | `string` | `"feature"` | `"feature"`, `"weight"`, `"architecture"` |
+
+**Response** or **400** (unknown strategy) / **404** (task not found)
+
+```json
+{
+  "overall":            0.72,
+  "layer_scores":       { "layer1": 0.80, "layer2": 0.64 },
+  "recommended_layers": ["layer1"],
+  "reasoning":          "CKA analysis: 1/2 layers exceed threshold 0.5.",
+  "strategy":           "feature"
 }
 ```
 
 ---
 
-#### `GET /api/v1/transfer/{recommendation_id}` — Get transfer status
+#### `POST /api/v1/transfer/recommend` — LLM agent transfer recommendation
 
-**Response** — `TransferRecommendation` or **404**
+Runs the `OrcaNetAgent` reasoning loop and returns a structured recommendation. Supports the `X-LLM-Provider` header override.
 
-Poll this endpoint after a `POST /api/v1/transfer` with `run_validation: true` to wait for the OrcaLab validation experiment to complete.
+**Request body** — `TransferRecommendRequest`
+
+```json
+{
+  "target_task_id":    "uuid-string",
+  "query_description": "Image classification on small labelled dataset",
+  "top_k":             3
+}
+```
+
+**Response** — `TransferRecommendationResponse` or **502** (LLM agent error)
+
+```json
+{
+  "top_sources": [
+    {
+      "task_id":          "uuid-string",
+      "task_name":        "brain MRI classification",
+      "similarity_score": 0.88,
+      "transfer_score":   0.76,
+      "reasoning":        "High feature overlap in early layers."
+    }
+  ],
+  "recommended_strategy": "feature",
+  "expected_improvement": 0.14,
+  "explanation":          "Feature transfer is recommended due to shared low-level visual structure.",
+  "confidence":           0.82
+}
+```
+
+---
+
+#### `GET /api/v1/transfer/{mapping_id}` — Get stored transfer mapping
+
+**Response** — `TransferMapping` or **404** / **422** (invalid UUID)
+
+```json
+{
+  "mapping_id":     "uuid",
+  "source_task_id": "uuid",
+  "target_task_id": "uuid",
+  "transfer_score": 0.65,
+  "transfer_type":  "feature",
+  "metadata":       null,
+  "created_at":     "datetime"
+}
+```
 
 ---
 
 ### Retrieval
 
-#### `POST /api/v1/similar-tasks` — Find similar tasks
+#### `POST /api/v1/retrieve` — Retrieve similar tasks
 
-Three-stage hybrid retrieval: FAISS vector similarity → PostgreSQL metadata filter → optional LLM re-ranking. The underlying pipeline is implemented in `orcanet.retrieval.HybridRetriever` (see [OrcaNet Retrieval Python API](#orcanet-retrieval-python-api)); this HTTP endpoint wraps it.
+Runs three-stage hybrid retrieval (FAISS → metadata filter → optional LLM re-rank). When `query_description` is provided, queries are expanded via `QueryExpander` before FAISS search.
 
-**Request body** — `SimilarTasksRequest`
+**Request body** — `RetrieveRequest`
 
 ```json
 {
-  "target_task_id": "uuid",
-  "top_k":          10,
-  "use_reranking":  true
+  "task_id":           "uuid-string",
+  "query_description": "optional natural-language description",
+  "filters":           { "domain": "vision" },
+  "top_k":             10
 }
 ```
 
-**Response** — `list[SimilarTaskResult]`
+| Field               | Type             | Default | Description                                          |
+|---------------------|------------------|---------|------------------------------------------------------|
+| `task_id`           | `string`         | —       | UUID of the query task                               |
+| `query_description` | `string \| null` | `null`  | Enables LLM query expansion when provided            |
+| `filters`           | `object \| null` | `null`  | Field-equality filters applied to retrieved tasks    |
+| `top_k`             | `int`            | `10`    | Maximum number of results to return                  |
+
+**Response** — `list[SimilarityResult]` or **404** (task not found)
 
 ```json
 [
-  { "task_id": "uuid", "score": 0.91, "rank": 1, "reason": "string | null" }
+  { "task_id": "uuid", "score": 0.91, "rank": 1 },
+  { "task_id": "uuid", "score": 0.84, "rank": 2 }
 ]
 ```
 
 ---
 
-### Architecture
+### Explain
 
-#### `POST /api/v1/recommend-architecture` — Recommend architecture for target task
+#### `POST /api/v1/explain` — Generate transfer explanation
 
-Fetches model candidates from OrcaMind, applies domain-adversarial embeddings to score cross-domain transferability, and returns ranked architectures.
+Invokes the `OrcaNetAgent` with an explanation-focused query and returns the natural-language explanation from the agent's `TransferRecommendationResponse`. Supports the `X-LLM-Provider` header override.
 
-**Request body**
-
-```json
-{
-  "target_task_id": "uuid",
-  "top_k":          5
-}
-```
-
-**Response** — `list[ModelRecommendation]` (same schema as OrcaMind `/recommend-model`)
-
----
-
-### Reasoning
-
-#### `POST /api/v1/explain-transfer` — Generate transfer explanation
-
-Runs the LangChain ReAct agent to produce a human-readable explanation of why a particular source–target pair is a strong transfer candidate.
-
-**Request body**
+**Request body** — `ExplainRequest`
 
 ```json
 {
-  "source_task_id": "uuid",
-  "target_task_id": "uuid",
-  "transfer_score":  0.72
+  "source_task_id": "uuid-string",
+  "target_task_id": "uuid-string",
+  "strategy":       "feature"
 }
 ```
 
-**Response**
+**Response** or **502** (LLM agent error / unparseable response)
 
 ```json
-{ "explanation": "string", "reasoning_trace": ["string"] }
+{
+  "explanation": "Feature transfer is recommended due to shared low-level visual structure between the source retinal scan task and the target fundus classification task."
+}
 ```
 
 ---
 
-### Transfer Mappings
+### Embed
 
-#### `GET /api/v1/transfer-mappings` — List stored transfer mappings
+#### `POST /api/v1/cross-domain-embed` — Compute domain-invariant embedding
 
-Returns persisted pairwise source→target transfer scores from the `transfer_mappings` registry table.
+Produces a 64-dim L2-normalised embedding from the `CrossDomainEmbedder` (DANN-based). Accepts either a registered task ID (task features are derived from its registry metadata) or a raw 25-dim feature vector.
 
-**Query parameters**: `limit` (default 50, max 500), `offset` (default 0), `source_task_id` (filter)
+**Request body** — `EmbedRequest`
 
-**Response** — `list[TransferMapping]`
+```json
+{
+  "task_id":             "uuid-string",
+  "statistical_features": null,
+  "description":          null
+}
+```
+
+Exactly one of `task_id` or `statistical_features` must be provided; omitting both **or** supplying both returns **422**.
+
+| Field                  | Type                    | Description                                                         |
+|------------------------|-------------------------|---------------------------------------------------------------------|
+| `task_id`              | `string \| null`        | UUID of a registered task; features derived from DB                 |
+| `statistical_features` | `list[float] \| null`   | Pre-computed feature vector — **must be exactly 25 elements**       |
+| `description`          | `string \| null`        | Reserved; not used in current embedding computation                 |
+
+**Response** — `EmbedResponse` or **404** (task not found) / **422** (validation error)
+
+```json
+{ "embedding": [0.021, -0.133, ..., 0.047] }
+```
+
+The returned list has exactly 64 elements and is L2-normalised.
 
 ---
 
@@ -653,13 +746,15 @@ Returns persisted pairwise source→target transfer scores from the `transfer_ma
 
 All three services expose a health endpoint with no authentication requirement.
 
-| Service  | Endpoint           | Healthy response                                                              |
-|----------|--------------------|-------------------------------------------------------------------------------|
-| OrcaMind | `GET /health`      | `{"status": "ok", "faiss": true \| false}`                                     |
-| OrcaLab  | `GET /health`      | `{"status": "ok", "prefect": "http://..." \| null}`                            |
-| OrcaNet  | `GET /health`      | `{"status": "ok", "orcamind": "http://...", "orcalab": "http://..."}`          |
+| Service  | Endpoint      | `status` field          | Additional fields                                     |
+|----------|---------------|-------------------------|-------------------------------------------------------|
+| OrcaMind | `GET /health` | `"healthy" \| "degraded"` | `"db": bool`, `"faiss": bool`, `"mlflow": bool`     |
+| OrcaLab  | `GET /health` | `"healthy" \| "degraded"` | `"db": bool`, `"prefect": bool`                     |
+| OrcaNet  | `GET /health` | `"healthy" \| "degraded"` | `"orcamind": bool`, `"orcalab": bool`, `"llm": bool \| null` (null unless `?deep=true`) |
 
 The OrcaMind health endpoint reports `faiss: false` when the FAISS index has not been built yet. The service remains fully operational — only `/recommend-model` and `/similar-tasks` return 503 until the index is populated.
+
+The OrcaNet health endpoint is always **200**. When one or more checked components are unreachable, `status` is `"degraded"` but the individual flag for that component is `false`, allowing callers to determine exactly which dependency is unavailable. The `llm` field is `null` for shallow probes and `true|false` only when `?deep=true` is passed.
 
 ---
 
