@@ -72,6 +72,24 @@ class OrcaNetAgent:
         transfer_strategies: dict | None = None,
         orcamind_client: Any = None,
     ) -> None:
+        """Build the agent: wire tools, construct the LLM, and create the langgraph agent.
+
+        Args:
+            llm_provider: Backend provider — ``"openai"``, ``"anthropic"``, or ``"local"``.
+            model: Model identifier forwarded to the provider (e.g. ``"gpt-4-turbo"``).
+            temperature: Sampling temperature for LLM output.
+            api_key: Provider API key; falls back to provider-specific env var when ``None``.
+            retriever: :class:`~orcanet.retrieval.retriever.HybridRetriever` instance for
+                the task-retrieval tool.
+            embedder: :class:`~orcanet.embeddings.cross_domain.CrossDomainEmbedder` for
+                the embedding-similarity tool.
+            task_repository: :class:`~orca_shared.registry.repository.TaskRepository` used
+                by retrieval, similarity, and scoring tools.
+            transfer_strategies: Mapping of strategy name → :class:`TransferStrategy` for
+                the transfer-scoring tool.
+            orcamind_client: :class:`~orca_shared.clients.orcamind_client.OrcaMindClient`
+                for the performance-prediction tool.
+        """
         self.tools = [
             make_task_retrieval_tool(retriever),
             make_embedding_similarity_tool(embedder, task_repository),
@@ -132,6 +150,10 @@ class OrcaNetAgent:
         return TransferRecommendationResponse.model_validate_json(text)
 
     def _build_llm(self, provider: str, model: str, temperature: float, api_key: str | None):
+        """Instantiate and return the LangChain chat model for *provider*.
+
+        Raises ``ValueError`` for unknown provider strings.
+        """
         if provider == "openai":
             from langchain_openai import ChatOpenAI
 

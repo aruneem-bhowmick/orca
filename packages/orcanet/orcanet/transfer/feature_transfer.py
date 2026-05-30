@@ -95,7 +95,9 @@ class FeatureTransfer(TransferStrategy):
         hooks: list = []
 
         def _make_hook(name: str):
+            """Return a forward hook that captures the named module's output tensor."""
             def _hook(module, _hook_input, output):  # noqa: ARG001
+                """Store the output activation for *name* if it is a 2-D-or-higher tensor."""
                 if isinstance(output, torch.Tensor) and output.ndim >= 2:
                     activations[name] = output.detach().cpu().numpy()
 

@@ -12,6 +12,7 @@ __all__ = [
 
 
 def __getattr__(name: str) -> object:
+    """Lazy-import embedder classes to avoid loading heavy deps at package import time."""
     if name == "ArchitectureEmbedder":
         from .architecture_embedder import ArchitectureEmbedder
 

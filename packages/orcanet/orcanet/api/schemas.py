@@ -45,6 +45,7 @@ class EmbedRequest(BaseModel):
 
     @model_validator(mode="after")
     def _require_exactly_one_source(self) -> "EmbedRequest":
+        """Enforce that exactly one of task_id or statistical_features is provided."""
         if (self.task_id is None) == (self.statistical_features is None):
             raise ValueError("Provide exactly one of task_id or statistical_features")
         return self

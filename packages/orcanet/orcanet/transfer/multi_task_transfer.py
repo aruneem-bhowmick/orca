@@ -69,6 +69,7 @@ class MultiTaskModel(nn.Module):
         task_weighting: str = "equal",
         log_sigmas: dict[str, nn.Parameter] | None = None,
     ) -> None:
+        """Store backbone, task heads, weighting scheme, and optional log-variance parameters."""
         super().__init__()
         self.backbone = backbone
         # nn.ModuleDict ensures heads are registered as submodules (parameters tracked).
@@ -182,6 +183,17 @@ class MultiTaskTransfer(TransferStrategy):
         task_head_hidden_dim: int = 64,
         embedder: CrossDomainEmbedder | None = None,
     ) -> None:
+        """Initialise the strategy with a shared backbone and per-task head configuration.
+
+        Args:
+            backbone: Shared feature extractor; its output dimension is inferred automatically.
+            task_weighting: Loss balancing strategy — ``"equal"``, ``"uncertainty"``, or
+                ``"gradnorm"``.
+            task_head_hidden_dim: Hidden dimension of each task-specific two-layer MLP head.
+            embedder: :class:`~orcanet.embeddings.cross_domain.CrossDomainEmbedder` used to
+                compute task-similarity in :meth:`score_transfer`.  A new default instance is
+                created when not provided.
+        """
         if task_weighting not in _VALID_WEIGHTINGS:
             raise ValueError(
                 f"task_weighting must be one of {sorted(_VALID_WEIGHTINGS)}; "

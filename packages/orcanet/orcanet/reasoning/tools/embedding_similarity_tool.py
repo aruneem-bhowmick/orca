@@ -39,6 +39,7 @@ def get_task_repository():
 
 
 def _task_to_feature_vector(task) -> np.ndarray:
+    """Convert *task* metadata into a 25-dim float32 feature vector."""
     vec = np.zeros(25, dtype=np.float32)
     if task.n_samples is not None:
         vec[0] = math.log1p(float(task.n_samples))
@@ -55,6 +56,7 @@ from langchain_core.tools import StructuredTool, tool
 async def _run_embedding_similarity(
     task_id_a: str, task_id_b: str, *, embedder, task_repository
 ) -> str:
+    """Fetch both tasks, embed them, and return JSON with a cosine similarity float."""
     if embedder is None or task_repository is None:
         return json.dumps({"error": "Embedder or task repository not configured"})
     try:
@@ -90,6 +92,7 @@ def make_embedding_similarity_tool(embedder, task_repository) -> StructuredTool:
     """Return a new StructuredTool instance bound to the given embedder and repository."""
 
     async def _run(task_id_a: str, task_id_b: str) -> str:
+        """Delegate to ``_run_embedding_similarity`` with captured closure dependencies."""
         return await _run_embedding_similarity(
             task_id_a, task_id_b, embedder=embedder, task_repository=task_repository
         )
