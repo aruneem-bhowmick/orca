@@ -207,13 +207,13 @@ class TestCrossDomainEmbeddingQuality:
             [domain_ids[i] for i in train_idx], dtype=torch.long
         )
 
+        torch.manual_seed(7)
         embedder = CrossDomainEmbedder(
             input_dim=25,
             embedding_dim=64,
             n_domains=_N_DOMAINS,
             n_task_types=2,
         )
-        torch.manual_seed(7)
         embedder.fit(
             x_train,
             task_labels_train,
@@ -261,10 +261,10 @@ class TestCrossDomainEmbeddingQuality:
         task_labels_train = torch.zeros(len(train_idx), dtype=torch.long)
         domain_labels_train = torch.tensor(train_domain_ids, dtype=torch.long)
 
+        torch.manual_seed(7)
         dann = CrossDomainEmbedder(
             input_dim=25, embedding_dim=64, n_domains=_N_DOMAINS, n_task_types=2
         )
-        torch.manual_seed(7)
         dann.fit(
             x_train,
             task_labels_train,
@@ -278,8 +278,8 @@ class TestCrossDomainEmbeddingQuality:
 
         # ---- NeuralEmbedder (contrastive) ----
         train_datasets = [datasets[i][0] for i in train_idx]
-        neural = NeuralEmbedder(input_dim=25, hidden_dims=[128, 64], output_dim=64)
         torch.manual_seed(7)
+        neural = NeuralEmbedder(input_dim=25, hidden_dims=[128, 64], output_dim=64)
         neural.fit(
             dataset_list=train_datasets,
             domain_labels=train_domain_ids,
