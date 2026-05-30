@@ -6,7 +6,6 @@ exercise configuration files and environment-variable handling as pure Python.
 
 from __future__ import annotations
 
-import os
 from pathlib import Path
 from unittest.mock import patch
 
@@ -205,15 +204,80 @@ class TestEnvVarReading:
         )
 
     def test_env_var_overrides_default_orcamind_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """ORCAMIND_API_URL env var overrides the hard-coded default."""
+        """ORCAMIND_API_URL env var is read by the lifespan and stored in app.state."""
+        import asyncio
+        from unittest.mock import AsyncMock, MagicMock, patch
+
         custom_url = "http://custom-orcamind:9999"
         monkeypatch.setenv("ORCAMIND_API_URL", custom_url)
-        result = os.environ.get("ORCAMIND_API_URL", "http://localhost:8000")
+        # Provide the other required env vars so lifespan can proceed
+        monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://localhost:5432/test")
+
+        from orcanet.api.main import create_app, lifespan
+
+        app = create_app()
+
+        # Make FaissIndex().load() raise FileNotFoundError so the lifespan
+        # sets retriever=None and continues rather than crashing.
+        faiss_inst = MagicMock()
+        faiss_inst.load.side_effect = FileNotFoundError("no index file")
+
+        # Patch all heavyweight startup side-effects so the lifespan can be
+        # exercised without a live database, FAISS index, or LLM provider.
+        with (
+            patch("orcanet.api.main.get_engine", return_value=MagicMock(dispose=AsyncMock())),
+            patch("orcanet.api.main.CrossDomainEmbedder", return_value=MagicMock(output_dim=64)),
+            patch("orcamind.embedders.similarity.FaissIndex", return_value=faiss_inst),
+            patch("orcanet.api.main.FeatureTransfer", return_value=MagicMock()),
+            patch("orcanet.api.main.WeightTransfer", return_value=MagicMock()),
+            patch("orcanet.api.main.ArchitectureTransfer", return_value=MagicMock()),
+            patch("orcanet.api.main.OrcaNetAgent", return_value=MagicMock(llm=MagicMock())),
+            patch("orcanet.api.main.QueryExpander"),
+            patch("orcanet.api.main.LLMRanker"),
+            patch("orca_shared.clients.orcamind_client.OrcaMindClient", return_value=MagicMock(aclose=AsyncMock())),
+            patch("orca_shared.clients.orcalab_client.OrcaLabClient", return_value=MagicMock(aclose=AsyncMock())),
+        ):
+            async def run():
+                async with lifespan(app):
+                    return app.state.orcamind_url
+
+            result = asyncio.run(run())
+
         assert result == custom_url
 
     def test_env_var_overrides_default_orcalab_url(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """ORCALAB_API_URL env var overrides the hard-coded default."""
+        """ORCALAB_API_URL env var is read by the lifespan and stored in app.state."""
+        import asyncio
+        from unittest.mock import AsyncMock, MagicMock, patch
+
         custom_url = "http://custom-orcalab:9998"
         monkeypatch.setenv("ORCALAB_API_URL", custom_url)
-        result = os.environ.get("ORCALAB_API_URL", "http://localhost:8001")
+        monkeypatch.setenv("DATABASE_URL", "postgresql+asyncpg://localhost:5432/test")
+
+        from orcanet.api.main import create_app, lifespan
+
+        app = create_app()
+
+        faiss_inst = MagicMock()
+        faiss_inst.load.side_effect = FileNotFoundError("no index file")
+
+        with (
+            patch("orcanet.api.main.get_engine", return_value=MagicMock(dispose=AsyncMock())),
+            patch("orcanet.api.main.CrossDomainEmbedder", return_value=MagicMock(output_dim=64)),
+            patch("orcamind.embedders.similarity.FaissIndex", return_value=faiss_inst),
+            patch("orcanet.api.main.FeatureTransfer", return_value=MagicMock()),
+            patch("orcanet.api.main.WeightTransfer", return_value=MagicMock()),
+            patch("orcanet.api.main.ArchitectureTransfer", return_value=MagicMock()),
+            patch("orcanet.api.main.OrcaNetAgent", return_value=MagicMock(llm=MagicMock())),
+            patch("orcanet.api.main.QueryExpander"),
+            patch("orcanet.api.main.LLMRanker"),
+            patch("orca_shared.clients.orcamind_client.OrcaMindClient", return_value=MagicMock(aclose=AsyncMock())),
+            patch("orca_shared.clients.orcalab_client.OrcaLabClient", return_value=MagicMock(aclose=AsyncMock())),
+        ):
+            async def run():
+                async with lifespan(app):
+                    return app.state.orcalab_url
+
+            result = asyncio.run(run())
+
         assert result == custom_url
