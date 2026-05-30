@@ -17,20 +17,24 @@ _task_repository = None
 
 
 def set_embedder(embedder) -> None:
+    """Set the module-level cross-domain embedder used by ``embedding_similarity_tool``."""
     global _embedder
     _embedder = embedder
 
 
 def set_task_repository(repo) -> None:
+    """Set the module-level task repository used by ``embedding_similarity_tool``."""
     global _task_repository
     _task_repository = repo
 
 
 def get_embedder():
+    """Return the currently configured module-level embedder (may be ``None``)."""
     return _embedder
 
 
 def get_task_repository():
+    """Return the currently configured module-level task repository (may be ``None``)."""
     return _task_repository
 
 

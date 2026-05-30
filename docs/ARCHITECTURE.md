@@ -177,7 +177,8 @@ orca/
 │           │   ├── transfer/         # linear_cka correctness, FeatureTransfer scoring/guards/metadata/structural, execute_transfer — 37 tests; WeightTransfer scoring (name/shape/both), execute_transfer, optimizer LR groups, guards, metadata — 36 tests; ArchitectureTransfer adapt_architecture, score_transfer, execute_transfer (incl. all activations), metadata, guards — 29 tests; MultiTaskModel forward routing, compute_loss, compute_uncertainty_loss, log_sigma gradient flow — 19 tests; MultiTaskTransfer add_task, score_transfer, execute_transfer, metadata, gradnorm weights, uncertainty convergence — 37 tests (158 total)
 │           │   ├── retrieval/        # _parse_list_from_response, QueryExpander.expand — 12 tests; _parse_ranked_list, LLMRanker.rerank — 11 tests; _task_to_feature_vector, _deduplicate_and_sort, HybridRetriever.retrieve, retrieve_with_expanded_queries — 12 tests (35 total)
 │           │   └── *.py              # Package structure, CLI smoke tests, config validation — 18 tests
-│           └── integration/          # API integration tests (planned)
+│           ├── integration/          # API integration tests (planned)
+│           └── benchmarks/           # Recall@10 retrieval, cross-domain embedding quality, transfer quality — 3 benchmark modules (no services required)
 │
 ├── scripts/
 │   ├── bootstrap_meta_dataset.py    # Seed registry from OpenML CC-18 / CTR-23

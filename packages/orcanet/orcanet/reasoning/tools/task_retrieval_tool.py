@@ -15,11 +15,13 @@ _retriever = None
 
 
 def set_retriever(retriever) -> None:
+    """Set the module-level hybrid retriever used by ``task_retrieval_tool``."""
     global _retriever
     _retriever = retriever
 
 
 def get_retriever():
+    """Return the currently configured module-level retriever (may be ``None``)."""
     return _retriever
 
 

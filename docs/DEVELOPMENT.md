@@ -153,6 +153,24 @@ pytest packages/orcanet/tests/unit/retrieval/test_retriever.py -v -k "TestDedupl
 
 # OrcaNet — HybridRetriever.retrieve() and retrieve_with_expanded_queries() tests only
 pytest packages/orcanet/tests/unit/retrieval/test_retriever.py -v -k "TestHybridRetriever"
+
+# OrcaNet — all three benchmark modules (no services required)
+pytest packages/orcanet/tests/benchmarks/ -v
+
+# OrcaNet — Recall@9 retrieval benchmark only
+pytest packages/orcanet/tests/benchmarks/test_retrieval_benchmark.py -v
+
+# OrcaNet — cross-domain embedding quality benchmark only
+pytest packages/orcanet/tests/benchmarks/test_embedding_benchmark.py -v
+
+# OrcaNet — transfer recommendation quality benchmark only
+pytest packages/orcanet/tests/benchmarks/test_transfer_quality.py -v
+
+# OrcaNet — full test suite with coverage enforcement (unit + benchmarks)
+pytest packages/orcanet/ --cov=orcanet --cov-fail-under=80
+
+# OrcaNet — skip benchmark tests (fast unit-only run)
+pytest packages/orcanet/tests/unit/ -v -m "not benchmark"
 ```
 
 The test suite has 80+ test files across unit, integration, performance, and deployment-validation categories.
@@ -196,6 +214,16 @@ OrcaMind integration tests auto-skip when their target service port is unreachab
 - *`side_effect` lambda for multi-task repository mocking* — when a test needs `TaskRepository.get_by_id` to return different tasks for different UUIDs (e.g. the similarity-threshold test), `repo.get_by_id = AsyncMock(side_effect=lambda uid: task_map.get(uid))` routes calls through a pre-populated dict keyed by `UUID` objects. This is preferable to `side_effect=[task1, task2]` (call-order dependent) and to separate mock instances per call site (not possible with a single `AsyncMock`).
 - *Pydantic field-constraint boundary test* — `TestParseRankedList.test_score_out_of_range_returns_empty_list` submits `"score": 1.5` to exercise `_RankedItem`'s `Field(ge=0.0, le=1.0)` constraint. The resulting `ValidationError` is caught by `_parse_ranked_list` and silently converted to `[]`. Testing the boundary explicitly pins the graceful-degradation contract: a misbehaving LLM that emits an out-of-range score must never propagate a `ValidationError` to the caller, and without the boundary test a future refactor could remove or weaken the `Field` constraint without any test catching the regression.
 - *No-LLM-call assertion for empty candidate list* — `TestLLMRanker.test_empty_candidates_returns_empty_without_llm_call` calls `LLMRanker.rerank` with `candidate_tasks=[]` and asserts both `result == []` and `llm.ainvoke.assert_not_called()`. The second assertion is the load-bearing one: it documents that the short-circuit is deliberate (avoid paying LLM token cost for a degenerate case) and that no network call is made in the empty-candidate path, which matters for tests and for production latency.
+
+**OrcaNet benchmark test patterns:**
+
+- *Controlled embedder for deterministic recall* — `test_retrieval_benchmark.py` bypasses CrossDomainEmbedder with a `_ControlledEmbedder` that maps each task's 25-dim feature vector to a pre-assigned orthonormal cluster embedding via a rounded-tuple lookup table. This ensures the FAISS similarity search is driven by known geometry (intra-group cosine ≈ 1, cross-group cosine ≈ 0) rather than learned representations, making the Recall@9 assertion deterministic and reproducible across seeds. `top_k_final=9` (one less than the group size of 10) prevents the self-hit from trivially filling the final slot and inflating recall to 1.0; ground truth excludes the query, so 8 of 9 positives retrieved yields a genuine Recall@9 ≈ 0.889 > 0.85.
+- *Exact-cosine index without a FAISS binary* — `_SimpleFaissIndex` computes exact cosine similarity over all stored embeddings using numpy matrix operations, replacing the FAISS binary that is unavailable in CI. The index stores `(task_id, embedding)` pairs and returns top-k task IDs sorted by descending similarity. This lets the recall benchmark verify retrieval logic end-to-end without requiring a native FAISS install.
+- *Orthonormal cluster centres for geometric separation* — tasks are partitioned into 10 groups using `np.eye(25)[g]` as the cluster centre. These are the standard basis vectors in ℝ²⁵, which are mutually orthogonal (cross-group cosine = 0) and unit-length (within-group cosine = 1 before noise). Adding `rng.standard_normal(25) * 0.02` per task perturbs each embedding slightly while preserving the inter-group separation that makes the recall assertion reliable.
+- *Heterogeneous domain dataset construction* — the embedding benchmark builds five distinct data distributions (normal, correlated+skewed with exponential noise, sparse with 70% zeros, bimodal with ±4 means, heavy-tailed Student-t) to ensure the domain-invariance test is not trivially satisfied by random embeddings. Using structurally different feature spaces forces the DANN to learn genuinely domain-agnostic representations rather than collapsing on feature-space proximity.
+- *DANN-vs-NeuralEmbedder gap comparison* — `test_dann_gap_smaller_than_contrastive_gap` is a relative assertion that does not hard-code the NeuralEmbedder gap. NeuralEmbedder uses NT-Xent contrastive loss, which clusters same-domain tasks together — deliberately increasing the domain gap. DANN uses gradient reversal, which pushes domain-invariance. The relative comparison enforces the architectural intent without requiring the NeuralEmbedder gap to be a specific value.
+- *Binary label construction for Spearman* — `test_transfer_quality.py` uses `deepcopy(model)` for high-transfer pairs (CKA ≈ 1.0) and independently seeded random MLPs for low-transfer pairs (CKA < 0.5). The binary 1.0/0.0 label distribution is ideal for Spearman rank correlation: the two groups are well-separated in both CKA and label space, so the ρ > 0.60 assertion passes with margin even for shallow three-layer networks where the absolute CKA values shift with architecture.
+- *Shared probe data across all pairs* — `_PROBE_DATA` is a fixed `(64, 8)` matrix seeded with `np.random.default_rng(0)`, shared across all 20 model pairs. Using the same probe data makes CKA scores directly comparable across pairs (CKA depends on both the model activations and the input distribution) and eliminates probe-data variance as a source of ranking noise.
 
 The performance benchmark tests in `tests/performance/` make executable compute-efficiency assertions that cannot be expressed as ordinary unit tests. They drive deterministic synthetic sweeps — no external services, no randomness — and enforce measurable invariants about algorithm behaviour at scale. Currently the tier contains `TestASHAPruningSavings`, which simulates 20-trial hyperparameter sweeps on a concave-quadratic learning-curve objective and asserts that ASHA executes ≤60% of the steps an unpruned baseline would require (≥40% compute savings). The scaling test additionally runs a 27-trial cohort and asserts that savings for the larger cohort are at least as good as for the 20-trial baseline, enforcing the monotonicity property directly.
 

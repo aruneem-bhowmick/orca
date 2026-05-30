@@ -11,6 +11,7 @@ class QueryExpander:
     """Generates alternative phrasings of an ML task description using an LLM."""
 
     def __init__(self, llm: BaseLLM) -> None:
+        """Initialise with a LangChain-compatible *llm* instance."""
         self._llm = llm
 
     async def expand(self, query: str, n_expansions: int = 3) -> list[str]:

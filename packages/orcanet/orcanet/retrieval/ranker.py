@@ -52,6 +52,7 @@ class LLMRanker:
     """Re-ranks candidate tasks via LLM with Pydantic-validated JSON output."""
 
     def __init__(self, llm: BaseLLM) -> None:
+        """Initialise with a LangChain-compatible *llm* instance."""
         self._llm = llm
 
     async def rerank(

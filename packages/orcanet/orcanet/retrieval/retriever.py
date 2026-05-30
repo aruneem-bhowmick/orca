@@ -60,6 +60,24 @@ class HybridRetriever:
         similarity_threshold: float = 0.6,
         use_llm_reranking: bool = True,
     ) -> None:
+        """Initialise the retriever with its three-stage pipeline components.
+
+        Args:
+            faiss_index:         FAISS (or compatible) index with a ``search(embedding, k)``
+                                 method that returns ``[(task_id_str, score), ...]``.
+            task_repository:     Repository used to hydrate task metadata from IDs.
+            embedder:            ``CrossDomainEmbedder`` used to project the query
+                                 task's statistical feature vector into 64-dim space.
+            query_expander:      ``QueryExpander`` that generates alternative
+                                 phrasings for expanded-query retrieval.
+            llm_ranker:          ``LLMRanker`` that re-orders candidates in Stage 3.
+            top_k_initial:       Number of FAISS candidates retrieved in Stage 1.
+            top_k_final:         Maximum results returned to the caller.
+            similarity_threshold: Minimum FAISS cosine score to retain a candidate
+                                 after Stage 1 (Stage 2 filter).
+            use_llm_reranking:   When ``True`` and ``len(candidates) > top_k_final``,
+                                 Stage 3 LLM re-ranking is applied.
+        """
         self._index = faiss_index
         self._repo = task_repository
         self._embedder = embedder
@@ -135,7 +153,21 @@ class HybridRetriever:
         query_task: Task,
         task_repository: TaskRepository | None = None,
     ) -> list[tuple[Task, float, str]]:
-        """Expand *query_description* and aggregate results across all expansions."""
+        """Expand *query_description* and aggregate results across all expansions.
+
+        Stage 1 (FAISS vector similarity) is driven exclusively by the statistical
+        features of *query_task* (``n_samples``, ``n_features``, ``n_classes``).
+        Because these fields are unchanged across expansions, Stage 1 returns an
+        identical candidate set for every phrasing.  The fan-out benefit therefore
+        applies to Stage 3 (LLM re-ranking, when ``use_llm_reranking=True``): each
+        expanded variant is passed as the query phrasing so the ranker sees a richer
+        description of the retrieval intent.  ``_deduplicate_and_sort`` collapses
+        the repeated Stage 1 results to a single sorted list.
+
+        For text-only queries where *query_task* carries ``None`` statistical fields,
+        Stage 1 searches with a zero-vector embedding; Stage 3 is then the sole
+        source of ranking signal.
+        """
         expansions = await self._expander.expand(query_description)
         all_results: list[tuple[Task, float, str]] = []
         for description in [query_description, *expansions]:
