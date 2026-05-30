@@ -87,7 +87,7 @@ OrcaNet  (port 8002) ←─ depends on postgres, redis, orcamind, orcalab
 
 ## Service Startup Order
 
-Services must start in dependency order. Docker Compose `depends_on` with `condition: service_healthy` enforces this automatically:
+Services must start in dependency order. Docker Compose `depends_on` with `condition: service_healthy` enforces this automatically for all services including Redis (which exposes a `redis-cli ping` healthcheck):
 
 ```
 1. postgres        ← healthcheck: pg_isready

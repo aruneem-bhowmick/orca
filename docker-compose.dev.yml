@@ -134,7 +134,7 @@ services:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
       minio:
         condition: service_healthy
       mlflow:
@@ -163,7 +163,7 @@ services:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
       minio:
         condition: service_healthy
       mlflow:
@@ -216,7 +216,7 @@ services:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
       orcamind:
         condition: service_healthy
       orcalab:
