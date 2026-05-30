@@ -157,7 +157,7 @@ pytest packages/orcanet/tests/unit/retrieval/test_retriever.py -v -k "TestHybrid
 # OrcaNet — all three benchmark modules (no services required)
 pytest packages/orcanet/tests/benchmarks/ -v
 
-# OrcaNet — Recall@10 retrieval benchmark only
+# OrcaNet — Recall@9 retrieval benchmark only
 pytest packages/orcanet/tests/benchmarks/test_retrieval_benchmark.py -v
 
 # OrcaNet — cross-domain embedding quality benchmark only
@@ -166,7 +166,7 @@ pytest packages/orcanet/tests/benchmarks/test_embedding_benchmark.py -v
 # OrcaNet — transfer recommendation quality benchmark only
 pytest packages/orcanet/tests/benchmarks/test_transfer_quality.py -v
 
-# OrcaNet — benchmark tests together with coverage report
+# OrcaNet — full test suite with coverage enforcement (unit + benchmarks)
 pytest packages/orcanet/ --cov=orcanet --cov-fail-under=80
 
 # OrcaNet — skip benchmark tests (fast unit-only run)
@@ -217,7 +217,7 @@ OrcaMind integration tests auto-skip when their target service port is unreachab
 
 **OrcaNet benchmark test patterns:**
 
-- *Controlled embedder for deterministic recall* — `test_retrieval_benchmark.py` bypasses CrossDomainEmbedder with a `_ControlledEmbedder` that maps each task's 25-dim feature vector to a pre-assigned orthonormal cluster embedding via a rounded-tuple lookup table. This ensures the FAISS similarity search is driven by known geometry (intra-group cosine ≈ 1, cross-group cosine ≈ 0) rather than learned representations, making the Recall@10 assertion deterministic and reproducible across seeds.
+- *Controlled embedder for deterministic recall* — `test_retrieval_benchmark.py` bypasses CrossDomainEmbedder with a `_ControlledEmbedder` that maps each task's 25-dim feature vector to a pre-assigned orthonormal cluster embedding via a rounded-tuple lookup table. This ensures the FAISS similarity search is driven by known geometry (intra-group cosine ≈ 1, cross-group cosine ≈ 0) rather than learned representations, making the Recall@9 assertion deterministic and reproducible across seeds. `top_k_final=9` (one less than the group size of 10) prevents the self-hit from trivially filling the final slot and inflating recall to 1.0; ground truth excludes the query, so 8 of 9 positives retrieved yields a genuine Recall@9 ≈ 0.889 > 0.85.
 - *Exact-cosine index without a FAISS binary* — `_SimpleFaissIndex` computes exact cosine similarity over all stored embeddings using numpy matrix operations, replacing the FAISS binary that is unavailable in CI. The index stores `(task_id, embedding)` pairs and returns top-k task IDs sorted by descending similarity. This lets the recall benchmark verify retrieval logic end-to-end without requiring a native FAISS install.
 - *Orthonormal cluster centres for geometric separation* — tasks are partitioned into 10 groups using `np.eye(25)[g]` as the cluster centre. These are the standard basis vectors in ℝ²⁵, which are mutually orthogonal (cross-group cosine = 0) and unit-length (within-group cosine = 1 before noise). Adding `rng.standard_normal(25) * 0.02` per task perturbs each embedding slightly while preserving the inter-group separation that makes the recall assertion reliable.
 - *Heterogeneous domain dataset construction* — the embedding benchmark builds five distinct data distributions (normal, correlated+skewed with exponential noise, sparse with 70% zeros, bimodal with ±4 means, heavy-tailed Student-t) to ensure the domain-invariance test is not trivially satisfied by random embeddings. Using structurally different feature spaces forces the DANN to learn genuinely domain-agnostic representations rather than collapsing on feature-space proximity.
