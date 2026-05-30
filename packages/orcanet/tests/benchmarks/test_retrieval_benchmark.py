@@ -25,6 +25,8 @@ import torch
 from orca_shared.schemas.task import Task
 from orcanet.retrieval.retriever import HybridRetriever, task_to_feature_vector
 
+pytestmark = pytest.mark.benchmark
+
 # ---------------------------------------------------------------------------
 # Benchmark constants
 # ---------------------------------------------------------------------------

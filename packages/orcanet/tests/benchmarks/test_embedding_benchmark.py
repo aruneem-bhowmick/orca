@@ -24,6 +24,8 @@ from orcamind.embedders.neural import NeuralEmbedder
 from orcamind.embedders.statistical import StatisticalEmbedder
 from orcanet.embeddings.cross_domain import CrossDomainEmbedder
 
+pytestmark = pytest.mark.benchmark
+
 # ---------------------------------------------------------------------------
 # Benchmark hyper-parameters
 # ---------------------------------------------------------------------------

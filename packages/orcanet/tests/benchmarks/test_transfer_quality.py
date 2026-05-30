@@ -30,6 +30,8 @@ from scipy.stats import spearmanr
 from orca_shared.schemas.task import Task
 from orcanet.transfer.feature_transfer import FeatureTransfer
 
+pytestmark = pytest.mark.benchmark
+
 # ---------------------------------------------------------------------------
 # Benchmark constants
 # ---------------------------------------------------------------------------
