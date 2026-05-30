@@ -34,6 +34,13 @@ _DEFAULT_ORCALAB_URL = "http://localhost:8001"
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
+    """Initialise all singleton services on startup; dispose of them on shutdown.
+
+    Reads ``DATABASE_URL``, ``ORCAMIND_API_URL``, ``ORCALAB_API_URL``,
+    ``FAISS_INDEX_PATH``, ``ORCANET_LLM_PROVIDER``, and ``ORCANET_LLM_API_KEY``
+    from the environment and wires up the DB engine, FAISS index, transfer
+    strategies, LLM agent, and upstream service clients into ``app.state``.
+    """
     db_url = os.environ.get("DATABASE_URL", _DEFAULT_DB_URL)
     engine = get_engine(db_url)
     app.state.db_engine = engine
@@ -84,8 +91,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     else:
         app.state.retriever = None
 
-    orcamind_url = os.environ.get("ORCAMIND_URL", _DEFAULT_ORCAMIND_URL)
-    orcalab_url = os.environ.get("ORCALAB_URL", _DEFAULT_ORCALAB_URL)
+    orcamind_url = os.environ.get("ORCAMIND_API_URL", _DEFAULT_ORCAMIND_URL)
+    orcalab_url = os.environ.get("ORCALAB_API_URL", _DEFAULT_ORCALAB_URL)
     app.state.orcamind_client = OrcaMindClient(orcamind_url)
     app.state.orcalab_client = OrcaLabClient(orcalab_url)
     app.state.orcamind_url = orcamind_url
@@ -126,6 +133,11 @@ async def _check_llm(agent: OrcaNetAgent, timeout: float) -> bool:
 
 
 def create_app() -> FastAPI:
+    """Construct and return the OrcaNet FastAPI application.
+
+    Registers all routers under ``/api/v1``, attaches CORS and request-logging
+    middleware, and wires the ``/`` and ``/health`` endpoints.
+    """
     from orcanet.api.routers.embed import router as embed_router
     from orcanet.api.routers.explain import router as explain_router
     from orcanet.api.routers.retrieve import router as retrieve_router
@@ -155,10 +167,12 @@ def create_app() -> FastAPI:
 
     @app.get("/", tags=["health"])
     async def root() -> dict:
+        """Return service name, version, and static OK status."""
         return {"name": "OrcaNet", "version": "1.0.0", "status": "ok"}
 
     @app.get("/health", tags=["health"])
     async def health(request: Request, deep: bool = False) -> dict:
+        """Report liveness of OrcaMind, OrcaLab, and (when ``deep=true``) the LLM backend."""
         checks = await asyncio.gather(
             _check_http(request.app.state.orcamind_url, timeout=3.0),
             _check_http(request.app.state.orcalab_url, timeout=3.0),

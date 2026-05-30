@@ -21,7 +21,7 @@ OrcaMind (port 8000) ───────────────────�
 OrcaLab  (port 8001) ────────────────────────────────────────────┤
 OrcaLab Dashboard (port 8502) ←─ depends on OrcaLab
                                                          ↓    ↓
-OrcaNet  (port 8002) ←─ depends on postgres, orcamind, orcalab
+OrcaNet  (port 8002) ←─ depends on postgres, redis, orcamind, orcalab
 ```
 
 ---
@@ -74,16 +74,20 @@ OrcaNet  (port 8002) ←─ depends on postgres, orcamind, orcalab
 
 | Variable           | Required | Default (dev)                                          | Description                                   |
 |--------------------|----------|--------------------------------------------------------|-----------------------------------------------|
-| `DATABASE_URL`     | yes      | `postgresql+asyncpg://orca:orca_dev_secret@postgres:5432/orca_registry` | Async PostgreSQL connection string |
-| `ORCAMIND_API_URL` | no       | `http://orcamind:8000`                                 | OrcaMind service base URL; source task retrieval and model recommendation degrade gracefully when unset |
-| `ORCALAB_API_URL`  | no       | `http://orcalab:8001`                                  | OrcaLab service base URL; validation dispatch degrades gracefully when unset |
-| `OPENAI_API_KEY`   | no       | —                                                      | OpenAI API key; LLM re-ranking step skipped when unset (use `LLM_PROVIDER=anthropic` with `ANTHROPIC_API_KEY` to swap providers) |
+| `DATABASE_URL`         | yes | `postgresql+asyncpg://orca:orca_dev_secret@postgres:5432/orca_registry` | Async PostgreSQL connection string |
+| `ORCAMIND_API_URL`     | no  | `http://orcamind:8000`   | OrcaMind service base URL; source task retrieval and model recommendation degrade gracefully when unset |
+| `ORCALAB_API_URL`      | no  | `http://orcalab:8001`    | OrcaLab service base URL; validation dispatch degrades gracefully when unset |
+| `OPENAI_API_KEY`       | no  | —                        | OpenAI API key for the LLM agent; LLM re-ranking and `recommend` endpoint disabled when unset |
+| `ANTHROPIC_API_KEY`    | no  | —                        | Anthropic API key; set together with `ORCANET_LLM_PROVIDER=anthropic` to use Claude as the reasoning LLM |
+| `ORCANET_LLM_PROVIDER` | no  | `openai`                 | LLM backend: `openai`, `anthropic`, or `local` (OpenAI-compatible endpoint via `ORCANET_LOCAL_LLM_URL`) |
+| `ORCANET_LLM_API_KEY`  | no  | —                        | Explicit API key for the LLM provider (overrides provider-specific env vars above) |
+| `FAISS_INDEX_PATH`     | no  | `data/faiss_index`       | Path to the pre-built FAISS index; retriever disabled when the index file is absent |
 
 ---
 
 ## Service Startup Order
 
-Services must start in dependency order. Docker Compose `depends_on` with `condition: service_healthy` enforces this automatically:
+Services must start in dependency order. Docker Compose `depends_on` with `condition: service_healthy` enforces this automatically for all services including Redis (which exposes a `redis-cli ping` healthcheck):
 
 ```
 1. postgres        ← healthcheck: pg_isready
@@ -94,7 +98,7 @@ Services must start in dependency order. Docker Compose `depends_on` with `condi
 6. orcamind        ← healthcheck: httpx GET /health  (depends on postgres, redis, minio, mlflow)
 7. orcalab         ← healthcheck: httpx GET /health  (depends on all above + orcamind)
 8. orcalab-dashboard   ← no healthcheck (depends on orcalab)
-9. orcanet         ← healthcheck: httpx GET /health  (depends on postgres, orcamind, orcalab)
+9. orcanet         ← healthcheck: httpx GET /health  (depends on postgres, redis, orcamind, orcalab)
 ```
 
 Before OrcaMind starts, run the Alembic migrations:
@@ -140,9 +144,13 @@ curl http://localhost:8000/health
 curl http://localhost:8001/health
 # {"status": "ok", "prefect": "http://prefect:4200/api"}
 
-# OrcaNet
+# OrcaNet (shallow probe — no LLM check)
 curl http://localhost:8002/health
-# {"status": "ok", "orcamind": "http://orcamind:8000", "orcalab": "http://orcalab:8001"}
+# {"status": "healthy", "orcamind": true, "orcalab": true, "llm": null}
+
+# OrcaNet (deep probe — includes LLM roundtrip; requires OPENAI_API_KEY or ANTHROPIC_API_KEY)
+curl "http://localhost:8002/health?deep=true"
+# {"status": "healthy", "orcamind": true, "orcalab": true, "llm": true}
 
 # MLflow
 curl http://localhost:5000/health

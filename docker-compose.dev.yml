@@ -134,7 +134,7 @@ services:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
       minio:
         condition: service_healthy
       mlflow:
@@ -163,7 +163,7 @@ services:
       postgres:
         condition: service_healthy
       redis:
-        condition: service_started
+        condition: service_healthy
       minio:
         condition: service_healthy
       mlflow:
@@ -214,6 +214,8 @@ services:
       OPENAI_API_KEY: ${OPENAI_API_KEY}
     depends_on:
       postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
       orcamind:
         condition: service_healthy

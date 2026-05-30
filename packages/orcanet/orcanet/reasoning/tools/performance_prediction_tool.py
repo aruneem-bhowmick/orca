@@ -38,6 +38,7 @@ def get_task_repository():
 
 
 def _task_to_embedding(task) -> list[float]:
+    """Convert *task* statistics into a 25-dim float list for OrcaMind performance prediction."""
     vec = np.zeros(25, dtype=np.float32)
     if task.n_samples is not None:
         vec[0] = math.log1p(float(task.n_samples))
@@ -54,6 +55,7 @@ from langchain_core.tools import StructuredTool, tool
 async def _run_performance_prediction(
     task_id: str, model_config_json: str, *, orcamind_client, task_repository
 ) -> str:
+    """Parse model config JSON, resolve the task, and call OrcaMind for predicted metrics."""
     if orcamind_client is None or task_repository is None:
         return json.dumps({"error": "OrcaMind client or task repository not configured"})
     try:
@@ -93,6 +95,7 @@ def make_performance_prediction_tool(orcamind_client, task_repository) -> Struct
     """Return a new StructuredTool instance bound to the given client and repository."""
 
     async def _run(task_id: str, model_config_json: str) -> str:
+        """Delegate to ``_run_performance_prediction`` with captured closure dependencies."""
         return await _run_performance_prediction(
             task_id, model_config_json,
             orcamind_client=orcamind_client,

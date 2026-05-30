@@ -119,6 +119,7 @@ def _run_coro(coro) -> Any:
         exc: list[BaseException] = []
 
         def _target():
+            """Thread entry point: run the coroutine in a fresh event loop."""
             try:
                 result.append(asyncio.run(coro))
             except BaseException as e:  # noqa: BLE001

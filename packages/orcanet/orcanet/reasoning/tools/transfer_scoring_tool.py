@@ -45,6 +45,7 @@ async def _run_transfer_scoring(
     transfer_strategies: dict,
     task_repository,
 ) -> str:
+    """Resolve both tasks, run the named strategy's score_transfer, and return JSON."""
     if not transfer_strategies or task_repository is None:
         return json.dumps({"error": "Transfer strategies or task repository not configured"})
     try:
@@ -94,6 +95,7 @@ def make_transfer_scoring_tool(transfer_strategies: dict, task_repository) -> St
     async def _run(
         source_task_id: str, target_task_id: str, strategy: str = "feature"
     ) -> str:
+        """Delegate to ``_run_transfer_scoring`` with captured strategy registry and repo."""
         return await _run_transfer_scoring(
             source_task_id,
             target_task_id,

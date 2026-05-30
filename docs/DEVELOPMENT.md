@@ -58,6 +58,13 @@ pytest packages/orcanet/tests/unit/test_cli.py -v
 # OrcaNet — Hydra config validation
 pytest packages/orcanet/tests/unit/test_config.py -v
 
+# OrcaNet — deployment configuration validation (docker-compose.dev.yml structure, Dockerfile,
+#            env var names in main.py; no services required)
+pytest packages/orcanet/tests/unit/test_deployment_config.py -v
+
+# OrcaNet — demo notebook structure and content validation (no services required)
+pytest packages/orcanet/tests/unit/test_notebook.py -v
+
 # OrcaNet — CrossDomainEmbedder, GRL, TextTaskEmbedder, and ArchitectureEmbedder unit tests (no services required)
 pytest packages/orcanet/tests/unit/embeddings/ -v
 
@@ -173,7 +180,7 @@ pytest packages/orcanet/ --cov=orcanet --cov-fail-under=80
 pytest packages/orcanet/tests/unit/ -v -m "not benchmark"
 ```
 
-The test suite has 80+ test files across unit, integration, performance, and deployment-validation categories.
+The test suite has 80+ test files across unit, integration, performance, and deployment-validation categories, including 39 OrcaNet deployment-configuration and notebook-validation tests added in Prompt 14.
 
 The OrcaLab API integration tests run without a live database, Prefect server, or MLflow instance. An `ASGITransport` client fixture pre-populates `app.state` manually (bypassing the ASGI lifespan) and overrides all dependency providers via `dependency_overrides`, so tests exercise the full request/response cycle including middleware, routing, and validation while every external call goes to an `AsyncMock`.
 
@@ -188,6 +195,9 @@ OrcaMind integration tests auto-skip when their target service port is unreachab
 - *Parametrized submodule imports* — `test_package.py` collapses six structurally identical submodule import assertions into a single `@pytest.mark.parametrize("submodule", [...])` test. Adding a new submodule requires only a new entry in the parameter list.
 - *Per-test CLI runner fixture* — `test_cli.py` exposes the Typer `CliRunner` as a pytest fixture (`scope="function"`) rather than a module-level variable, preventing any runner state from leaking between tests.
 - *pyproject.toml anchor path resolution* — `test_config.py` locates the `config/` directory by walking ancestor directories until a `pyproject.toml` is found, rather than using a hard-coded `parents[N]` depth index. This remains correct regardless of where the test file moves within the repository tree.
+- *docker-compose.dev.yml root path resolution* — `test_deployment_config.py` locates the compose file by walking ancestor directories until `docker-compose.dev.yml` is found. The same anchor-walk pattern is used for the Dockerfile, making all deployment config tests relocatable within the repo tree.
+- *Source-code inspection for env var names* — `TestEnvVarReading` in `test_deployment_config.py` uses `inspect.getsource` to assert that `main.py` contains `"ORCAMIND_API_URL"` and `"ORCALAB_API_URL"` and does NOT contain the legacy `"ORCAMIND_URL"` / `"ORCALAB_URL"` strings. This catches regressions where someone reverts the env-var alignment without a test failure.
+- *Notebook JSON content assertions* — `test_notebook.py` parses the demo notebook as JSON and asserts structural properties (≥ 8 code cells, section headers 1–8, valid `nbformat` 4) plus content invariants: no `# TODO: implement` stubs remain, all eight API endpoints are referenced, matplotlib is used, the UMAP import is guarded with `try/except ImportError`, and a demo fallback is present for offline use. No cells are executed during tests.
 - *Training-mode preservation testing* — `test_cross_domain.py` explicitly tests that `CrossDomainEmbedder.embed()` does not permanently mutate the model's training state. Two complementary assertions cover both directions: a model in `.train()` mode returns to training mode after `embed()` finishes, and a model already in `.eval()` stays in eval mode. This matters because `embed()` is commonly called from inside a training loop for online evaluation, and a silent mode flip would corrupt subsequent gradient computation.
 - *Domain invariance as a geometric assertion* — `TestDomainInvariance.test_within_vs_cross_domain_spread` quantifies domain invariance by comparing the standard deviation of cosine distances within each domain against the standard deviation of cross-domain distances, asserting a ratio in [0.3, 3.0]. This avoids the brittleness of testing exact cluster assignments while still enforcing the geometric property — the absence of domain clustering — that the OrcaNet retrieval layer relies on.
 - *Offline SentenceTransformer stub* — `tests/unit/embeddings/conftest.py` patches `orcanet.embeddings.text_features.SentenceTransformer` with `_DeterministicSentenceTransformer` via a session-scoped autouse fixture. The stub never downloads model weights: it maps a 36-keyword domain vocabulary (vision, financial, medical, NLP, general ML) to fixed vector dimensions and fills the remaining 348 dimensions with low-amplitude deterministic noise (σ = 0.05, seeded by `hash(text)`). Semantic ordering is preserved by construction — image-domain keywords are orthogonal to financial-domain keywords — so similarity-ordering tests hold without a network connection or a local model cache.

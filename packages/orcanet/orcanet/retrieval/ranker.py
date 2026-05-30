@@ -39,12 +39,16 @@ Order rankings from most to least relevant. Include all {n_candidates} candidate
 
 
 class _RankedItem(BaseModel):
+    """A single ranked candidate from the LLM re-ranker output."""
+
     task_id: str
     score: float = Field(ge=0.0, le=1.0)
     reasoning: str
 
 
 class _RankedList(BaseModel):
+    """Wrapper parsed from the LLM re-ranker JSON response."""
+
     rankings: list[_RankedItem]
 
 

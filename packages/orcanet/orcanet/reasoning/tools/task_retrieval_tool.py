@@ -26,6 +26,7 @@ def get_retriever():
 
 
 async def _run_task_retrieval(query: str, filters: str = "{}", *, retriever) -> str:
+    """Run the hybrid retriever for *query*, apply optional metadata *filters*, and return JSON."""
     if retriever is None:
         return json.dumps({"error": "Task retriever not configured"})
     try:
@@ -71,6 +72,7 @@ def make_task_retrieval_tool(retriever) -> StructuredTool:
     """Return a new StructuredTool instance bound to the given retriever."""
 
     async def _run(query: str, filters: str = "{}") -> str:
+        """Delegate to ``_run_task_retrieval`` with the captured retriever closure."""
         return await _run_task_retrieval(query, filters, retriever=retriever)
 
     return StructuredTool.from_function(
