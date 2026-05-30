@@ -1,9 +1,15 @@
-"""Recall@10 benchmark for the HybridRetriever.
+"""Recall@9 benchmark for the HybridRetriever.
 
 Validates that pure vector retrieval (``use_llm_reranking=False``) achieves
-Recall@10 > 0.85 on a 100-task synthetic benchmark with known ground-truth
+Recall@9 > 0.85 on a 100-task synthetic benchmark with known ground-truth
 similar pairs.  No live LLM or FAISS binary is required — a lightweight exact
 cosine-similarity index is used in its place.
+
+``_TOP_K_FINAL`` is set to 9 (one less than the group size of 10) so that the
+query task itself — which is in the index and trivially scores cosine ≈ 1.0 —
+cannot fill the final retrieval slot and inflate recall to 1.0.  Ground truth
+excludes the query, so 8 of 9 returned positives yields a genuine Recall@9 ≈
+0.89 > 0.85 threshold.
 """
 
 from __future__ import annotations
@@ -25,7 +31,7 @@ from orcanet.retrieval.retriever import HybridRetriever, task_to_feature_vector
 
 _N_GROUPS: int = 10
 _N_PER_GROUP: int = 10
-_TOP_K_FINAL: int = 10
+_TOP_K_FINAL: int = 9  # < group size (10) so the self-hit cannot trivially fill all k slots
 _SIMILARITY_THRESHOLD: float = 0.50
 _RECALL_THRESHOLD: float = 0.85
 _CLUSTER_NOISE: float = 0.02
@@ -206,12 +212,16 @@ def _recall_at_k(
 # ---------------------------------------------------------------------------
 
 
-class TestRecallAtTen:
-    """Recall@10 benchmark: pure vector retrieval on a 100-task synthetic registry."""
+class TestRecallAtNine:
+    """Recall@9 benchmark: pure vector retrieval on a 100-task synthetic registry.
+
+    ``top_k_final=9`` (< group size=10) ensures the self-hit cannot consume the
+    final result slot and inflate recall to a trivial 1.0.
+    """
 
     @pytest.mark.asyncio
     async def test_mean_recall_exceeds_threshold(self) -> None:
-        """Mean Recall@10 across all 100 query tasks must be > 0.85."""
+        """Mean Recall@9 across all 100 query tasks must be > 0.85."""
         groups, task_to_group = _make_tasks()
         retriever = _build_retriever(groups, task_to_group)
 
@@ -226,13 +236,13 @@ class TestRecallAtTen:
 
         mean_recall = float(np.mean(recalls))
         assert mean_recall > _RECALL_THRESHOLD, (
-            f"Recall@10 = {mean_recall:.3f} is below the required threshold "
+            f"Recall@{_TOP_K_FINAL} = {mean_recall:.3f} is below the required threshold "
             f"{_RECALL_THRESHOLD}"
         )
 
     @pytest.mark.asyncio
     async def test_per_group_recall_all_exceed_threshold(self) -> None:
-        """Every group's mean Recall@10 must individually exceed 0.85."""
+        """Every group's mean Recall@9 must individually exceed 0.85."""
         groups, task_to_group = _make_tasks()
         retriever = _build_retriever(groups, task_to_group)
 
@@ -247,12 +257,12 @@ class TestRecallAtTen:
 
             group_mean = float(np.mean(group_recalls))
             assert group_mean > _RECALL_THRESHOLD, (
-                f"Group {g} Recall@10 = {group_mean:.3f} is below {_RECALL_THRESHOLD}"
+                f"Group {g} Recall@{_TOP_K_FINAL} = {group_mean:.3f} is below {_RECALL_THRESHOLD}"
             )
 
     @pytest.mark.asyncio
     async def test_top_results_dominated_by_same_group(self) -> None:
-        """For a representative query, at least 8 of the top-10 results are same-group."""
+        """For a representative query, at least 8 of the top-9 results are same-group."""
         groups, task_to_group = _make_tasks()
         retriever = _build_retriever(groups, task_to_group)
 
