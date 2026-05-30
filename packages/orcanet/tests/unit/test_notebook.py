@@ -100,8 +100,8 @@ class TestNotebookContent:
         stub_cells = []
         for i, cell in enumerate(code_cells):
             source = "".join(cell.get("source", []))
-            lines = [l.strip() for l in source.splitlines() if l.strip()]
-            if lines and all(l.startswith("print(\"[stub]") or l.startswith("print('[stub]") for l in lines):
+            lines = [line.strip() for line in source.splitlines() if line.strip()]
+            if lines and all(line.startswith("print(\"[stub]") or line.startswith("print('[stub]") for line in lines):
                 stub_cells.append(i)
         assert not stub_cells, (
             f"Code cells at indices {stub_cells} still contain only stub print statements"
