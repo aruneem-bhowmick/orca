@@ -2291,6 +2291,8 @@ Eight live endpoints served by FastAPI, documented at `GET /docs`. The service r
 
 The LLM check (`agent.llm.ainvoke("ping")`, 5 s timeout via `asyncio.wait_for`) is opt-in and only runs when the `?deep=true` query parameter is supplied. Omitting it avoids recurring token costs from frequent load-balancer probes. The `llm` field in the response is `null` for shallow probes. Any exception sets the corresponding flag to `false`. The endpoint never returns a non-200 status.
 
+**Lifespan environment variables** — the lifespan reads upstream service URLs via `ORCAMIND_API_URL` (default `http://orcamind:8000`) and `ORCALAB_API_URL` (default `http://orcalab:8001`). These names are intentional: they match the convention used in docker-compose.dev.yml, OrcaLab's own lifespan, and the Hydra config keys `orcamind.api_url` / `orcalab.api_url`. The older names `ORCAMIND_URL` and `ORCALAB_URL` are not read.
+
 **Lifespan shutdown** — the three cleanup tasks (`engine.dispose()`, `orcamind_client.aclose()`, `orcalab_client.aclose()`) run concurrently via `asyncio.gather(return_exceptions=True)` so a failure in any one does not prevent the others from completing.
 
 **Integration test suite** — `tests/integration/api/` uses `httpx.AsyncClient` + `ASGITransport` (no lifespan). All services are pre-populated via `app.dependency_overrides` and manual `app.state` assignment. OrcaMind/OrcaLab HTTP calls in the health tests are intercepted by `respx`. The async `client` fixture is decorated with `@pytest_asyncio.fixture` for compatibility with pytest-asyncio strict mode. Coverage of the new API code exceeds 90 %.
@@ -2334,9 +2336,32 @@ All sensitive values use `${oc.env:VAR}` (required) or `${oc.env:VAR,default}` (
 | `orcalab.api_url` | `${oc.env:ORCALAB_API_URL,http://localhost:8001}` |
 | `embedder.model_path` | `${oc.env:CROSS_DOMAIN_MODEL_PATH,/data/models/cross_domain_embedder.pt}` |
 
+### Demo Notebook (`notebooks/`)
+
+`notebooks/cross_domain_transfer_demo.ipynb` is a runnable Jupyter notebook that walks through the full cross-domain transfer workflow against a live Orca stack. It requires no code changes to run — only service URLs supplied via environment variables.
+
+```text
+ORCAMIND_API_URL   (default http://localhost:8000)
+ORCALAB_API_URL    (default http://localhost:8001)
+ORCANET_API_URL    (default http://localhost:8002)
+```
+
+| Section | Cell | What it does |
+|---|---|---|
+| 1. Setup | Code | Imports (`httpx`, `numpy`, `pandas`, `torch`, `matplotlib`); reads service URLs from `os.getenv`; fires a shallow health probe against all three services |
+| 2. Load Tasks | Code | `GET {ORCAMIND_URL}/api/v1/tasks` → paginated task list; renders as a `pandas.DataFrame` |
+| 3. Embed | Code | Instantiates `CrossDomainEmbedder`; builds 25-dim feature vectors from task metadata via `make_feature_vector`; optionally projects to 2-D with UMAP (guarded `try/except ImportError`); plots a scatter coloured by domain |
+| 4. Retrieve | Code | `POST {ORCANET_URL}/api/v1/retrieve` with a query task description; displays ranked candidates |
+| 5. Score Transfer | Code | `POST {ORCANET_URL}/api/v1/transfer/score`; renders a seaborn CKA heatmap across source–target pairs |
+| 6. LLM Recommend | Code | `POST {ORCANET_URL}/api/v1/transfer/recommend`; prints formatted `TransferRecommendationResponse` |
+| 7. Validate | Code | `POST {ORCANET_URL}/api/v1/transfer/validate`; displays the persisted `TransferMapping` |
+| 8. Summary | Code | Bar chart (matplotlib) of per-source transfer scores; demo fallback table for offline use |
+
+All `httpx.AsyncClient` calls use `asyncio.run()` and include a 30 s timeout with graceful `HTTPStatusError` / `ConnectError` fallback paths so the notebook does not crash when the stack is not running. The UMAP import guard (`try: import umap … except ImportError: umap = None`) makes the 2-D visualisation optional without breaking cell execution.
+
 ### Test Infrastructure (`tests/`)
 
-Fourteen unit test files across five directories, plus two empty `__init__.py` placeholders for future integration tests.
+Sixteen unit test files across five directories, plus two empty `__init__.py` placeholders for future integration tests.
 
 | File | Tests | Covers |
 |---|---|---|
@@ -2354,6 +2379,8 @@ Fourteen unit test files across five directories, plus two empty `__init__.py` p
 | `tests/unit/reasoning/test_validators.py` | 15 | `LLMParsingError` — subclasses `Exception`; carries message; can be raised and caught. `SourceTaskRecommendation` — valid construction with all five fields; `similarity_score < 0` rejected; `transfer_score > 1` rejected; missing required field raises `ValidationError`. `TransferRecommendationResponse` — valid JSON parsed via `model_validate_json`; invalid JSON raises; `confidence > 1` rejected; `expected_improvement < 0` rejected; all four strategy names accepted; empty `top_sources` is valid; multiple sources parsed; boundary values `confidence=0.0` and `expected_improvement=1.0` accepted. |
 | `tests/unit/reasoning/test_tools.py` | 17 | `TestToolDocstrings` — each of the four tools has a non-empty `description` (LangChain uses this as the tool description in the agent prompt). `TestTaskRetrievalTool` — returns JSON list with `task_id`, `score`, `reason` fields; returns `{"error": "..."}` when retriever not configured; `filters` JSON applied post-retrieval (domain mismatch returns `[]`); default empty filters pass all results. `TestEmbeddingSimilarityTool` — returns `{"similarity": float}` in `[-1, 1]`; returns error when not configured; returns error when task not found. `TestTransferScoringTool` — `"feature"` strategy returns `{"overall": 0.75, "recommended_layers": [...], ...}`; unknown strategy returns error; returns error when not configured. `TestPerformancePredictionTool` — returns `{"metrics": {"predicted_score": ...}}` from `OrcaMindClient`; returns error when not configured; returns error for missing task. |
 | `tests/unit/reasoning/test_agent.py` | 10 | `TestOrcaNetAgentTools` — agent constructed with four tools; all four tool names present (`task_retrieval_tool`, `embedding_similarity_tool`, `transfer_scoring_tool`, `performance_prediction_tool`). `TestRecommendTransfer` — returns `TransferRecommendationResponse` on valid JSON; parses `top_sources` correctly; strips markdown fences before parsing; invalid JSON triggers retry (`ainvoke` called 3× before success); two exhausted retries raise `LLMParsingError` with `ainvoke` called exactly 3×; corrective prompt used on retry (`original query + "JSON"` in second `HumanMessage`). `TestBuildLlm` — `llm_provider="openai"` constructs `ChatOpenAI`; `llm_provider="anthropic"` constructs `ChatAnthropic`. |
+| `tests/unit/test_deployment_config.py` | 22 | `TestDockerComposeOrcaNet` (13 tests) — verifies the `orcanet` service block in docker-compose.dev.yml: port 8002 mapped, `depends_on` includes `postgres`, `redis`, `orcamind`, and `orcalab`, environment contains `DATABASE_URL` / `ORCAMIND_API_URL` / `ORCALAB_API_URL`, healthcheck probes port 8002, build context is `.`, Dockerfile path contains `orcanet`. `TestDockerfile` (5 tests) — verifies `packages/orcanet/Dockerfile`: multi-stage `AS builder` + `AS runtime`, `python:3.11-slim` base, `uvicorn` CMD on port 8002, `HEALTHCHECK` directive, `config` directory copied. `TestEnvVarReading` (4 tests) — `inspect.getsource(main_mod)` asserts `ORCAMIND_API_URL` and `ORCALAB_API_URL` are present and that the legacy names `ORCAMIND_URL` / `ORCALAB_URL` are absent; `monkeypatch.setenv` verifies the env var overrides the default. |
+| `tests/unit/test_notebook.py` | 17 | `TestNotebookStructure` (4 tests) — notebook is valid nbformat-4 JSON, ≥8 code cells, markdown section headers for all eight sections, first cell is a top-level title heading. `TestNotebookContent` (13 tests) — no stub `print("[stub] …")` cells, no `# TODO: implement` placeholders, setup cell imports `httpx` and defines `ORCAMIND_URL` / `ORCALAB_URL` / `ORCANET_URL` via `os.getenv`, at least one cell uses `CrossDomainEmbedder`, each of the five API paths (`/api/v1/retrieve`, `/api/v1/transfer/score`, `/api/v1/transfer/recommend`, `/api/v1/transfer/validate`, `/api/v1/cross-domain-embed`) appears in the notebook source, summary cell renders a matplotlib bar chart and includes a demo fallback, UMAP import is wrapped in `try/except ImportError`. |
 
 **Benchmark test modules (`tests/benchmarks/`):**
 
@@ -2391,3 +2418,5 @@ Three end-to-end quality benchmarks that validate empirical properties of the re
 - *`side_effect` list for agent retry sequencing* — `test_invalid_json_triggers_retry` and `test_two_retries_exhausted_raises_llm_parsing_error` use `AsyncMock(side_effect=[response1, response2, response3])` on the `CompiledStateGraph.ainvoke` mock. Each call pops the next element from the list, so the test can exercise the exact sequence of agent responses without any shared state between calls. The `call_count` assertion afterwards locks in the number of retry attempts.
 - *`__new__` bypass for agent construction in fixtures* — the `_build_agent` helper uses `OrcaNetAgent.__new__(OrcaNetAgent)` to create an agent instance without running `__init__`, then manually sets `agent.tools`, `agent.llm`, and `agent._agent` to mocks. This avoids the LLM constructor call (which would attempt a real network connection) while still testing the full `recommend_transfer` code path. The pattern is appropriate here because `__init__`'s only side effects are DI registry calls and LLM construction — both tested separately in `TestBuildLlm`.
 - *`call_args_list` index access for corrective prompt assertion* — `test_corrective_prompt_used_on_retry` accesses `mock_graph.ainvoke.call_args_list[1][0][0]["messages"]` to inspect the `messages` argument passed on the second `ainvoke` call specifically. This verifies that the corrective prompt is sent on the retry, not on the first call, and that the corrective message contains both the original query string and the word `"JSON"` — confirming the `_CORRECTIVE_SUFFIX` is appended correctly.
+- *`inspect.getsource` for env-var contract enforcement* — `TestEnvVarReading` in `test_deployment_config.py` calls `inspect.getsource(main_mod)` and asserts both the presence of the canonical name (`ORCAMIND_API_URL`) and the absence of the legacy name (`"ORCAMIND_URL"`). This pattern is stronger than checking runtime behaviour with `monkeypatch`: it fails immediately if a developer renames the constant without updating the compose file, rather than silently passing because the default value happens to be reachable at runtime. Use it whenever the precise env-var name is load-bearing across multiple configuration layers.
+- *Notebook JSON validated without cell execution* — `test_notebook.py` treats the `.ipynb` file as plain JSON and asserts structural and content properties — section header presence, stub-free source, required API-path strings — without launching a Python kernel or a live stack. This approach gives fast, deterministic CI feedback on notebook completeness (no missing cells, no placeholder stubs, no forgotten `os.getenv`) while the cost of a full execution test is deferred to manual or integration-test runs. The tradeoff is that cell execution order and cell-output correctness are not verified; those require a notebook-execution framework such as `nbmake` or `papermill`.
