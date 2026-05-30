@@ -84,8 +84,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     else:
         app.state.retriever = None
 
-    orcamind_url = os.environ.get("ORCAMIND_URL", _DEFAULT_ORCAMIND_URL)
-    orcalab_url = os.environ.get("ORCALAB_URL", _DEFAULT_ORCALAB_URL)
+    orcamind_url = os.environ.get("ORCAMIND_API_URL", _DEFAULT_ORCAMIND_URL)
+    orcalab_url = os.environ.get("ORCALAB_API_URL", _DEFAULT_ORCALAB_URL)
     app.state.orcamind_client = OrcaMindClient(orcamind_url)
     app.state.orcalab_client = OrcaLabClient(orcalab_url)
     app.state.orcamind_url = orcamind_url
