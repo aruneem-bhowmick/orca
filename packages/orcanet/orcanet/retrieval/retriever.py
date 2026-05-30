@@ -153,7 +153,21 @@ class HybridRetriever:
         query_task: Task,
         task_repository: TaskRepository | None = None,
     ) -> list[tuple[Task, float, str]]:
-        """Expand *query_description* and aggregate results across all expansions."""
+        """Expand *query_description* and aggregate results across all expansions.
+
+        Stage 1 (FAISS vector similarity) is driven exclusively by the statistical
+        features of *query_task* (``n_samples``, ``n_features``, ``n_classes``).
+        Because these fields are unchanged across expansions, Stage 1 returns an
+        identical candidate set for every phrasing.  The fan-out benefit therefore
+        applies to Stage 3 (LLM re-ranking, when ``use_llm_reranking=True``): each
+        expanded variant is passed as the query phrasing so the ranker sees a richer
+        description of the retrieval intent.  ``_deduplicate_and_sort`` collapses
+        the repeated Stage 1 results to a single sorted list.
+
+        For text-only queries where *query_task* carries ``None`` statistical fields,
+        Stage 1 searches with a zero-vector embedding; Stage 3 is then the sole
+        source of ranking signal.
+        """
         expansions = await self._expander.expand(query_description)
         all_results: list[tuple[Task, float, str]] = []
         for description in [query_description, *expansions]:
