@@ -60,6 +60,24 @@ class HybridRetriever:
         similarity_threshold: float = 0.6,
         use_llm_reranking: bool = True,
     ) -> None:
+        """Initialise the retriever with its three-stage pipeline components.
+
+        Args:
+            faiss_index:         FAISS (or compatible) index with a ``search(embedding, k)``
+                                 method that returns ``[(task_id_str, score), ...]``.
+            task_repository:     Repository used to hydrate task metadata from IDs.
+            embedder:            ``CrossDomainEmbedder`` used to project the query
+                                 task's statistical feature vector into 64-dim space.
+            query_expander:      ``QueryExpander`` that generates alternative
+                                 phrasings for expanded-query retrieval.
+            llm_ranker:          ``LLMRanker`` that re-orders candidates in Stage 3.
+            top_k_initial:       Number of FAISS candidates retrieved in Stage 1.
+            top_k_final:         Maximum results returned to the caller.
+            similarity_threshold: Minimum FAISS cosine score to retain a candidate
+                                 after Stage 1 (Stage 2 filter).
+            use_llm_reranking:   When ``True`` and ``len(candidates) > top_k_final``,
+                                 Stage 3 LLM re-ranking is applied.
+        """
         self._index = faiss_index
         self._repo = task_repository
         self._embedder = embedder

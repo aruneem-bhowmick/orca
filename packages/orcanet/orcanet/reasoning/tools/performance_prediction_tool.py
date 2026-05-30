@@ -16,20 +16,24 @@ _task_repository = None
 
 
 def set_orcamind_client(client) -> None:
+    """Set the module-level OrcaMind client used by ``performance_prediction_tool``."""
     global _orcamind_client
     _orcamind_client = client
 
 
 def set_task_repository(repo) -> None:
+    """Set the module-level task repository used by ``performance_prediction_tool``."""
     global _task_repository
     _task_repository = repo
 
 
 def get_orcamind_client():
+    """Return the currently configured module-level OrcaMind client (may be ``None``)."""
     return _orcamind_client
 
 
 def get_task_repository():
+    """Return the currently configured module-level task repository (may be ``None``)."""
     return _task_repository
 
 

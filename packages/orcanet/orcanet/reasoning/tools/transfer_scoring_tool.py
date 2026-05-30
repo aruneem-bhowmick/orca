@@ -13,20 +13,24 @@ _task_repository = None
 
 
 def set_transfer_strategies(strategies: dict) -> None:
+    """Set the module-level strategy registry used by ``transfer_scoring_tool``."""
     global _transfer_strategies
     _transfer_strategies = strategies
 
 
 def set_task_repository(repo) -> None:
+    """Set the module-level task repository used by ``transfer_scoring_tool``."""
     global _task_repository
     _task_repository = repo
 
 
 def get_transfer_strategies() -> dict:
+    """Return the currently configured module-level transfer strategy registry."""
     return _transfer_strategies
 
 
 def get_task_repository():
+    """Return the currently configured module-level task repository (may be ``None``)."""
     return _task_repository
 
 

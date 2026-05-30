@@ -16,7 +16,10 @@ logger = logging.getLogger("orcanet.api")
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    """Logs each request's method, path, status code, and elapsed time in ms."""
+
     async def dispatch(self, request: Request, call_next) -> Response:
+        """Process the request, then log method, path, status, and elapsed ms."""
         t0 = time.perf_counter()
         response = await call_next(request)
         elapsed_ms = (time.perf_counter() - t0) * 1000
@@ -31,6 +34,12 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 
 def add_middleware(app: FastAPI) -> None:
+    """Attach CORS and request-logging middleware to *app*.
+
+    CORS origins are read from the ``CORS_ORIGINS`` environment variable
+    (comma-separated).  When the variable is unset, ``allow_origins=["*"]``
+    is used with ``allow_credentials=False``.
+    """
     cors_origins_env = os.environ.get("CORS_ORIGINS", "")
     if cors_origins_env:
         allow_origins = [o.strip() for o in cors_origins_env.split(",") if o.strip()]
