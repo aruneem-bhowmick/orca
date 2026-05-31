@@ -83,7 +83,7 @@ Async `httpx`-based clients for inter-service calls:
   - `submit_feedback(req)` — `POST /api/v1/feedback` → `None`
   - `find_similar_tasks(embedding, top_k)` — `POST /api/v1/similar-tasks` → `list[SimilarityResult]`
   - `get_best_model(task_id)` — composes `embed_task` + `recommend_model(top_k=1)` → `ModelSummary`
-- `OrcaLabClient`: async HTTP client for the OrcaLab experiment orchestration service. Two methods are fully implemented; two remain as stubs:
+- `OrcaLabClient`: async HTTP client for the OrcaLab experiment orchestration service. Two methods are implemented; two remain as stubs:
   - `create_experiment(task_id, model_config, tags)` — `POST /api/v1/experiments`. Serialises `model_config` (accepts Pydantic models or plain dicts) and forwards `model_id` when present. Returns the `experiment_id` string from the response.
   - `wait_for_completion(experiment_id, timeout=3600, poll_interval=30)` — polls `GET /api/v1/experiments/{id}` until status is in `{COMPLETED, FAILED, CANCELLED}`. Raises `TimeoutError` when the deadline is exceeded; the final poll sleeps at most the remaining time so the error fires promptly.
   - `start_sweep(experiment_id, search_space)` — stub, raises `NotImplementedError`
@@ -1002,7 +1002,7 @@ prefect deploy --all
 
 ### Streamlit Dashboard (`orcalab.visualization`)
 
-A four-page Streamlit application that provides live experiment observability for an OrcaLab deployment. Every page is structured as a collection of named, pure data-processing functions (fetch helpers and transform helpers) plus a single `_page()` render function guarded by `if __name__ == "__main__": _page()`. This pattern lets the unit test suite import and call the data functions directly, without requiring a live Streamlit runtime or Plotly installation.
+Four-page Streamlit application for live experiment observability in an OrcaLab deployment. Every page is structured as a collection of named, pure data-processing functions (fetch helpers and transform helpers) plus a single `_page()` render function guarded by `if __name__ == "__main__": _page()`. This pattern lets the unit test suite import and call the data functions directly, without requiring a live Streamlit runtime or Plotly installation.
 
 The app is launched via the `orcalab dashboard` CLI command or directly:
 
@@ -1285,7 +1285,7 @@ All external service URLs (Prefect API, OrcaMind API) are resolved via `${oc.env
 
 ## `orcanet` — Cross-Domain Knowledge Transfer Agent
 
-OrcaNet is the third component of the Orca ecosystem. It orchestrates OrcaMind and OrcaLab to deliver end-to-end cross-domain knowledge transfer: retrieving proven model configurations from one domain and adapting them to a new target task, validated through a real OrcaLab experiment. All namespaces are fully implemented: embeddings (DANN, text, GNN-based architecture embedders), transfer (CKA feature transfer, weight transfer, architecture transfer, multi-task transfer), retrieval (FAISS vector search, metadata filtering, LLM re-ranking), reasoning (LangChain ReAct agent with retry and structured output), and the FastAPI HTTP service on port 8002.
+OrcaNet is the third component of the Orca ecosystem. It orchestrates OrcaMind and OrcaLab for cross-domain knowledge transfer: retrieving model configurations from one domain, adapting them to a target task, and validating the result through an OrcaLab experiment. All namespaces are implemented: embeddings (DANN, text, GNN-based architecture embedders), transfer (CKA feature transfer, weight transfer, architecture transfer, multi-task transfer), retrieval (FAISS vector search, metadata filtering, LLM re-ranking), reasoning (LangChain ReAct agent with retry and structured output), and the FastAPI HTTP service on port 8002.
 
 ### Package Structure
 
@@ -1404,7 +1404,7 @@ restored = CrossDomainEmbedder.load("/data/models/cross_domain_embedder.pt")
 
 ##### `TextTaskEmbedder` (implemented)
 
-A plain Python (non-`nn.Module`) class that encodes natural language task descriptions into 384-dim semantic vectors via `sentence-transformers` and optionally fuses them with 25-dim statistical meta-features from `StatisticalEmbedder`. The fused embedding serves as a richer task fingerprint for retrieval and transfer scoring when a text description of the target task is available.
+A plain Python (non-`nn.Module`) class that encodes natural language task descriptions into 384-dim semantic vectors via `sentence-transformers` and optionally fuses them with 25-dim statistical meta-features from `StatisticalEmbedder`. The fused embedding is a richer task fingerprint for retrieval and transfer scoring when a text description of the target task is available.
 
 **Architecture:**
 
@@ -2096,7 +2096,7 @@ Raised by `OrcaNetAgent.recommend_transfer` after all retry attempts are exhaust
 | `top_sources` | `list[SourceTaskRecommendation]` | may be empty | Ranked list of recommended source tasks |
 | `recommended_strategy` | `TransferStrategy` | `Literal["feature","weight","architecture","multi_task"]` | Transfer strategy name; Pydantic rejects any value not in the allowed set at parse time |
 | `expected_improvement` | `float` | `[0.0, 1.0]` | Predicted relative improvement from applying the recommended transfer |
-| `explanation` | `str` | — | Comprehensive free-text explanation of the recommendation |
+| `explanation` | `str` | — | Free-text explanation of the recommendation |
 | `confidence` | `float` | `[0.0, 1.0]` | Agent's confidence in the recommendation |
 
 ##### LangChain Tools (`orcanet.reasoning.tools`)
@@ -2398,7 +2398,7 @@ Three end-to-end quality benchmarks that validate empirical properties of the re
 
 - *Parametrized submodule imports* — the six submodule import tests are expressed as a single `@pytest.mark.parametrize("submodule", [...])` test rather than six separate functions. Adding a new namespace requires only a new entry in the parameter list.
 - *Per-test CLI runner fixture* — `CliRunner` is instantiated via a `scope="function"` pytest fixture, not at module level, so runner state never leaks between tests.
-- *pyproject.toml anchor path resolution* — `test_config.py` locates `config/` by walking ancestor directories until a `pyproject.toml` is found. This is robust to test file moves and avoids the fragile `parents[N]` depth index that breaks when the file is relocated.
+- *pyproject.toml anchor path resolution* — `test_config.py` locates `config/` by walking ancestor directories until a `pyproject.toml` is found. This correctly handles test file moves and avoids the fragile `parents[N]` depth index that breaks when the file is relocated.
 - *Training-mode preservation testing* — `test_embed_preserves_training_mode` and `test_embed_preserves_eval_mode` verify that `embed()` does not permanently mutate the model's training state, asserting correctness in both directions (model in `.train()` stays in training mode after `embed()` returns; model already in `.eval()` stays in eval mode). This matters because `embed()` is commonly called from inside a training loop for online evaluation.
 - *Domain invariance as a geometric assertion* — `TestDomainInvariance.test_within_vs_cross_domain_spread` quantifies the invariance property by computing the standard deviation of cosine distances within each domain and across domains on domain-shifted synthetic data, then asserting the ratio lies in [0.3, 3.0]. This avoids testing exact cluster assignments (which would be brittle) while still enforcing the geometric property that the retrieval layer depends on.
 - *Offline SentenceTransformer stub* — `tests/unit/embeddings/conftest.py` patches `orcanet.embeddings.text_features.SentenceTransformer` with `_DeterministicSentenceTransformer`, a session-scoped autouse fixture that never downloads model weights. The stub maps a 36-keyword domain vocabulary (vision, financial, medical, NLP, general ML) to fixed dimensions and fills the remaining 348 dimensions with low-amplitude deterministic noise (σ = 0.05, seeded by `hash(text)`). This design guarantees that semantic ordering tests — e.g. image tasks cluster closer to each other than to financial tasks — hold without a network connection or a local model cache.

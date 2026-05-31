@@ -15,7 +15,7 @@
 
 ## Quick Start with Docker Compose
 
-The fastest path to a running stack. OrcaMind, OrcaLab, PostgreSQL, Redis, MinIO, MLflow, and Prefect all start together.
+Starts OrcaMind, OrcaLab, PostgreSQL, Redis, MinIO, MLflow, and Prefect together in Docker containers.
 
 ```bash
 git clone https://github.com/AruneemB/orca.git
@@ -70,7 +70,7 @@ make docker-up
 
 ## Local Development Mode
 
-If you want to run OrcaMind outside Docker (for hot-reload during development):
+To run OrcaMind outside Docker for hot-reload during development:
 
 ```bash
 # 1. Start backing services only

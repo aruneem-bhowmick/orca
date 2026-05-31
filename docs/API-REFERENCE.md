@@ -1477,7 +1477,7 @@ Pydantic v2 model for the full structured response returned by `OrcaNetAgent.rec
 | `top_sources` | `list[SourceTaskRecommendation]` | may be empty | Ranked list of recommended source tasks |
 | `recommended_strategy` | `TransferStrategy` | `Literal["feature","weight","architecture","multi_task"]` | Transfer strategy name; Pydantic raises `ValidationError` for any value outside this set |
 | `expected_improvement` | `float` | `[0.0, 1.0]` | Predicted relative improvement from applying the transfer |
-| `explanation` | `str` | — | Comprehensive free-text explanation |
+| `explanation` | `str` | — | Free-text explanation |
 | `confidence` | `float` | `[0.0, 1.0]` | Agent's self-assessed confidence in the recommendation |
 
 `TransferStrategy` is a public type alias exported from `orcanet.reasoning`:
