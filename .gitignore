@@ -1,4 +1,5 @@
 # Tool/editor directories
+.claude/
 .history/
 .specstory/
 .cursorindexingignore
