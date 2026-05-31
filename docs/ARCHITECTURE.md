@@ -40,7 +40,7 @@ The `←→` arrow between OrcaMind and OrcaLab represents an active two-way exc
 | **OrcaMind → OrcaLab** (priors in) | Before a sweep starts | `get_orcamind_priors` Prefect task embeds the task via `GET /api/v1/tasks/{id}/embedding`, requests a model recommendation via `POST /api/v1/recommend-model`, and passes the result to `MetaInformedSearch.initialize_from_orcamind()` which warm-starts the Bayesian search with prior knowledge |
 | **OrcaLab → OrcaMind** (feedback out) | After each trial completes | `log_results` Prefect task submits a `FeedbackRequest` to `POST /api/v1/feedback` carrying the experiment ID, the scalar objective metric, and the hyperparameter configuration — feeding completed-trial signal back into OrcaMind's meta-learning data store |
 
-Both directions are fully resilient: network and HTTP errors (`ConnectError`, `TimeoutException`, `HTTPStatusError`) degrade gracefully — sweeps start without priors and run to completion even when OrcaMind is unreachable.
+Both directions are resilient: network and HTTP errors (`ConnectError`, `TimeoutException`, `HTTPStatusError`) degrade gracefully — sweeps start without priors and run to completion even when OrcaMind is unreachable.
 
 ### OrcaNet Three-Way Integration
 
