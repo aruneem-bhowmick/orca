@@ -90,10 +90,10 @@ orcamind recommend       # Get model recommendations for a dataset
 OrcaMind owns the Alembic migration environment for the shared PostgreSQL registry. All seven tables used by the Orca platform are defined here.
 
 ```bash
-# Apply migrations
+# From inside packages/orcamind (uses local alembic.ini):
 cd packages/orcamind && alembic upgrade head
 
-# Or via Docker
+# From repository root via Docker:
 docker compose -f docker-compose.dev.yml run --rm orcamind python scripts/init_db.py
 ```
 
