@@ -45,7 +45,7 @@ packages/
 
 **OrcaNet** finds transferable source tasks through domain-adversarial embeddings and FAISS retrieval, scores transfer viability via CKA and weight-matching strategies, and explains recommendations through a LangChain ReAct agent. It coordinates with both OrcaMind and OrcaLab for end-to-end transfer workflows.
 
-Each service continues to operate independently when its dependencies are unreachable. Inter-service calls are guarded by timeouts and degrade without crashing.
+Services aim for graceful degradation when dependencies are unreachable. OrcaNet maps `httpx.ConnectError`/`httpx.TimeoutException` from OrcaMind into `ServiceUnavailableError` (API returns 503), OrcaLab times out OrcaMind calls and falls back to uninformed Bayesian search, and shared clients use httpx timeouts (30 s). Health endpoints report `"degraded"` when upstream checks fail.
 
 ## Dependency Graph
 
