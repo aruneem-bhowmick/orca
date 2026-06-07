@@ -11,7 +11,7 @@ orca-shared is the library that [OrcaMind](../orcamind/README.md), [OrcaLab](../
 ```text
 orca_shared/
 ├── registry/     SQLAlchemy ORM models + async repository layer
-├── schemas/      Pydantic v2 data contracts (20+ models)
+├── schemas/      Pydantic v2 data contracts (currently 18 models)
 ├── storage/      Pluggable storage backends (local filesystem, MinIO)
 ├── tracking/     MLflow wrappers (run tracking, artifacts, model registry)
 └── clients/      Async httpx clients for inter-service communication
@@ -21,7 +21,7 @@ orca_shared/
 
 The registry module manages the PostgreSQL meta-learning database through SQLAlchemy 2.0 mapped models and an async repository layer built on `asyncpg`.
 
-Seven ORM tables capture the meta-learning lifecycle:
+Currently seven ORM tables capture the meta-learning lifecycle:
 
 | Table | Purpose |
 |-------|---------|
@@ -39,7 +39,7 @@ Schema reference and migration history are in [Database](../../docs/DATABASE.md)
 
 ### Schemas
 
-20+ Pydantic v2 models define the data contracts shared across all services:
+18 Pydantic v2 models (currently) define the data contracts shared across all services:
 
 | File | Models |
 |------|--------|
@@ -76,7 +76,7 @@ Async `httpx`-based HTTP clients for inter-service calls:
 - `OrcaLabClient`: experiment creation and status polling.
 - `OrcaNetClient`: transfer scoring (stub).
 
-All clients call `response.raise_for_status()`, so callers receive `httpx.HTTPStatusError` on failure. Upstream services catch these and degrade gracefully.
+All clients call `response.raise_for_status()`, so callers receive `httpx.HTTPStatusError` on failure. Upstream services should catch these and handle degradation gracefully (see `OrcaLab`'s `MetaInformedSearch` and `OrcaNet`'s `TransferPipeline` for concrete examples).
 
 Method signatures and behaviour are documented in [Components](../../docs/COMPONENTS.md).
 
@@ -90,7 +90,7 @@ orca-shared is a library package with no standalone configuration. Its consumers
 pytest packages/orca-shared/tests
 ```
 
-Eight test modules cover the ORM models, repository layer, Pydantic schemas, storage backends, tracking wrappers, and HTTP client mocking. More detail in [Development](../../docs/DEVELOPMENT.md).
+Currently eight test modules cover the ORM models, repository layer, Pydantic schemas, storage backends, tracking wrappers, and HTTP client mocking. More detail in [Development](../../docs/DEVELOPMENT.md).
 
 ## Tech Stack
 
