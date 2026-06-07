@@ -4,9 +4,9 @@
 
 ---
 
-orca-shared provides the foundational libraries that [OrcaMind](../orcamind/README.md), [OrcaLab](../orcalab/README.md), and [OrcaNet](../orcanet/README.md) all depend on. It owns the database schema, data contracts, storage abstraction, experiment tracking wrappers, and inter-service HTTP clients — ensuring that all three services share a single source of truth for data access and validation.
+orca-shared is the library that [OrcaMind](../orcamind/README.md), [OrcaLab](../orcalab/README.md), and [OrcaNet](../orcanet/README.md) all depend on. It owns the database schema, data contracts, storage abstraction, experiment tracking wrappers, and inter-service HTTP clients. All three services read and write through this layer.
 
-## What's Inside
+## Contents
 
 ```text
 orca_shared/
@@ -21,7 +21,7 @@ orca_shared/
 
 The registry module manages the PostgreSQL meta-learning database through SQLAlchemy 2.0 mapped models and an async repository layer built on `asyncpg`.
 
-**Seven ORM tables** capture the full meta-learning lifecycle:
+Seven ORM tables capture the meta-learning lifecycle:
 
 | Table | Purpose |
 |-------|---------|
@@ -35,11 +35,11 @@ The registry module manages the PostgreSQL meta-learning database through SQLAlc
 
 The repository layer (`TaskRepository`, `ExperimentRepository`, `PerformanceRepository`, `EmbeddingRepository`, `SearchSpaceRepository`) provides async CRUD with pagination, domain filtering, and optimistic concurrency control via conditional status updates.
 
-See [Database](../../docs/DATABASE.md) for the full schema reference and migration history.
+Schema reference and migration history are in [Database](../../docs/DATABASE.md).
 
 ### Schemas
 
-Over 20 Pydantic v2 models define the data contracts shared across all services:
+20+ Pydantic v2 models define the data contracts shared across all services:
 
 | File | Models |
 |------|--------|
@@ -54,35 +54,35 @@ Over 20 Pydantic v2 models define the data contracts shared across all services:
 
 ### Storage
 
-A `StorageBackend` abstract base class with two implementations:
+A `StorageBackend` ABC with two implementations:
 
-- **`LocalBackend`** — filesystem storage with path-traversal protection.
-- **`MinIOBackend`** — S3-compatible object storage via the `minio` library.
+- `LocalBackend`: filesystem storage with path-traversal protection.
+- `MinIOBackend`: S3-compatible object storage via the `minio` library.
 
 ### Tracking
 
 MLflow wrappers for experiment lifecycle management:
 
-- **`OrcaTracker`** — async context manager for MLflow run lifetime (params, metrics, artifacts).
-- **`MetricLogger`** — batch metric logging.
-- **`ArtifactManager`** — model upload/download with `weights_only=True`.
-- **`ModelRegistry`** — stage-based model versioning (Staging, Production, Archived).
+- `OrcaTracker`: async context manager for MLflow run lifetime (params, metrics, artifacts).
+- `MetricLogger`: batch metric logging.
+- `ArtifactManager`: model upload/download with `weights_only=True`.
+- `ModelRegistry`: stage-based model versioning (Staging, Production, Archived).
 
 ### Clients
 
 Async `httpx`-based HTTP clients for inter-service calls:
 
-- **`OrcaMindClient`** — task embedding, model recommendation, performance prediction, feedback.
-- **`OrcaLabClient`** — experiment creation and status polling.
-- **`OrcaNetClient`** — transfer scoring (stub).
+- `OrcaMindClient`: task embedding, model recommendation, performance prediction, feedback.
+- `OrcaLabClient`: experiment creation and status polling.
+- `OrcaNetClient`: transfer scoring (stub).
 
-All clients call `response.raise_for_status()` so callers receive `httpx.HTTPStatusError` on failure. Upstream services handle these errors with graceful degradation.
+All clients call `response.raise_for_status()`, so callers receive `httpx.HTTPStatusError` on failure. Upstream services catch these and degrade gracefully.
 
-See [Components](../../docs/COMPONENTS.md) for detailed method signatures and behaviour.
+Method signatures and behaviour are documented in [Components](../../docs/COMPONENTS.md).
 
 ## Configuration
 
-orca-shared is a library package with no standalone configuration. Its consumers (OrcaMind, OrcaLab, OrcaNet) supply connection URLs and credentials at runtime via environment variables. See [Deployment](../../docs/DEPLOYMENT.md) for the full variable reference.
+orca-shared is a library package with no standalone configuration. Its consumers (OrcaMind, OrcaLab, OrcaNet) supply connection URLs and credentials at runtime via environment variables. Variable reference in [Deployment](../../docs/DEPLOYMENT.md).
 
 ## Testing
 
@@ -90,9 +90,7 @@ orca-shared is a library package with no standalone configuration. Its consumers
 pytest packages/orca-shared/tests
 ```
 
-Eight test modules cover the ORM models, repository layer, Pydantic schemas, storage backends, tracking wrappers, and HTTP client mocking.
-
-See [Development](../../docs/DEVELOPMENT.md) for the full testing guide.
+Eight test modules cover the ORM models, repository layer, Pydantic schemas, storage backends, tracking wrappers, and HTTP client mocking. More detail in [Development](../../docs/DEVELOPMENT.md).
 
 ## Tech Stack
 
