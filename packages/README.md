@@ -4,16 +4,16 @@
 
 ---
 
-This directory contains the four Python packages that make up the Orca monorepo, managed as a [uv workspace](https://docs.astral.sh/uv/). Each package is independently installable, has its own test suite, and ships a multi-stage Dockerfile for containerised deployment.
+This directory holds the four Python packages that make up the Orca monorepo, managed as a [uv workspace](https://docs.astral.sh/uv/). Each package is independently installable, has its own test suite, and ships a multi-stage Dockerfile for containerised deployment.
 
 ## Package Map
 
 ```text
 packages/
-├── orca-shared/   Shared infrastructure — ORM, schemas, storage, tracking, HTTP clients
-├── orcamind/      Meta-learning engine — task embedding, model selection, MAML/Reptile/Meta-SGD
-├── orcalab/       Experiment orchestration — hyperparameter search, Prefect flows, live dashboards
-└── orcanet/       Knowledge transfer agent — cross-domain embeddings, LLM reasoning, transfer scoring
+├── orca-shared/   Shared infrastructure: ORM, schemas, storage, tracking, HTTP clients
+├── orcamind/      Meta-learning engine: task embedding, model selection, MAML/Reptile/Meta-SGD
+├── orcalab/       Experiment orchestration: hyperparameter search, Prefect flows, live dashboards
+└── orcanet/       Knowledge transfer agent: cross-domain embeddings, LLM reasoning, transfer scoring
 ```
 
 ## How the Packages Relate
@@ -37,15 +37,15 @@ packages/
               └────────────────┘
 ```
 
-**orca-shared** is the foundation layer. It provides the PostgreSQL registry (SQLAlchemy ORM + async repository), Pydantic v2 schemas, MinIO/local storage backends, MLflow experiment tracking wrappers, and async HTTP clients used by the three services above it.
+**orca-shared** is the bottom layer. It provides the PostgreSQL registry (SQLAlchemy ORM + async repository), Pydantic v2 schemas, MinIO/local storage backends, MLflow tracking wrappers, and async HTTP clients that the three services above it depend on.
 
-**OrcaMind** is the meta-learning engine. It embeds ML tasks into a vector space, trains meta-learners (MAML, Reptile, Meta-SGD), and recommends models for new tasks based on prior experiment performance.
+**OrcaMind** embeds ML tasks into a vector space, trains meta-learners (MAML, Reptile, Meta-SGD), and recommends models for new tasks based on prior experiment performance.
 
-**OrcaLab** is the experiment orchestration hub. It runs adaptive hyperparameter searches (Bayesian, evolutionary, grid, random, meta-informed), prunes unpromising trials early (ASHA, median, meta-pruner), and orchestrates training via Prefect flows. OrcaLab consumes model priors from OrcaMind and feeds trial results back, closing the meta-learning loop.
+**OrcaLab** runs adaptive hyperparameter searches (Bayesian, evolutionary, grid, random, meta-informed), prunes unpromising trials early (ASHA, median, meta-pruner), and orchestrates training via Prefect flows. It consumes model priors from OrcaMind before sweeps and feeds trial results back afterward, closing the meta-learning loop.
 
-**OrcaNet** is the cross-domain knowledge transfer agent. It finds transferable source tasks using domain-adversarial embeddings and FAISS retrieval, scores transfer viability via CKA and weight-matching strategies, and explains recommendations through a LangChain ReAct agent. OrcaNet orchestrates both OrcaMind and OrcaLab for end-to-end transfer.
+**OrcaNet** finds transferable source tasks through domain-adversarial embeddings and FAISS retrieval, scores transfer viability via CKA and weight-matching strategies, and explains recommendations through a LangChain ReAct agent. It coordinates with both OrcaMind and OrcaLab for end-to-end transfer workflows.
 
-All inter-service communication degrades gracefully — each service continues to function independently when its dependencies are unreachable.
+Each service continues to operate independently when its dependencies are unreachable. Inter-service calls are guarded by timeouts and degrade without crashing.
 
 ## Dependency Graph
 
@@ -93,7 +93,7 @@ pytest packages/orcanet/tests
 make test-unit
 ```
 
-See [Development](../docs/DEVELOPMENT.md) for the full testing, linting, and type-checking guide.
+The [Development](../docs/DEVELOPMENT.md) guide covers testing, linting, and type-checking in detail.
 
 ## Further Reading
 
@@ -104,12 +104,12 @@ See [Development](../docs/DEVELOPMENT.md) for the full testing, linting, and typ
 | [Getting Started](../docs/GETTING-STARTED.md) | Prerequisites, Docker Compose setup, local dev |
 | [Deployment](../docs/DEPLOYMENT.md) | Environment variables, service topology, production notes |
 | [Database](../docs/DATABASE.md) | Alembic migrations, schema reference, OpenML seeding |
-| [API Reference](../docs/API-REFERENCE.md) | REST endpoint specifications for all three services |
+| [API Reference](../docs/API-REFERENCE.md) | REST endpoint specs for all three services |
 | [Roadmap](../docs/ROADMAP.md) | Current progress and planned features |
 
 ---
 
-For package-specific documentation, see the README in each subdirectory:
+Package-level documentation:
 
 - [orca-shared](orca-shared/README.md)
 - [orcamind](orcamind/README.md)
