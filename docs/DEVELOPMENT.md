@@ -8,176 +8,176 @@
 
 ```bash
 # All tests (all packages)
-pytest packages/ -v --cov
+uv run pytest packages/ -v --cov
 
 # OrcaMind unit tests (no services required)
-pytest packages/orcamind/tests/unit/ -v
+uv run pytest packages/orcamind/tests/unit/ -v
 
 # OrcaLab unit tests (no services required)
-pytest packages/orcalab/tests/unit/ -v
+uv run pytest packages/orcalab/tests/unit/ -v
 
 # OrcaLab experiment lifecycle and runner tests only
-pytest packages/orcalab/tests/unit/experiments/ -v
+uv run pytest packages/orcalab/tests/unit/experiments/ -v
 
 # OrcaLab pruning unit tests only
-pytest packages/orcalab/tests/unit/pruning/ -v
+uv run pytest packages/orcalab/tests/unit/pruning/ -v
 
 # OrcaLab orchestration tests only (no Prefect install required)
-pytest packages/orcalab/tests/unit/orchestration/ -v
+uv run pytest packages/orcalab/tests/unit/orchestration/ -v
 
 # OrcaLab visualization tests only (no Streamlit or Plotly install required)
-pytest packages/orcalab/tests/unit/visualization/ -v
+uv run pytest packages/orcalab/tests/unit/visualization/ -v
 
 # OrcaLab REST API integration tests (no services required — all deps mocked)
-pytest packages/orcalab/tests/integration/api/ -v
+uv run pytest packages/orcalab/tests/integration/api/ -v
 
 # OrcaMind ↔ OrcaLab bidirectional integration tests (no services required — OrcaMind HTTP mocked with respx)
-pytest packages/orcalab/tests/integration/ -v
+uv run pytest packages/orcalab/tests/integration/ -v
 
 # OrcaMind integration tests (requires docker-compose stack)
-pytest packages/orcamind/tests/integration/ -v
+uv run pytest packages/orcamind/tests/integration/ -v
 
 # OrcaLab performance / benchmark tests (no services required)
-pytest packages/orcalab/tests/performance/ -v
+uv run pytest packages/orcalab/tests/performance/ -v
 
 # OrcaLab deployment validation tests (no services required — reads config files and Python module)
-pytest packages/orcalab/tests/unit/test_dockerfile.py \
+uv run pytest packages/orcalab/tests/unit/test_dockerfile.py \
        packages/orcalab/tests/unit/test_docker_compose.py \
        packages/orcalab/tests/unit/test_init_prefect.py \
        packages/orcalab/tests/unit/test_app_module_export.py -v
 
 # OrcaNet unit tests (no services required)
-pytest packages/orcanet/tests/unit/ -v
+uv run pytest packages/orcanet/tests/unit/ -v
 
 # OrcaNet — package structure and importability
-pytest packages/orcanet/tests/unit/test_package.py -v
+uv run pytest packages/orcanet/tests/unit/test_package.py -v
 
 # OrcaNet — CLI smoke tests
-pytest packages/orcanet/tests/unit/test_cli.py -v
+uv run pytest packages/orcanet/tests/unit/test_cli.py -v
 
 # OrcaNet — Hydra config validation
-pytest packages/orcanet/tests/unit/test_config.py -v
+uv run pytest packages/orcanet/tests/unit/test_config.py -v
 
 # OrcaNet — deployment configuration validation (docker-compose.dev.yml structure, Dockerfile,
 #            env var names in main.py; no services required)
-pytest packages/orcanet/tests/unit/test_deployment_config.py -v
+uv run pytest packages/orcanet/tests/unit/test_deployment_config.py -v
 
 # OrcaNet — demo notebook structure and content validation (no services required)
-pytest packages/orcanet/tests/unit/test_notebook.py -v
+uv run pytest packages/orcanet/tests/unit/test_notebook.py -v
 
 # OrcaNet — CrossDomainEmbedder, GRL, TextTaskEmbedder, and ArchitectureEmbedder unit tests (no services required)
-pytest packages/orcanet/tests/unit/embeddings/ -v
+uv run pytest packages/orcanet/tests/unit/embeddings/ -v
 
 # OrcaNet — TextTaskEmbedder only
-pytest packages/orcanet/tests/unit/embeddings/test_text_features.py -v
+uv run pytest packages/orcanet/tests/unit/embeddings/test_text_features.py -v
 
 # OrcaNet — ArchitectureGraph and ArchitectureEmbedder unit tests only
-pytest packages/orcanet/tests/unit/embeddings/test_architecture_embedder.py -v
+uv run pytest packages/orcanet/tests/unit/embeddings/test_architecture_embedder.py -v
 
 # OrcaNet — transfer module unit tests only (all four strategies: FeatureTransfer, WeightTransfer, ArchitectureTransfer, MultiTaskTransfer)
-pytest packages/orcanet/tests/unit/transfer/ -v
+uv run pytest packages/orcanet/tests/unit/transfer/ -v
 
 # OrcaNet — linear_cka correctness tests only
-pytest packages/orcanet/tests/unit/transfer/test_feature_transfer.py -v -k "TestLinearCKA"
+uv run pytest packages/orcanet/tests/unit/transfer/test_feature_transfer.py -v -k "TestLinearCKA"
 
 # OrcaNet — FeatureTransfer scoring, guards, metadata, and execute_transfer tests only
-pytest packages/orcanet/tests/unit/transfer/test_feature_transfer.py -v -k "TestFeatureTransfer or TestTransferScore or TestExecuteTransfer"
+uv run pytest packages/orcanet/tests/unit/transfer/test_feature_transfer.py -v -k "TestFeatureTransfer or TestTransferScore or TestExecuteTransfer"
 
 # OrcaNet — WeightTransfer tests only (all classes)
-pytest packages/orcanet/tests/unit/transfer/test_weight_transfer.py -v
+uv run pytest packages/orcanet/tests/unit/transfer/test_weight_transfer.py -v
 
 # OrcaNet — WeightTransfer scoring tests only (identical architecture + match_by modes + structure)
-pytest packages/orcanet/tests/unit/transfer/test_weight_transfer.py -v -k "TestWeightTransferScore"
+uv run pytest packages/orcanet/tests/unit/transfer/test_weight_transfer.py -v -k "TestWeightTransferScore"
 
 # OrcaNet — WeightTransfer execute_transfer and optimizer tests only
-pytest packages/orcanet/tests/unit/transfer/test_weight_transfer.py -v -k "TestWeightTransferExecute or TestGetOptimizer"
+uv run pytest packages/orcanet/tests/unit/transfer/test_weight_transfer.py -v -k "TestWeightTransferExecute or TestGetOptimizer"
 
 # OrcaNet — WeightTransfer guards and metadata tests only
-pytest packages/orcanet/tests/unit/transfer/test_weight_transfer.py -v -k "TestWeightTransferGuards or TestWeightTransferMetadata"
+uv run pytest packages/orcanet/tests/unit/transfer/test_weight_transfer.py -v -k "TestWeightTransferGuards or TestWeightTransferMetadata"
 
 # OrcaNet — ArchitectureTransfer tests only (all classes)
-pytest packages/orcanet/tests/unit/transfer/test_architecture_transfer.py -v
+uv run pytest packages/orcanet/tests/unit/transfer/test_architecture_transfer.py -v
 
 # OrcaNet — ArchitectureTransfer adapt_architecture tests only
-pytest packages/orcanet/tests/unit/transfer/test_architecture_transfer.py -v -k "TestAdaptArchitecture"
+uv run pytest packages/orcanet/tests/unit/transfer/test_architecture_transfer.py -v -k "TestAdaptArchitecture"
 
 # OrcaNet — ArchitectureTransfer score_transfer tests only
-pytest packages/orcanet/tests/unit/transfer/test_architecture_transfer.py -v -k "TestArchitectureTransferScore"
+uv run pytest packages/orcanet/tests/unit/transfer/test_architecture_transfer.py -v -k "TestArchitectureTransferScore"
 
 # OrcaNet — ArchitectureTransfer execute_transfer, metadata, and guards tests only
-pytest packages/orcanet/tests/unit/transfer/test_architecture_transfer.py -v -k "TestArchitectureTransferExecute or TestArchitectureTransferMetadata or TestArchitectureTransferGuards"
+uv run pytest packages/orcanet/tests/unit/transfer/test_architecture_transfer.py -v -k "TestArchitectureTransferExecute or TestArchitectureTransferMetadata or TestArchitectureTransferGuards"
 
 # OrcaNet — MultiTaskTransfer and MultiTaskModel tests only (all classes)
-pytest packages/orcanet/tests/unit/transfer/test_multi_task.py -v
+uv run pytest packages/orcanet/tests/unit/transfer/test_multi_task.py -v
 
 # OrcaNet — MultiTaskModel forward routing and loss tests only
-pytest packages/orcanet/tests/unit/transfer/test_multi_task.py -v -k "TestMultiTaskModelForward or TestMultiTaskModelLoss"
+uv run pytest packages/orcanet/tests/unit/transfer/test_multi_task.py -v -k "TestMultiTaskModelForward or TestMultiTaskModelLoss"
 
 # OrcaNet — MultiTaskModel uncertainty loss and log_sigma gradient-flow tests only
-pytest packages/orcanet/tests/unit/transfer/test_multi_task.py -v -k "TestMultiTaskModelUncertaintyLoss"
+uv run pytest packages/orcanet/tests/unit/transfer/test_multi_task.py -v -k "TestMultiTaskModelUncertaintyLoss"
 
 # OrcaNet — _get_backbone_out_dim helper tests only
-pytest packages/orcanet/tests/unit/transfer/test_multi_task.py -v -k "TestGetBackboneOutDim"
+uv run pytest packages/orcanet/tests/unit/transfer/test_multi_task.py -v -k "TestGetBackboneOutDim"
 
 # OrcaNet — MultiTaskTransfer add_task, score_transfer, execute_transfer, and metadata tests only
-pytest packages/orcanet/tests/unit/transfer/test_multi_task.py -v -k "TestAddTask or TestScoreTransfer or TestExecuteTransfer or TestTransferMetadata"
+uv run pytest packages/orcanet/tests/unit/transfer/test_multi_task.py -v -k "TestAddTask or TestScoreTransfer or TestExecuteTransfer or TestTransferMetadata"
 
 # OrcaNet — GradNorm weight renormalisation tests only
-pytest packages/orcanet/tests/unit/transfer/test_multi_task.py -v -k "TestGradnormWeighting"
+uv run pytest packages/orcanet/tests/unit/transfer/test_multi_task.py -v -k "TestGradnormWeighting"
 
 # OrcaNet — Uncertainty weighting convergence tests (gradient direction + 10-step mini-training loop)
-pytest packages/orcanet/tests/unit/transfer/test_multi_task.py -v -k "TestUncertaintyWeighting"
+uv run pytest packages/orcanet/tests/unit/transfer/test_multi_task.py -v -k "TestUncertaintyWeighting"
 
 # OrcaNet — retrieval module unit tests only (all three files: QueryExpander, LLMRanker, HybridRetriever)
-pytest packages/orcanet/tests/unit/retrieval/ -v
+uv run pytest packages/orcanet/tests/unit/retrieval/ -v
 
 # OrcaNet — QueryExpander and _parse_list_from_response tests only
-pytest packages/orcanet/tests/unit/retrieval/test_query_expander.py -v
+uv run pytest packages/orcanet/tests/unit/retrieval/test_query_expander.py -v
 
 # OrcaNet — LLMRanker and _parse_ranked_list tests only
-pytest packages/orcanet/tests/unit/retrieval/test_ranker.py -v
+uv run pytest packages/orcanet/tests/unit/retrieval/test_ranker.py -v
 
 # OrcaNet — HybridRetriever, _task_to_feature_vector, and _deduplicate_and_sort tests only
-pytest packages/orcanet/tests/unit/retrieval/test_retriever.py -v
+uv run pytest packages/orcanet/tests/unit/retrieval/test_retriever.py -v
 
 # OrcaNet — _parse_list_from_response helper tests only (list format stripping)
-pytest packages/orcanet/tests/unit/retrieval/test_query_expander.py -v -k "TestParseListFromResponse"
+uv run pytest packages/orcanet/tests/unit/retrieval/test_query_expander.py -v -k "TestParseListFromResponse"
 
 # OrcaNet — QueryExpander LLM invocation and prompt format tests only
-pytest packages/orcanet/tests/unit/retrieval/test_query_expander.py -v -k "TestQueryExpander"
+uv run pytest packages/orcanet/tests/unit/retrieval/test_query_expander.py -v -k "TestQueryExpander"
 
 # OrcaNet — _parse_ranked_list JSON parsing and validation tests only
-pytest packages/orcanet/tests/unit/retrieval/test_ranker.py -v -k "TestParseRankedList"
+uv run pytest packages/orcanet/tests/unit/retrieval/test_ranker.py -v -k "TestParseRankedList"
 
 # OrcaNet — LLMRanker.rerank() sorting, top_k, prompt, and short-circuit tests only
-pytest packages/orcanet/tests/unit/retrieval/test_ranker.py -v -k "TestLLMRanker"
+uv run pytest packages/orcanet/tests/unit/retrieval/test_ranker.py -v -k "TestLLMRanker"
 
 # OrcaNet — _task_to_feature_vector helper tests only (shape, encoding, None handling)
-pytest packages/orcanet/tests/unit/retrieval/test_retriever.py -v -k "TestTaskToFeatureVector"
+uv run pytest packages/orcanet/tests/unit/retrieval/test_retriever.py -v -k "TestTaskToFeatureVector"
 
 # OrcaNet — _deduplicate_and_sort helper tests only
-pytest packages/orcanet/tests/unit/retrieval/test_retriever.py -v -k "TestDeduplicateAndSort"
+uv run pytest packages/orcanet/tests/unit/retrieval/test_retriever.py -v -k "TestDeduplicateAndSort"
 
 # OrcaNet — HybridRetriever.retrieve() and retrieve_with_expanded_queries() tests only
-pytest packages/orcanet/tests/unit/retrieval/test_retriever.py -v -k "TestHybridRetriever"
+uv run pytest packages/orcanet/tests/unit/retrieval/test_retriever.py -v -k "TestHybridRetriever"
 
 # OrcaNet — all three benchmark modules (no services required)
-pytest packages/orcanet/tests/benchmarks/ -v
+uv run pytest packages/orcanet/tests/benchmarks/ -v
 
 # OrcaNet — Recall@9 retrieval benchmark only
-pytest packages/orcanet/tests/benchmarks/test_retrieval_benchmark.py -v
+uv run pytest packages/orcanet/tests/benchmarks/test_retrieval_benchmark.py -v
 
 # OrcaNet — cross-domain embedding quality benchmark only
-pytest packages/orcanet/tests/benchmarks/test_embedding_benchmark.py -v
+uv run pytest packages/orcanet/tests/benchmarks/test_embedding_benchmark.py -v
 
 # OrcaNet — transfer recommendation quality benchmark only
-pytest packages/orcanet/tests/benchmarks/test_transfer_quality.py -v
+uv run pytest packages/orcanet/tests/benchmarks/test_transfer_quality.py -v
 
 # OrcaNet — full test suite with coverage enforcement (unit + benchmarks)
-pytest packages/orcanet/ --cov=orcanet --cov-fail-under=80
+uv run pytest packages/orcanet/ --cov=orcanet --cov-fail-under=80
 
 # OrcaNet — skip benchmark tests (fast unit-only run)
-pytest packages/orcanet/tests/unit/ -v -m "not benchmark"
+uv run pytest packages/orcanet/tests/unit/ -v -m "not benchmark"
 ```
 
 The test suite has 80+ test files across unit, integration, performance, and deployment-validation categories, including 39 OrcaNet deployment-configuration and notebook-validation tests added in Prompt 14.
@@ -302,19 +302,19 @@ The deployment validation tests run without Docker — they inspect config files
 
 ```bash
 # Dockerfile structure
-pytest packages/orcalab/tests/unit/test_dockerfile.py -v
+uv run pytest packages/orcalab/tests/unit/test_dockerfile.py -v
 
 # docker-compose.dev.yml service configuration
-pytest packages/orcalab/tests/unit/test_docker_compose.py -v
+uv run pytest packages/orcalab/tests/unit/test_docker_compose.py -v
 
 # Prefect work-pool initialisation script
-pytest packages/orcalab/tests/unit/test_init_prefect.py -v
+uv run pytest packages/orcalab/tests/unit/test_init_prefect.py -v
 
 # Module-level app export (uvicorn entrypoint)
-pytest packages/orcalab/tests/unit/test_app_module_export.py -v
+uv run pytest packages/orcalab/tests/unit/test_app_module_export.py -v
 
 # All deployment tests together
-pytest packages/orcalab/tests/unit/test_dockerfile.py \
+uv run pytest packages/orcalab/tests/unit/test_dockerfile.py \
        packages/orcalab/tests/unit/test_docker_compose.py \
        packages/orcalab/tests/unit/test_init_prefect.py \
        packages/orcalab/tests/unit/test_app_module_export.py -v

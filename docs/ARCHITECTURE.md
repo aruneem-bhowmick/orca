@@ -52,7 +52,7 @@ OrcaNet orchestrates both OrcaMind and OrcaLab to deliver end-to-end knowledge t
 | **OrcaNet → OrcaLab** (validation dispatch) | After scoring, when `transfer_score > 0.4` | `OrcaLabClient.create_experiment(task_id, model_config, tags)` triggers a validation run using the proposed transfer configuration; `wait_for_completion()` polls until the experiment reaches a terminal state |
 | **OrcaLab → OrcaNet** (validation result) | On experiment completion | Validated accuracy from `ExperimentResult.metrics` is written back to the `transfer_mappings` row, closing the loop and making the result available to future queries |
 
-All three inter-service calls are guarded by timeouts and degrade gracefully — a transfer recommendation is always returned even if OrcaLab validation has not yet completed or if OrcaMind is temporarily unreachable.
+OrcaLab calls are guarded by timeouts and degrade gracefully — if validation times out, the transfer mapping is stored with `experiment_result=None`. OrcaMind failures behave differently: `httpx.ConnectError` or `httpx.TimeoutException` from OrcaMind causes the transfer pipeline to raise `ServiceUnavailableError`, and the API returns HTTP 503.
 
 ---
 
