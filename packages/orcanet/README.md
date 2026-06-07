@@ -119,7 +119,7 @@ OrcaNet coordinates with the other two services for end-to-end knowledge transfe
 | OrcaNet → OrcaLab | Dispatch validation experiments when `transfer_score > 0.4` |
 | OrcaLab → OrcaNet | Validated metrics written back to `transfer_mappings` for future queries |
 
-All inter-service calls are guarded by timeouts and degrade gracefully. A transfer recommendation is always returned even if OrcaLab validation has not completed or OrcaMind is unreachable.
+OrcaLab calls are guarded by timeouts and degrade gracefully: if validation times out the transfer mapping is stored with `experiment_result=None`. If OrcaMind is unreachable (`httpx.ConnectError` or `httpx.TimeoutException`) the transfer pipeline raises `ServiceUnavailableError` and the API returns a 503.
 
 Integration diagram in [Architecture](../../docs/ARCHITECTURE.md).
 
