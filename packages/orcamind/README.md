@@ -1,14 +1,14 @@
 # OrcaMind
 
-> The meta-learning engine of the [Orca](../../README.md) platform. Codename: **The Brain**.
+> The meta-learning engine of the [Orca](../../README.md) platform. Codename: The Brain.
 
 ---
 
-OrcaMind learns from prior experiments to recommend models and training configurations for new ML tasks. It embeds tasks into a vector space, measures similarity, and applies meta-learning algorithms (MAML, Reptile, Meta-SGD) to accelerate convergence on unseen problems — turning the history of past experiments into a reusable knowledge base.
+OrcaMind learns from prior experiments to recommend models and training configurations for new ML tasks. It embeds tasks into a vector space, measures similarity, and applies meta-learning algorithms (MAML, Reptile, Meta-SGD) to accelerate convergence on unseen problems. Past experiment history becomes a reusable knowledge base.
 
-OrcaMind serves as the intelligence backbone for the other Orca services: [OrcaLab](../orcalab/README.md) queries it for model priors to warm-start hyperparameter searches, and [OrcaNet](../orcanet/README.md) uses it to retrieve source tasks and predict transfer performance.
+[OrcaLab](../orcalab/README.md) queries OrcaMind for model priors to warm-start hyperparameter searches, and [OrcaNet](../orcanet/README.md) uses it to retrieve source tasks and predict transfer performance.
 
-## Architecture
+## Layout
 
 ```text
 orcamind/
@@ -16,9 +16,9 @@ orcamind/
 ├── embedders/      Task embedding strategies (statistical, neural, FAISS similarity)
 ├── selectors/      Model selection (nearest-neighbour, performance prediction, ranking)
 ├── training/       Meta-training loop (MetaTrainer, task sampling, callbacks, metrics)
-├── api/            FastAPI REST service — 13 endpoints across 6 routers (port 8000)
-├── dashboard/      Streamlit analytics app — 4 pages (port 8501)
-├── cli.py          Typer CLI — init, serve, dashboard, train, recommend
+├── api/            FastAPI REST service, 13 endpoints across 6 routers (port 8000)
+├── dashboard/      Streamlit analytics app, 4 pages (port 8501)
+├── cli.py          Typer CLI: init, serve, dashboard, train, recommend
 ├── alembic/        Database migrations for the shared registry
 ├── scripts/        init_db.py (runs alembic upgrade head)
 └── config/         Hydra YAML configs (model, dataset, optimizer)
@@ -26,26 +26,26 @@ orcamind/
 
 ### Core Algorithms
 
-Four meta-learning implementations, all extending a common `MetaLearningAlgorithm` ABC:
+Four meta-learning implementations, all extending a `MetaLearningAlgorithm` ABC:
 
 | Algorithm | Description | Reference |
 |-----------|-------------|-----------|
-| **MAML** | Model-Agnostic Meta-Learning with second-order gradients | Finn et al. 2017 |
-| **Reptile** | First-order approximation via averaged SGD trajectories | Nichol et al. 2018 |
-| **Meta-SGD** | Per-parameter learnable learning rates | Li et al. 2017 |
-| **Warm-start Transfer** | Direct weight initialisation from similar tasks | — |
+| MAML | Model-Agnostic Meta-Learning with second-order gradients | Finn et al. 2017 |
+| Reptile | First-order approximation via averaged SGD trajectories | Nichol et al. 2018 |
+| Meta-SGD | Per-parameter learnable learning rates | Li et al. 2017 |
+| Warm-start Transfer | Direct weight initialisation from similar tasks | — |
 
 ### Task Embedders
 
-- **StatisticalEmbedder** — hand-crafted 25-dimensional feature vector from dataset statistics (sample count, feature count, class balance, etc.).
-- **NeuralEmbedder** — learned embeddings via a PyTorch encoder trained on the meta-dataset.
-- **FaissIndex** — approximate nearest-neighbour search over embedding vectors for fast similarity retrieval.
+- `StatisticalEmbedder`: hand-crafted 25-dimensional feature vector from dataset statistics (sample count, feature count, class balance, etc.).
+- `NeuralEmbedder`: learned embeddings via a PyTorch encoder trained on the meta-dataset.
+- `FaissIndex`: approximate nearest-neighbour search over embedding vectors for similarity retrieval.
 
 ### Model Selectors
 
-- **NearestNeighborSelector** — k-NN lookup in the task embedding space to find similar tasks and their best models.
-- **PerformancePredictor** — regression model predicting expected accuracy from task and model features.
-- **Ranker** — ranking strategy combining multiple scoring signals.
+- `NearestNeighborSelector`: k-NN lookup in the task embedding space to find similar tasks and their best models.
+- `PerformancePredictor`: regression model predicting expected accuracy from task and model features.
+- `Ranker`: ranking strategy combining multiple scoring signals.
 
 ### Training
 
@@ -53,7 +53,7 @@ Four meta-learning implementations, all extending a common `MetaLearningAlgorith
 
 ## API
 
-OrcaMind exposes a FastAPI REST service on port 8000 with 13 endpoints:
+FastAPI REST service on port 8000 with 13 endpoints:
 
 | Router | Key Endpoints |
 |--------|--------------|
@@ -64,18 +64,16 @@ OrcaMind exposes a FastAPI REST service on port 8000 with 13 endpoints:
 | Performances | Performance metric queries |
 | Adapt | Model adaptation triggers |
 
-Interactive API docs are available at `http://localhost:8000/docs`.
-
-See [API Reference](../../docs/API-REFERENCE.md) for the full endpoint specification.
+Interactive docs at `http://localhost:8000/docs`. Full spec in [API Reference](../../docs/API-REFERENCE.md).
 
 ## Dashboard
 
-A Streamlit analytics application (port 8501) with four pages:
+Streamlit analytics application (port 8501) with four pages:
 
-- **Task Browser** — explore registered tasks and their embeddings.
-- **Recommendation Explorer** — query and visualise model recommendations.
-- **Performance Heatmap** — model-vs-task performance matrix.
-- **Training Progress** — live meta-training metrics.
+- Task Browser: browse registered tasks and their embeddings.
+- Recommendation Explorer: query and visualise model recommendations.
+- Performance Heatmap: model-vs-task performance matrix.
+- Training Progress: live meta-training metrics.
 
 ## CLI
 
@@ -89,7 +87,7 @@ orcamind recommend       # Get model recommendations for a dataset
 
 ## Database Migrations
 
-OrcaMind owns the Alembic migration environment for the shared PostgreSQL registry. All seven tables used by the Orca ecosystem are defined here.
+OrcaMind owns the Alembic migration environment for the shared PostgreSQL registry. All seven tables used by the Orca platform are defined here.
 
 ```bash
 # Apply migrations
@@ -99,7 +97,7 @@ cd packages/orcamind && alembic upgrade head
 docker compose -f docker-compose.dev.yml run --rm orcamind python scripts/init_db.py
 ```
 
-See [Database](../../docs/DATABASE.md) for the full schema reference, revision history, and OpenML seeding instructions.
+Schema reference, revision history, and OpenML seeding instructions are in [Database](../../docs/DATABASE.md).
 
 ## Configuration
 
@@ -117,13 +115,13 @@ config/
 
 | Direction | Mechanism |
 |-----------|-----------|
-| **OrcaMind → OrcaLab** | Model recommendations warm-start Bayesian search via `MetaInformedSearch` |
-| **OrcaLab → OrcaMind** | Trial results feed back via `POST /api/v1/feedback` |
-| **OrcaNet → OrcaMind** | Source task retrieval and model queries for transfer scoring |
+| OrcaMind → OrcaLab | Model recommendations warm-start Bayesian search via `MetaInformedSearch` |
+| OrcaLab → OrcaMind | Trial results feed back via `POST /api/v1/feedback` |
+| OrcaNet → OrcaMind | Source task retrieval and model queries for transfer scoring |
 
-Both directions are resilient — OrcaLab starts sweeps without priors when OrcaMind is unreachable, and OrcaNet returns transfer recommendations even without OrcaMind data.
+Both directions are resilient. OrcaLab starts sweeps without priors when OrcaMind is unreachable, and OrcaNet returns transfer recommendations even without OrcaMind data.
 
-See [Architecture](../../docs/ARCHITECTURE.md) for the full integration diagram.
+Integration diagram in [Architecture](../../docs/ARCHITECTURE.md).
 
 ## Testing
 
@@ -132,7 +130,7 @@ pytest packages/orcamind/tests/unit         # Unit tests (40+ files)
 pytest packages/orcamind/tests/integration  # API and Docker smoke tests
 ```
 
-See [Development](../../docs/DEVELOPMENT.md) for the full testing guide.
+More detail in [Development](../../docs/DEVELOPMENT.md).
 
 ## Tech Stack
 
