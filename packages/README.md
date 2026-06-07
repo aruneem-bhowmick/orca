@@ -84,10 +84,10 @@ uv pip install -e "packages/orcanet[dev]"
 make test
 
 # Individual packages
-pytest packages/orca-shared/tests
-pytest packages/orcamind/tests
-pytest packages/orcalab/tests
-pytest packages/orcanet/tests
+uv run pytest packages/orca-shared/tests
+uv run pytest packages/orcamind/tests
+uv run pytest packages/orcalab/tests
+uv run pytest packages/orcanet/tests
 
 # Unit tests only
 make test-unit
