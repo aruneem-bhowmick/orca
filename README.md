@@ -1,24 +1,20 @@
 # Orca
 
-**A unified meta-learning platform. Teach machines how to learn, not just what to learn.**
+A meta-learning platform that treats prior experiments as training data.
 
 ---
 
-Orca is a monorepo meta-learning ecosystem built around one idea: **prior experiments are a dataset, and we should learn from them**. Rather than starting every new ML task from scratch, Orca accumulates knowledge across tasks, embeds what it has seen, and uses that memory to recommend models, warm-start training, and guide hyperparameter search.
+Orca is a monorepo for meta-learning. The core premise: past experiments carry reusable signal, and a system that remembers them should outperform one that starts from scratch every time. Orca embeds ML tasks into a vector space, tracks what worked before, and uses that history to recommend models, warm-start training, and steer hyperparameter search.
 
-The ecosystem is composed of three interconnected services — **OrcaMind**, **OrcaLab**, and **OrcaNet** — plus a shared infrastructure layer used by all three.
-
----
-
-## Components
+The platform has three services and a shared infrastructure layer:
 
 
 | Component       | Codename       | Role                                                                                                  |
 | --------------- | -------------- | ----------------------------------------------------------------------------------------------------- |
-| **OrcaMind**    | The Brain      | Meta-learning engine: task embedding, model selection, MAML/Reptile/Meta-SGD, warm-start transfer     |
-| **OrcaLab**     | The Lab        | Experiment management hub: adaptive hyperparameter search, Prefect orchestration, live dashboards     |
-| **OrcaNet**     | The Connector  | Cross-domain knowledge transfer: domain-invariant embeddings, LLM-powered reasoning, transfer scoring |
-| **orca-shared** | The Foundation | Shared schemas, SQLAlchemy ORM, storage backends, MLflow wrappers, HTTP client library                |
+| OrcaMind    | The Brain      | Meta-learning engine: task embedding, model selection, MAML/Reptile/Meta-SGD, warm-start transfer     |
+| OrcaLab     | The Lab        | Experiment management: adaptive hyperparameter search, Prefect orchestration, live dashboards     |
+| OrcaNet     | The Connector  | Cross-domain knowledge transfer: domain-invariant embeddings, LLM-powered reasoning, transfer scoring |
+| orca-shared | The Foundation | Shared schemas, SQLAlchemy ORM, storage backends, MLflow wrappers, HTTP client library                |
 
 
 ---
@@ -55,8 +51,7 @@ make docker-up
 | [Architecture](docs/ARCHITECTURE.md) | System diagram, repo layout, tech stack |
 | [Database](docs/DATABASE.md) | Alembic migrations, OpenML meta-dataset seeding |
 | [Development](docs/DEVELOPMENT.md) | Testing, linting, type checking, pre-commit, Makefile |
+| [Deployment](docs/DEPLOYMENT.md) | Environment variables, service topology, production notes |
+| [API Reference](docs/API-REFERENCE.md) | REST endpoint specs for all three services |
 | [Roadmap](docs/ROADMAP.md) | Planned features, reference papers |
-
----
-
-*Build the pod. Make it intelligent. Make it work together.*
+| [Packages](packages/README.md) | Package-level READMEs for orca-shared, OrcaMind, OrcaLab, OrcaNet |
