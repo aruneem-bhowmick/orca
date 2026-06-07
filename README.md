@@ -1,6 +1,6 @@
 # Orca
 
-A meta-learning platform that treats prior experiments as training data.
+A meta-learning platform that treats prior experiments as training data. **Teach machines how to learn, not just what to learn.**
 
 ---
 
