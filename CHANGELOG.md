@@ -122,3 +122,18 @@ derived from the merge-request history of the repository.
   (#36).
 - Added API reference, deployment guide, and database schema reference to
   `docs/` (#37).
+
+## OrcaNet Foundations — Package Scaffold and Embedders
+
+**PRs #38–41 · May 18–20, 2026**
+
+### Added
+
+- Scaffolded `orcanet` package for cross-domain knowledge transfer with
+  module skeleton, config, and test infrastructure (#38).
+- Implemented `CrossDomainEmbedder` using a DANN (Domain-Adversarial Neural
+  Network) architecture for domain-invariant task representations (#39).
+- Implemented `TextTaskEmbedder` for natural-language task-description
+  embedding with statistical feature fusion (#40).
+- Implemented GNN-based `ArchitectureEmbedder` for similarity-driven
+  knowledge transfer across model architectures (#41).
