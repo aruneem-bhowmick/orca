@@ -70,3 +70,21 @@ derived from the merge-request history of the repository.
   component, getting-started, and development guides (#18).
 - OrcaMind HTTP response shape assertion tests for integration endpoints
   (#19).
+
+## OrcaLab Foundations — Package Scaffold and Search Strategies
+
+**PRs #20–26 · May 15–16, 2026**
+
+### Added
+
+- Scaffolded `orcalab` package with module skeleton, CLI, config, and test
+  suite (#20).
+- Updated reference documentation for the new OrcaLab package (#21).
+- Implemented composable search-space definitions with categorical,
+  integer, float, and log-uniform parameter types (#22).
+- Implemented `RandomSearch` and `GridSearch` strategies (#23).
+- Added `BayesianSearch` backed by Optuna TPE with prior injection and
+  persistence (#24).
+- Added `MetaInformedSearch` strategy with OrcaMind warm-start and feedback
+  loop (#25).
+- Added `EvolutionarySearch` strategy backed by CMA-ES (#26).
