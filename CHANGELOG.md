@@ -19,3 +19,22 @@ derived from the merge-request history of the repository.
 - Added CODEOWNERS to enforce review gates on `main` (#2).
 - Implemented `StatisticalTaskEmbedder` with 25-dimensional meta-feature
   extraction for dataset profiling (#3).
+
+## OrcaMind Core — Meta-Learning Algorithms and Model Selection
+
+**PRs #4–9 · May 9–11, 2026**
+
+### Added
+
+- Implemented `NeuralTaskEmbedder` with FAISS-backed similarity search for
+  embedding-space nearest-neighbour retrieval (#4).
+- Implemented MAML (Model-Agnostic Meta-Learning) algorithm with inner/outer
+  loop optimisation and full test suite (#5).
+- Added Reptile and Meta-SGD meta-learners as lightweight MAML alternatives
+  (#6).
+- Implemented `WarmStartTransfer` for checkpoint-based model warm-starting
+  (#7).
+- Built model selection framework with nearest-neighbour, ranking, and
+  performance-prediction selectors (#8).
+- Implemented meta-training pipeline with PyTorch Lightning integration for
+  end-to-end learner training (#9).
