@@ -38,3 +38,18 @@ derived from the merge-request history of the repository.
   performance-prediction selectors (#8).
 - Implemented meta-training pipeline with PyTorch Lightning integration for
   end-to-end learner training (#9).
+
+## OrcaMind Services — Dataset Bootstrap, API, CLI, and Dashboard
+
+**PRs #10–13 · May 12–13, 2026**
+
+### Added
+
+- Bootstrapped OrcaMind meta-dataset from OpenML benchmarks for real-world
+  task coverage (#10).
+- Implemented OrcaMind FastAPI service with 11 REST endpoints for model
+  registry, embeddings, and recommendations (#11).
+- Implemented all six OrcaMind CLI commands (`train`, `recommend`, `embed`,
+  `list`, `evaluate`, `serve`) with full test suite (#12).
+- Built Streamlit analytics dashboard with four pages and a performance
+  summary API (#13).
