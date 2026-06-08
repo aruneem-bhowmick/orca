@@ -88,3 +88,22 @@ derived from the merge-request history of the repository.
 - Added `MetaInformedSearch` strategy with OrcaMind warm-start and feedback
   loop (#25).
 - Added `EvolutionarySearch` strategy backed by CMA-ES (#26).
+
+## OrcaLab Features — Pruning, Experiment Lifecycle, Orchestration, and API
+
+**PRs #27–33 · May 16–17, 2026**
+
+### Added
+
+- Implemented trial pruning strategies: ASHA, median stopping, and
+  OrcaMind-informed meta-pruner (#27).
+- CodeRabbit-generated unit tests for pruning module (#28).
+- Implemented experiment lifecycle, `ExperimentRunner`, and
+  `BatchRunner` for managed trial execution (#29).
+- Added Prefect workflow layer for experiment orchestration with
+  task-level retries and concurrency control (#30).
+- Built OrcaLab Streamlit live dashboard for real-time experiment
+  monitoring (#31).
+- Implemented OrcaLab REST and WebSocket API service (#32).
+- Implemented OrcaMind bidirectional integration: OrcaLab queries OrcaMind
+  for warm-start priors and reports results back (#33).
