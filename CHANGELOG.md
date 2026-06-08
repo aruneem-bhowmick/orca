@@ -107,3 +107,18 @@ derived from the merge-request history of the repository.
 - Implemented OrcaLab REST and WebSocket API service (#32).
 - Implemented OrcaMind bidirectional integration: OrcaLab queries OrcaMind
   for warm-start priors and reports results back (#33).
+
+## OrcaLab Deployment — Containerisation, Metrics, and Reference Docs
+
+**PRs #34–37 · May 18, 2026**
+
+### Added
+
+- Expanded unit and performance test coverage with timeout-gap closure and
+  benchmark tier for OrcaLab (#34).
+- Deployed OrcaLab as a fully containerised service with Streamlit dashboard
+  via Docker Compose (#35).
+- Added real-time per-epoch metric streaming via a persistent metrics store
+  (#36).
+- Added API reference, deployment guide, and database schema reference to
+  `docs/` (#37).
