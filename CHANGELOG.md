@@ -198,3 +198,22 @@ derived from the merge-request history of the repository.
   (#51).
 - Seeded torch before embedder construction for deterministic benchmark
   weight initialisation (#50).
+
+## Documentation Refinement — Technical Voice and Package READMEs
+
+**PRs #52–54 · May 31 – Jun 7, 2026**
+
+### Added
+
+- Added per-package READMEs for `orca-shared`, `orcamind`, `orcalab`, and
+  `orcanet`, plus a top-level `packages/` README (#53).
+- Established the project's north-star aphorism in the root README (#54).
+
+### Changed
+
+- Sharpened technical voice and removed vague intensifiers across all eight
+  `docs/` guides (#52).
+- Enforced direct, consistent technical voice in all package READMEs (#53).
+- Replaced absolute resilience claims with descriptions of implemented
+  behaviour in package documentation (#53).
+- Added `.claude/` to `.gitignore` (#52).
