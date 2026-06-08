@@ -137,3 +137,27 @@ derived from the merge-request history of the repository.
   embedding with statistical feature fusion (#40).
 - Implemented GNN-based `ArchitectureEmbedder` for similarity-driven
   knowledge transfer across model architectures (#41).
+
+## OrcaNet Transfer — CKA, Weight, Architecture, and Multi-Task Strategies
+
+**PRs #42–45 · May 21–22, 2026**
+
+### Added
+
+- Implemented CKA (Centered Kernel Alignment) feature-transfer scoring and
+  strategy infrastructure (#42).
+- Implemented `WeightTransfer` strategy with layer-matching, scoring, deepcopy
+  execution, and `get_optimizer_with_layer_lr` (#43).
+- Implemented `ArchitectureTransfer` strategy with config adaptation and
+  sequential model builder (#44).
+- Implemented `MultiTaskTransfer` strategy with `MultiTaskModel` (shared
+  backbone, task-specific heads), GradNorm weighting, and uncertainty
+  weighting (#45).
+
+### Fixed
+
+- Guarded `add_task` against silent duplicate-task overwrite (#45).
+- Detached feature tensors in `register_task_features` to prevent gradient
+  leaks (#45).
+- Corrected `execute_transfer` semantics and restored `nn.Module` return type
+  in `WeightTransfer` (#43).
