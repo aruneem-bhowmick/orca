@@ -53,3 +53,20 @@ derived from the merge-request history of the repository.
   `list`, `evaluate`, `serve`) with full test suite (#12).
 - Built Streamlit analytics dashboard with four pages and a performance
   summary API (#13).
+
+## OrcaMind Polish — Test Coverage, Docker, and Documentation
+
+**PRs #14–19 · May 14, 2026**
+
+### Added
+
+- Comprehensive OrcaMind test coverage: Spearman correlation, embed schema,
+  and full pipeline tests (#14).
+- Real FAISS integration tests and fixes for pre-existing test failures (#15).
+- Docker deployment with Alembic migrations and database initialisation for
+  OrcaMind (#16).
+- Revamped root README to reflect the current codebase (#17).
+- Split monolithic README into a navigable `docs/` suite with architecture,
+  component, getting-started, and development guides (#18).
+- OrcaMind HTTP response shape assertion tests for integration endpoints
+  (#19).
