@@ -161,3 +161,40 @@ derived from the merge-request history of the repository.
   leaks (#45).
 - Corrected `execute_transfer` semantics and restored `nn.Module` return type
   in `WeightTransfer` (#43).
+
+## OrcaNet Intelligence — Retrieval, Reasoning, API, and Integration
+
+**PRs #46–51 · May 26–29, 2026**
+
+### Added
+
+- Implemented hybrid retrieval pipeline: `QueryExpander`, `LLMRanker`, and
+  `HybridRetriever` three-stage pipeline (#46).
+- Implemented LangChain-based reasoning agent with ReAct loop, four tool
+  functions, prompt templates, response validators, and retry logic (#47).
+- Built OrcaNet FastAPI service with eight HTTP endpoints (health, transfer,
+  retrieve, explain, embed), dependency injection, middleware, and Pydantic
+  response models (#48).
+- Added `TransferPipeline` for three-way OrcaMind–OrcaLab–OrcaNet service
+  coordination with `/api/v1/transfer/validate` endpoint (#49).
+- Implemented `OrcaLabClient.create_experiment` and `wait_for_completion` in
+  `orca-shared` (#49).
+- Added Recall@10 retrieval benchmark, cross-domain embedding quality
+  benchmark, and transfer recommendation quality benchmark (#50).
+- Implemented cross-domain transfer demo notebook (#51).
+- Added OrcaNet Dockerfile and deployment configuration (#51).
+
+### Fixed
+
+- Corrected `asyncio.gather` exception handling and expansion fan-out in
+  retrieval pipeline (#46).
+- Gated LLM health check behind `deep=true` query parameter (#48).
+- Made lifespan shutdown cleanup fault-tolerant (#48).
+- Offloaded `CrossDomainEmbedder.embed()` to thread pool to avoid blocking
+  the event loop (#48).
+- Replaced deprecated `get_event_loop()` with `get_running_loop()` in
+  OrcaLab (#49).
+- Upgraded Redis `depends_on` from `service_started` to `service_healthy`
+  (#51).
+- Seeded torch before embedder construction for deterministic benchmark
+  weight initialisation (#50).
