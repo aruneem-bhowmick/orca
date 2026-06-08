@@ -97,7 +97,7 @@ derived from the merge-request history of the repository.
 
 - Implemented trial pruning strategies: ASHA, median stopping, and
   OrcaMind-informed meta-pruner (#27).
-- CodeRabbit-generated unit tests for pruning module (#28).
+- Added unit tests for pruning module (#28).
 - Implemented experiment lifecycle, `ExperimentRunner`, and
   `BatchRunner` for managed trial execution (#29).
 - Added Prefect workflow layer for experiment orchestration with
@@ -216,4 +216,4 @@ derived from the merge-request history of the repository.
 - Enforced direct, consistent technical voice in all package READMEs (#53).
 - Replaced absolute resilience claims with descriptions of implemented
   behaviour in package documentation (#53).
-- Added `.claude/` to `.gitignore` (#52).
+- Added tool directories to `.gitignore` (#52).
