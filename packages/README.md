@@ -106,6 +106,7 @@ The [Development](../docs/DEVELOPMENT.md) guide covers testing, linting, and typ
 | [Database](../docs/DATABASE.md) | Alembic migrations, schema reference, OpenML seeding |
 | [API Reference](../docs/API-REFERENCE.md) | REST endpoint specs for all three services |
 | [Roadmap](../docs/ROADMAP.md) | Current progress and planned features |
+| [Scripts](../scripts/README.md) | Operational scripts: migrations, Prefect work-pool setup, meta-dataset seeding |
 
 ---
 
