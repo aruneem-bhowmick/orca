@@ -212,13 +212,13 @@ The Compose file declares named volumes for PostgreSQL, Redis, MinIO, and the Or
 - Use external MinIO storage or replace MinIO with S3/GCS and point `MINIO_ENDPOINT` + credentials accordingly.
 - Prefect uses PostgreSQL for its own metadata (`PREFECT_API_DATABASE_CONNECTION_URL`); this can share the same cluster with a separate database.
 
-### Scaling OrcaLab
+### Scaling
 
 OrcaLab's FastAPI service is stateless except for `app.state.sweeps` (an in-memory dict keyed by `sweep_id`). Horizontal scaling behind a load balancer requires either:
 - Replacing the in-memory sweep store with a Redis-backed store, or
 - Using sticky sessions so sweep status reads hit the same instance that created the sweep.
 
-OrcaMind is stateless (all state in PostgreSQL + FAISS on disk) and can be scaled horizontally freely.
+OrcaMind and OrcaNet are stateless (all state in PostgreSQL + FAISS on disk) and can be scaled horizontally without session affinity.
 
 ### Log retention
 

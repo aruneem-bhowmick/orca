@@ -64,7 +64,7 @@ python scripts/bootstrap_meta_dataset.py \
 | `--dry-run`         | off                 | Parse + embed without writing to the DB |
 
 
-**What it does:**
+**Bootstrap steps:**
 
 1. Downloads **OpenML CC-18** (classification, ≤72 tasks) and/or **CTR-23** (regression)
 2. For each task: extracts features from the raw dataset and computes a 25-dim statistical embedding

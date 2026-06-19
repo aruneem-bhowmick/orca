@@ -8,7 +8,7 @@
 
 ```text
 ┌──────────────────────────────────────────────────────────────────┐
-│                         Orca Ecosystem                           │
+│                         Orca Platform                            │
 ├──────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │   ┌─────────────┐     ┌─────────────┐     ┌─────────────┐        │
@@ -182,7 +182,9 @@ orca/
 │
 ├── scripts/
 │   ├── bootstrap_meta_dataset.py    # Seed registry from OpenML CC-18 / CTR-23
-│   └── init_prefect.py              # Create orcalab-pool Prefect work pool for sweep flow deployments
+│   ├── init_prefect.py              # Create orcalab-pool Prefect work pool for sweep flow deployments
+│   ├── README.md                    # Script reference and usage guide
+│   └── tests/                       # pytest suite for both scripts (55 tests, ≥80% coverage)
 │
 ├── docker-compose.dev.yml            # Full dev stack: Postgres, Redis, MinIO, MLflow, Prefect, OrcaMind (8000), OrcaLab API (8001), OrcaLab Dashboard (8502), OrcaNet (8002)
 ├── Makefile                          # install, test, lint, type-check, docker-up/down/logs, clean

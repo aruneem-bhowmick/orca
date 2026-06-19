@@ -8,7 +8,7 @@
 
 ### SQLAlchemy ORM (`registry/models.py`)
 
-Seven fully-typed `Mapped[]` models backed by PostgreSQL:
+Seven typed `Mapped[]` models backed by PostgreSQL:
 
 
 | Table               | Purpose                      | Key Columns                                                                               |
@@ -76,7 +76,7 @@ Async repository pattern over all tables:
 
 Async `httpx`-based clients for inter-service calls:
 
-- `OrcaMindClient`: fully-implemented async HTTP client for the OrcaMind meta-learning service. All six methods call `response.raise_for_status()` so callers receive `httpx.HTTPStatusError` on 4xx/5xx:
+- `OrcaMindClient`: async HTTP client for the OrcaMind meta-learning service. All six methods call `response.raise_for_status()` so callers receive `httpx.HTTPStatusError` on 4xx/5xx:
   - `embed_task(task_id)` — `GET /api/v1/tasks/{task_id}/embedding` → `Embedding`
   - `recommend_model(req)` — `POST /api/v1/recommend-model` → `ModelRecommendation` (first item from list; raises `ValueError` if the response list is empty)
   - `predict_performance(task_embedding, model_id)` — `POST /api/v1/predict-performance` → `PerformanceMetrics`
@@ -156,7 +156,7 @@ Async `httpx`-based clients for inter-service calls:
 
 ### CLI (`orcamind`)
 
-Full-featured Typer CLI installed as the `orcamind` entry point.
+Typer CLI installed as the `orcamind` entry point.
 
 ```bash
 orcamind --help           # List all commands
@@ -1285,7 +1285,7 @@ All external service URLs (Prefect API, OrcaMind API) are resolved via `${oc.env
 
 ## `orcanet` — Cross-Domain Knowledge Transfer Agent
 
-OrcaNet is the third component of the Orca ecosystem. It orchestrates OrcaMind and OrcaLab for cross-domain knowledge transfer: retrieving model configurations from one domain, adapting them to a target task, and validating the result through an OrcaLab experiment. All namespaces are implemented: embeddings (DANN, text, GNN-based architecture embedders), transfer (CKA feature transfer, weight transfer, architecture transfer, multi-task transfer), retrieval (FAISS vector search, metadata filtering, LLM re-ranking), reasoning (LangChain ReAct agent with retry and structured output), and the FastAPI HTTP service on port 8002.
+OrcaNet is the third component of the Orca platform. It orchestrates OrcaMind and OrcaLab for cross-domain knowledge transfer: retrieving model configurations from one domain, adapting them to a target task, and validating the result through an OrcaLab experiment. All namespaces are implemented: embeddings (DANN, text, GNN-based architecture embedders), transfer (CKA feature transfer, weight transfer, architecture transfer, multi-task transfer), retrieval (FAISS vector search, metadata filtering, LLM re-ranking), reasoning (LangChain ReAct agent with retry and structured output), and the FastAPI HTTP service on port 8002.
 
 ### Package Structure
 
