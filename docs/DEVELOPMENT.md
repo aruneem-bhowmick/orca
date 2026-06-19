@@ -7,8 +7,8 @@
 ## Running Tests
 
 ```bash
-# All tests (all packages)
-uv run pytest packages/ -v --cov
+# All tests (all packages + scripts)
+uv run pytest -v --cov
 
 # OrcaMind unit tests (no services required)
 uv run pytest packages/orcamind/tests/unit/ -v
@@ -178,9 +178,12 @@ uv run pytest packages/orcanet/ --cov=orcanet --cov-fail-under=80
 
 # OrcaNet — skip benchmark tests (fast unit-only run)
 uv run pytest packages/orcanet/tests/unit/ -v -m "not benchmark"
+
+# Scripts — bootstrap_meta_dataset.py + init_prefect.py (55 tests, ≥80% coverage)
+uv run pytest scripts/tests/ -v --cov=scripts --cov-report=term-missing
 ```
 
-The test suite has 80+ test files across unit, integration, performance, and deployment-validation categories, including 39 OrcaNet deployment-configuration and notebook-validation tests added in Prompt 14.
+The test suite spans 80+ test files across unit, integration, performance, deployment-validation, and scripts categories.
 
 The OrcaLab API integration tests run without a live database, Prefect server, or MLflow instance. An `ASGITransport` client fixture pre-populates `app.state` manually (bypassing the ASGI lifespan) and overrides all dependency providers via `dependency_overrides`, so tests exercise the full request/response cycle including middleware, routing, and validation while every external call goes to an `AsyncMock`.
 

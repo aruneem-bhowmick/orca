@@ -99,6 +99,19 @@ _LARGE_SAMPLE_THRESHOLD = 10_000
 
 
 def _non_negative_int(value: str) -> int:
+    """Argparse type checker that rejects negative integers.
+
+    Args:
+        value: The raw string supplied on the command line.
+
+    Returns:
+        The parsed non-negative integer.
+
+    Raises:
+        argparse.ArgumentTypeError: If ``value`` is not an integer or is less
+            than zero. Propagates ``ValueError`` for non-integer input so
+            argparse prints the standard usage message.
+    """
     ivalue = int(value)
     if ivalue < 0:
         raise argparse.ArgumentTypeError(f"--max-tasks must be >= 0, got {ivalue}")
@@ -106,6 +119,16 @@ def _non_negative_int(value: str) -> int:
 
 
 def parse_args(argv: list[str] | None = None) -> argparse.Namespace:
+    """Parse the bootstrap CLI arguments.
+
+    Args:
+        argv: Optional explicit argument list for testing. When ``None`` (the
+            default) argparse reads ``sys.argv``.
+
+    Returns:
+        The parsed namespace with ``max_tasks``, ``output_dir``, ``db_url``,
+        ``suites``, and ``dry_run`` attributes.
+    """
     parser = argparse.ArgumentParser(
         description="Seed the OrcaMind registry with OpenML benchmark tasks.",
         formatter_class=argparse.RawDescriptionHelpFormatter,
@@ -347,6 +370,21 @@ async def store_embedding(
 
 
 async def _bootstrap_async(args: argparse.Namespace) -> dict[str, int]:
+    """Run the full async bootstrap pipeline.
+
+    For each requested suite, downloads the OpenML tasks, extracts their
+    datasets, runs the baseline models, and either persists the results to the
+    registry (and adds each embedding to the FAISS index) or, in dry-run mode,
+    logs the would-be outcome without writing. The completed FAISS index is
+    saved to ``{output_dir}/orca_task_index`` unless ``dry_run`` is set.
+
+    Args:
+        args: The parsed CLI namespace from :func:`parse_args`.
+
+    Returns:
+        A ``{"tasks": int, "experiments": int}`` summary of how many tasks and
+        experiments were ingested. Both are zero in dry-run mode.
+    """
     output_dir = Path(args.output_dir)
     output_dir.mkdir(parents=True, exist_ok=True)
 
@@ -410,6 +448,13 @@ async def _bootstrap_async(args: argparse.Namespace) -> dict[str, int]:
 
 
 def main() -> int:
+    """Entry point: configure logging, parse CLI args, and run the bootstrap.
+
+    Returns:
+        ``0`` on completion. Any unhandled exception propagates from
+        :func:`_bootstrap_async` as a non-zero exit code via the
+        ``if __name__ == "__main__"`` guard.
+    """
     logging.basicConfig(level=logging.INFO, format="%(levelname)s %(message)s")
     args = parse_args()
     result = asyncio.run(_bootstrap_async(args))

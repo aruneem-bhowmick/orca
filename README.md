@@ -55,3 +55,4 @@ make docker-up
 | [API Reference](docs/API-REFERENCE.md) | REST endpoint specs for all three services |
 | [Roadmap](docs/ROADMAP.md) | Planned features, reference papers |
 | [Packages](packages/README.md) | Package-level READMEs for orca-shared, OrcaMind, OrcaLab, OrcaNet |
+| [Scripts](scripts/README.md) | Operational scripts: database migrations, Prefect work-pool setup, OpenML meta-dataset seeding |

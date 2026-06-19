@@ -15,7 +15,7 @@
 
 ## Quick Start with Docker Compose
 
-Starts OrcaMind, OrcaLab, PostgreSQL, Redis, MinIO, MLflow, and Prefect together in Docker containers.
+Starts OrcaMind, OrcaLab, OrcaNet, PostgreSQL, Redis, MinIO, MLflow, and Prefect in Docker containers.
 
 ```bash
 git clone https://github.com/AruneemB/orca.git
@@ -31,7 +31,7 @@ uv pip install -e "packages/orcanet[dev]"
 # Start backing services (Prefect required by OrcaLab)
 docker compose -f docker-compose.dev.yml up -d postgres redis minio mlflow prefect
 
-# Apply database migrations (creates all 7 registry tables currently defined)
+# Apply database migrations (creates the 7 registry tables)
 docker compose -f docker-compose.dev.yml run --rm orcamind python scripts/init_db.py
 
 # Start OrcaMind, then initialise the Prefect work pool for sweep flows
