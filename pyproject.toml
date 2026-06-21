@@ -22,7 +22,7 @@ module = "orca_shared.*"
 strict = true
 
 [tool.pytest.ini_options]
-testpaths = ["packages/orca-shared/tests", "packages/orcamind/tests", "packages/orcalab/tests", "packages/orcanet/tests", "scripts/tests"]
+testpaths = ["packages/orca-shared/tests", "packages/orcamind/tests", "packages/orcalab/tests", "packages/orcanet/tests", "packages/orca-web/tests", "scripts/tests"]
 asyncio_mode = "auto"
 addopts = "--cov=packages --cov=scripts --cov-report=term-missing"
 markers = [
