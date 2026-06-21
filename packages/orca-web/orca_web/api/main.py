@@ -1,4 +1,4 @@
-"""Orca Web BFF – FastAPI application factory."""
+"""Orca Web BFF - FastAPI application factory."""
 
 from __future__ import annotations
 
@@ -8,9 +8,11 @@ from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 
 import httpx
-from fastapi import FastAPI, Request, Response
+import redis.asyncio as aioredis
+from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import async_sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from orca_shared.registry.models import get_engine
 
@@ -25,7 +27,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Manage startup and shutdown resources for the BFF."""
     engine = get_engine(settings.database_url)
     app.state.db_engine = engine
-    app.state.db_sessionmaker = async_sessionmaker(engine, expire_on_commit=False)
+    app.state.db_sessionmaker = async_sessionmaker(
+        engine, class_=AsyncSession, expire_on_commit=False,
+    )
     app.state.http_client = httpx.AsyncClient()
     logger.info("Orca Web BFF started")
 
@@ -56,9 +60,8 @@ def create_app() -> FastAPI:
     app.include_router(users_router)
 
     @app.get("/health", tags=["health"])
-    async def health(request: Request) -> Response:
+    async def health(request: Request) -> JSONResponse:
         """Check connectivity to all backing services."""
-        import redis.asyncio as aioredis
 
         async def _check_postgres() -> bool:
             try:
@@ -107,15 +110,11 @@ def create_app() -> FastAPI:
             "orcanet": net,
         }
         all_ok = all(services.values())
-        import json
-
-        body = json.dumps({
-            "status": "healthy" if all_ok else "degraded",
-            "services": services,
-        })
-        return Response(
-            content=body,
-            media_type="application/json",
+        return JSONResponse(
+            content={
+                "status": "healthy" if all_ok else "degraded",
+                "services": services,
+            },
             status_code=200 if all_ok else 503,
         )
 
