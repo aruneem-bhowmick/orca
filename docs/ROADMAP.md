@@ -48,6 +48,23 @@
 - Full FastAPI REST service (8 endpoints) — `orcanet.api`
 - Three-way pipeline: OrcaNet → OrcaMind → OrcaLab
 
+## Orca Web — In Progress
+
+**Done:**
+- Package scaffold: full module skeleton, `pyproject.toml`, pydantic-settings config, SQLAlchemy user/session/activity/bookmark models, repository layer, JWT + bcrypt auth, Google/GitHub OAuth provider config
+- Authentication system: `POST /auth/register`, `POST /auth/login`, `POST /auth/refresh`, `POST /auth/logout`, `GET /auth/me`, `PATCH /auth/me`, OAuth redirect and callback endpoints; httponly refresh-token cookies scoped to `/api/v1/auth`
+- Dashboard aggregation: `GET /dashboard/overview` (auth required), `GET /dashboard/stats` (public); proxies OrcaMind, OrcaLab, and OrcaNet health via `DashboardAggregator`
+- User management: `GET /users/{user_id}` with role-based access control
+- FastAPI application factory: `create_app()` with lifespan-managed DB engine, sessionmaker, and httpx client; CORS + request logging middleware; module-level `app` export for uvicorn
+- Comprehensive health endpoint: `GET /health` checks Postgres, Redis, OrcaMind, OrcaLab, and OrcaNet in parallel; returns 200/healthy or 503/degraded
+- Test suite: 121 tests at 98% coverage across auth, dashboard, users, app factory, and health endpoint
+
+**Next:**
+- WebSocket real-time notifications
+- User bookmarks and activity history endpoints
+- Rate limiting middleware
+- Docker service definition and Compose wiring
+
 ## Platform — Planned
 
 - Kubernetes + Helm charts

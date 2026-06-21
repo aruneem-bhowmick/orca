@@ -27,6 +27,7 @@ uv pip install -e packages/orca-shared
 uv pip install -e "packages/orcamind[dev]"
 uv pip install -e "packages/orcalab[dev]"
 uv pip install -e "packages/orcanet[dev]"
+uv pip install -e "packages/orca-web[dev]"
 
 # Start backing services (Prefect required by OrcaLab)
 docker compose -f docker-compose.dev.yml up -d postgres redis minio mlflow prefect
@@ -54,6 +55,11 @@ curl http://localhost:8001/health
 # → {"status":"healthy","db":true,"prefect":true}
 curl http://localhost:8002/health
 # → {"status":"ok","orcamind":"http://orcamind:8000","orcalab":"http://orcalab:8001"}
+
+# Start the Orca Web BFF (waits for postgres, redis, orcamind, orcalab, orcanet)
+docker compose -f docker-compose.dev.yml up -d orca-web
+curl http://localhost:8003/health
+# → {"status":"healthy","services":{"postgres":true,"redis":true,"orcamind":true,"orcalab":true,"orcanet":true}}
 # Dashboard — open in browser: http://localhost:8502
 ```
 
