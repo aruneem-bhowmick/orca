@@ -9,10 +9,12 @@ from typing import AsyncGenerator
 
 import httpx
 import redis.asyncio as aioredis
+import redis.exceptions as redis_exc
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
+from sqlalchemy.exc import SQLAlchemyError
 
 from orca_shared.registry.models import get_engine
 
@@ -31,10 +33,12 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
         engine, class_=AsyncSession, expire_on_commit=False,
     )
     app.state.http_client = httpx.AsyncClient()
+    app.state.redis_client = aioredis.from_url(settings.redis_url)
     logger.info("Orca Web BFF started")
 
     yield
 
+    await app.state.redis_client.aclose()
     await app.state.db_engine.dispose()
     await app.state.http_client.aclose()
     logger.info("Orca Web BFF stopped")
@@ -68,19 +72,15 @@ def create_app() -> FastAPI:
                 async with request.app.state.db_sessionmaker() as session:
                     await session.execute(text("SELECT 1"))
                 return True
-            except Exception as exc:
+            except (SQLAlchemyError, OSError) as exc:
                 logger.warning("Postgres health check failed: %s", exc)
                 return False
 
         async def _check_redis() -> bool:
             try:
-                r = aioredis.from_url(settings.redis_url)
-                try:
-                    await r.ping()
-                finally:
-                    await r.aclose()
+                await request.app.state.redis_client.ping()
                 return True
-            except Exception as exc:
+            except (redis_exc.RedisError, OSError) as exc:
                 logger.warning("Redis health check failed: %s", exc)
                 return False
 
@@ -90,7 +90,7 @@ def create_app() -> FastAPI:
                     f"{url}/health", timeout=2.0,
                 )
                 return resp.status_code == 200
-            except Exception as exc:
+            except (httpx.NetworkError, httpx.TimeoutException) as exc:
                 logger.warning("%s health check failed: %s", name, exc)
                 return False
 
