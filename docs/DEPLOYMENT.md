@@ -94,7 +94,7 @@ Orca Web (port 8003) ←─ depends on postgres, redis, orcamind, orcalab, orcan
 | `ORCAMIND_API_URL`    | yes      | `http://orcamind:8000`                                 | OrcaMind service base URL                     |
 | `ORCALAB_API_URL`     | yes      | `http://orcalab:8001`                                  | OrcaLab service base URL                      |
 | `ORCANET_API_URL`     | yes      | `http://orcanet:8002`                                  | OrcaNet service base URL                      |
-| `JWT_SECRET`          | yes      | —                                                      | Secret key for signing JWT access tokens      |
+| `JWT_SECRET_KEY`      | yes      | —                                                      | Secret key for signing JWT access tokens      |
 | `CORS_ORIGINS`        | no       | —                                                      | Comma-separated allowed CORS origins          |
 
 ---

@@ -1290,7 +1290,7 @@ All external service URLs (Prefect API, OrcaMind API) are resolved via `${oc.env
 `create_app()` assembles the FastAPI application and returns it for `uvicorn orca_web.api.main:app`:
 
 - **Title:** `Orca Web`, **Version:** `0.1.0`, **root_path:** `/api/v1`
-- **Lifespan context manager** — on startup creates an async SQLAlchemy engine (via `get_engine`), an `async_sessionmaker(expire_on_commit=False)`, and an `httpx.AsyncClient`; stores all three on `app.state` for dependency injection. On shutdown, disposes the engine and closes the httpx client.
+- **Lifespan context manager** — on startup creates an async SQLAlchemy engine (via `get_engine`), an `async_sessionmaker(class_=AsyncSession, expire_on_commit=False)`, an `httpx.AsyncClient`, and a shared `redis.asyncio` client; stores all four on `app.state` for dependency injection. On shutdown, closes the Redis client, disposes the engine, and closes the httpx client.
 - **Routers included:** `auth_router` (`/auth`), `dashboard_router` (`/dashboard`), `users_router` (`/users`)
 - **Middleware:** `add_middleware(app)` applies CORS (deny-by-default, origins from `settings.cors_origins`) and `RequestLoggingMiddleware`
 
@@ -1298,17 +1298,17 @@ All external service URLs (Prefect API, OrcaMind API) are resolved via `${oc.env
 
 Defined inline inside `create_app()` (no auth required). Checks five backing services in parallel via `asyncio.gather`:
 
-1. **PostgreSQL** — `SELECT 1` via the app's sessionmaker
-2. **Redis** — `redis.asyncio.from_url(settings.redis_url).ping()`
-3. **OrcaMind** — `GET {settings.orcamind_api_url}/health` (2s timeout)
+1. **PostgreSQL** — `SELECT 1` via the app's sessionmaker (catches `SQLAlchemyError | OSError`)
+2. **Redis** — `app.state.redis_client.ping()` via the shared client (catches `RedisError | OSError`)
+3. **OrcaMind** — `GET {settings.orcamind_api_url}/health` (2s timeout, catches `httpx.NetworkError | TimeoutException`)
 4. **OrcaLab** — `GET {settings.orcalab_api_url}/health` (2s timeout)
 5. **OrcaNet** — `GET {settings.orcanet_api_url}/health` (2s timeout)
 
-Each check is wrapped in `try/except` and logs a warning on failure. Returns `200` with `"status": "healthy"` when all pass, or `503` with `"status": "degraded"` when any fail. The response body includes a `services` object mapping each service name to a boolean.
+Each check logs a warning on failure. Returns a `JSONResponse` with `200` / `"healthy"` when all pass, or `503` / `"degraded"` when any fail. The response body includes a `services` object mapping each service name to a boolean.
 
 ### Configuration (`config.py`)
 
-Pydantic-settings `Settings` class with fields for `database_url`, `redis_url`, `jwt_secret`, `jwt_algorithm`, `access_token_expire_minutes`, `refresh_token_expire_days`, `cors_origins`, `orcamind_api_url`, `orcalab_api_url`, `orcanet_api_url`, plus Google and GitHub OAuth client ID/secret pairs. Instantiated as a module-level singleton.
+Pydantic-settings `Settings` class with fields for `database_url`, `redis_url`, `jwt_secret_key`, `jwt_algorithm`, `access_token_expire_minutes`, `refresh_token_expire_days`, `cors_origins`, `orcamind_api_url`, `orcalab_api_url`, `orcanet_api_url`, plus Google and GitHub OAuth client ID/secret pairs. Instantiated as a module-level singleton.
 
 ### Authentication (`auth/`)
 
