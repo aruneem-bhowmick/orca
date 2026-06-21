@@ -23,22 +23,30 @@ router = APIRouter(prefix="/auth", tags=["auth"])
 # ── Request / response schemas ────────────────────────────────────────────
 
 class RegisterRequest(BaseModel):
+    """Payload for creating a new user account."""
+
     email: EmailStr
     username: str
     password: str
 
 
 class LoginRequest(BaseModel):
+    """Payload for authenticating with email and password."""
+
     email: EmailStr
     password: str
 
 
 class TokenResponse(BaseModel):
+    """JWT access token returned after successful authentication."""
+
     access_token: str
     token_type: str = "bearer"
 
 
 class UserResponse(BaseModel):
+    """Public representation of a user profile."""
+
     user_id: UUID
     email: str
     username: str
@@ -49,6 +57,8 @@ class UserResponse(BaseModel):
 
 
 class ProfileUpdate(BaseModel):
+    """Optional fields for updating the current user's profile."""
+
     username: str | None = None
     preferences: dict[str, Any] | None = None
 
