@@ -18,6 +18,7 @@
 │   ┌─────────────────────────────────────────────────────┐        │
 │   │  Orca Web (BFF)  ─  port 8003                       │        │
 │   │  /auth  /dashboard  /users  /health                 │        │
+│   │  /orcamind  /orcalab  /orcanet  (proxy routers)     │        │
 │   └───────┬──────────────┬──────────────┬───────────────┘        │
 │           ↓              ↓              ↓                        │
 │   ┌─────────────┐  ┌─────────────┐  ┌─────────────┐             │
@@ -42,7 +43,7 @@
 
 ### Orca Web — Backend for Frontend (BFF)
 
-Orca Web sits between the browser and the three backend services, providing a single gateway with JWT-based authentication, session management, and dashboard aggregation. The `/health` endpoint probes Postgres, Redis, OrcaMind, OrcaLab, and OrcaNet in parallel and returns `"healthy"` (200) or `"degraded"` (503). All BFF endpoints are served under `root_path="/api/v1"` so the OpenAPI schema reflects the production URL structure.
+Orca Web sits between the browser and the three backend services, providing a single gateway with JWT-based authentication, session management, dashboard aggregation, and service proxy routers. The proxy routers (`/orcamind`, `/orcalab`, `/orcanet`) forward authenticated requests to the upstream services, injecting an `X-Orca-User-ID` header and logging mutating operations (POST) to the `activity_log` table via the `HistoryRepository`. Connection errors return 502; timeouts (10 s) return 504. All responses mirror the upstream status code and body. The `/health` endpoint probes Postgres, Redis, OrcaMind, OrcaLab, and OrcaNet in parallel and returns `"healthy"` (200) or `"degraded"` (503). All BFF endpoints are served under `root_path="/api/v1"` so the OpenAPI schema reflects the production URL structure.
 
 ### OrcaMind ↔ OrcaLab Bidirectional Data Flow
 
@@ -161,9 +162,10 @@ orca/
 │   │   │   │   ├── main.py           # create_app() factory + lifespan (DB, httpx, Redis); GET /health
 │   │   │   │   ├── deps.py           # get_db, get_current_user, get_aggregator
 │   │   │   │   ├── middleware.py     # CORS + RequestLoggingMiddleware
-│   │   │   │   └── routers/          # auth.py, dashboard.py, users.py
+│   │   │   │   ├── proxy_utils.py    # Shared proxy forwarding + activity logging utilities
+│   │   │   │   └── routers/          # auth.py, dashboard.py, users.py, orcamind.py, orcalab.py, orcanet.py
 │   │   │   └── config.py            # pydantic-settings (database, Redis, JWT, OAuth, upstream URLs)
-│   │   └── tests/                    # 121 tests, 98% coverage
+│   │   └── tests/                    # 188 tests, 98% coverage
 │   │
 │   └── orcanet/                      # Cross-domain knowledge transfer agent (port 8002)
 │       ├── orcanet/

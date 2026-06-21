@@ -13,11 +13,11 @@ The Orca platform exposes four independent HTTP services:
 | OrcaMind  | `8000`       | `http://localhost:8000` | Meta-learning engine and recommendations           |
 | OrcaLab   | `8001`       | `http://localhost:8001` | Experiment orchestration and search                |
 | OrcaNet   | `8002`       | `http://localhost:8002` | Cross-domain knowledge transfer agent              |
-| Orca Web  | `8003`       | `http://localhost:8003` | Backend for Frontend — auth, dashboard, users      |
+| Orca Web  | `8003`       | `http://localhost:8003` | Backend for Frontend — auth, dashboard, users, service proxies |
 
 All services auto-generate interactive API docs at `GET /docs` (Swagger UI) and `GET /redoc`.
 
-Backend services (OrcaMind, OrcaLab, OrcaNet) use the `/api/v1/` prefix and have no authentication. Orca Web provides JWT-based authentication and proxies backend services for the browser.
+Backend services (OrcaMind, OrcaLab, OrcaNet) use the `/api/v1/` prefix and have no authentication. Orca Web provides JWT-based authentication, proxies backend services for the browser via dedicated proxy routers, and aggregates dashboard data.
 
 ---
 
@@ -809,7 +809,7 @@ The returned list has exactly 64 elements and is L2-normalised.
 
 ## Orca Web BFF API — port 8003
 
-Orca Web is the Backend for Frontend (BFF) that provides JWT authentication, dashboard aggregation, and user management. All endpoints are served under `root_path="/api/v1"`. The BFF proxies OrcaMind, OrcaLab, and OrcaNet for the browser.
+Orca Web is the Backend for Frontend (BFF) that provides JWT authentication, dashboard aggregation, user management, and service proxy routers. All endpoints are served under `root_path="/api/v1"`. The BFF proxies OrcaMind, OrcaLab, and OrcaNet for the browser via dedicated proxy routers that inject an `X-Orca-User-ID` header and log mutating operations to the activity log.
 
 ### Health
 
@@ -943,6 +943,121 @@ Returns public counts for the landing page.
 Callers may only access their own profile unless they have the `admin` role.
 
 **Response** — `UserResponse` or **403** / **404**
+
+---
+
+### OrcaMind Proxy (auth required)
+
+All OrcaMind proxy endpoints require JWT authentication. The BFF forwards the request to the upstream OrcaMind service, injecting an `X-Orca-User-ID` header. Connection errors return 502; timeouts (10 s) return 504. POST endpoints log activity to the `activity_log` table.
+
+#### `GET /orcamind/tasks` — List tasks
+
+Proxies to `GET {ORCAMIND}/api/v1/tasks`. Query parameters (`limit`, `domain`, etc.) are forwarded.
+
+---
+
+#### `GET /orcamind/tasks/{task_id}` — Get task
+
+Proxies to `GET {ORCAMIND}/api/v1/tasks/{task_id}`.
+
+---
+
+#### `POST /orcamind/tasks` — Embed a new task
+
+Proxies to `POST {ORCAMIND}/api/v1/tasks/embed`. Logs `task_created` activity.
+
+---
+
+#### `POST /orcamind/recommend` — Request model recommendations
+
+Proxies to `POST {ORCAMIND}/api/v1/recommend-model`. Logs `model_recommended` activity.
+
+---
+
+#### `POST /orcamind/similar-tasks` — Find similar tasks
+
+Proxies to `POST {ORCAMIND}/api/v1/similar-tasks`. Logs `similar_tasks_searched` activity.
+
+---
+
+#### `POST /orcamind/predict-performance` — Predict model performance
+
+Proxies to `POST {ORCAMIND}/api/v1/predict-performance`. Logs `performance_predicted` activity.
+
+---
+
+### OrcaLab Proxy (auth required)
+
+All OrcaLab proxy endpoints require JWT authentication. Same error handling and header injection as OrcaMind proxy.
+
+#### `GET /orcalab/experiments` — List experiments
+
+Proxies to `GET {ORCALAB}/api/v1/experiments`. Query parameters forwarded.
+
+---
+
+#### `GET /orcalab/experiments/{experiment_id}` — Get experiment
+
+Proxies to `GET {ORCALAB}/api/v1/experiments/{experiment_id}`.
+
+---
+
+#### `POST /orcalab/experiments` — Create experiment
+
+Proxies to `POST {ORCALAB}/api/v1/experiments`. Logs `experiment_started` activity.
+
+---
+
+#### `POST /orcalab/sweeps` — Start hyperparameter sweep
+
+Proxies to `POST {ORCALAB}/api/v1/sweeps`. Logs `sweep_started` activity.
+
+---
+
+#### `GET /orcalab/sweeps/{sweep_id}` — Get sweep status
+
+Proxies to `GET {ORCALAB}/api/v1/sweeps/{sweep_id}`.
+
+---
+
+### OrcaNet Proxy (auth required)
+
+All OrcaNet proxy endpoints require JWT authentication. Same error handling and header injection as OrcaMind proxy.
+
+#### `POST /orcanet/transfer/score` — Score transfer
+
+Proxies to `POST {ORCANET}/api/v1/transfer/score`. Logs `transfer_scored` activity.
+
+---
+
+#### `POST /orcanet/transfer/recommend` — Get transfer recommendations
+
+Proxies to `POST {ORCANET}/api/v1/transfer/recommend`. Logs `transfer_recommended` activity.
+
+---
+
+#### `POST /orcanet/retrieve` — Retrieve similar tasks
+
+Proxies to `POST {ORCANET}/api/v1/retrieve`. Logs `tasks_retrieved` activity.
+
+---
+
+#### `POST /orcanet/explain` — Explain transfer
+
+Proxies to `POST {ORCANET}/api/v1/explain`. Logs `transfer_explained` activity.
+
+---
+
+### Proxy Error Responses
+
+All proxy endpoints return the same error format on upstream failures:
+
+| Status | Body | Condition |
+|--------|------|-----------|
+| `502` | `{"detail": "Service unavailable"}` | Upstream connection refused or DNS failure |
+| `504` | `{"detail": "Service timeout"}` | Upstream did not respond within 10 seconds |
+
+On success, the response mirrors the upstream's status code, body, and content-type exactly.
 
 ---
 
