@@ -1,3 +1,6 @@
+# Windows NUL artifact
+nul
+
 # Tool/editor directories
 .claude/
 .history/
