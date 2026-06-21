@@ -12,6 +12,8 @@ from orca_web.models.user import ActivityLog, UserBookmark
 
 
 class HistoryRepository:
+    """Async operations for activity logs and user bookmarks."""
+
     def __init__(self, session: AsyncSession) -> None:
         self._session = session
 
@@ -27,6 +29,7 @@ class HistoryRepository:
         service: str | None = None,
         details: dict[str, Any] | None = None,
     ) -> ActivityLog:
+        """Insert an activity log entry and flush."""
         row = ActivityLog(
             log_id=uuid.uuid4(),
             user_id=user_id,
@@ -49,6 +52,7 @@ class HistoryRepository:
         service: str | None = None,
         resource_type: str | None = None,
     ) -> list[ActivityLog]:
+        """Return paginated activity entries for *user_id*, newest first."""
         stmt = (
             select(ActivityLog)
             .where(ActivityLog.user_id == user_id)
@@ -63,6 +67,7 @@ class HistoryRepository:
         return list(result.scalars().all())
 
     async def list_global_feed(self, *, limit: int = 50, offset: int = 0) -> list[ActivityLog]:
+        """Return a paginated cross-user activity feed, newest first."""
         stmt = (
             select(ActivityLog)
             .order_by(desc(ActivityLog.created_at))
@@ -82,6 +87,7 @@ class HistoryRepository:
         resource_id: str,
         note: str | None = None,
     ) -> UserBookmark:
+        """Insert a bookmark and flush."""
         row = UserBookmark(
             bookmark_id=uuid.uuid4(),
             user_id=user_id,
@@ -94,6 +100,7 @@ class HistoryRepository:
         return row
 
     async def delete_bookmark(self, bookmark_id: uuid.UUID, user_id: uuid.UUID) -> bool:
+        """Delete a bookmark owned by *user_id*.  Returns ``True`` if a row was removed."""
         result = await self._session.execute(
             delete(UserBookmark).where(
                 UserBookmark.bookmark_id == bookmark_id,
@@ -106,6 +113,7 @@ class HistoryRepository:
     async def list_bookmarks(
         self, user_id: uuid.UUID, *, limit: int = 50, offset: int = 0
     ) -> list[UserBookmark]:
+        """Return paginated bookmarks for *user_id*, newest first."""
         stmt = (
             select(UserBookmark)
             .where(UserBookmark.user_id == user_id)

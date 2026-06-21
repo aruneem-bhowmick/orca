@@ -20,6 +20,7 @@ async def get_user(
     current_user: User = Depends(get_current_user),
     user_repo: UserRepository = Depends(get_user_repo),
 ) -> UserResponse:
+    """Return a user profile.  Callers may only access their own profile unless they have the admin role."""
     if current_user.role != "admin" and current_user.user_id != user_id:
         raise HTTPException(status_code=403, detail="Forbidden")
     user = await user_repo.get_by_id(user_id)

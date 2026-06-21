@@ -1,5 +1,5 @@
 [tool.uv.workspace]
-members = ["packages/orca-shared", "packages/orcamind", "packages/orcalab", "packages/orcanet"]
+members = ["packages/orca-shared", "packages/orcamind", "packages/orcalab", "packages/orcanet", "packages/orca-web"]
 
 [tool.ruff]
 line-length = 100

@@ -17,6 +17,8 @@ logger = logging.getLogger("orca_web.api")
 
 
 class RequestLoggingMiddleware(BaseHTTPMiddleware):
+    """Log every request with method, path, status code, and elapsed time."""
+
     async def dispatch(self, request: Request, call_next) -> Response:
         t0 = time.perf_counter()
         response = await call_next(request)
@@ -32,6 +34,7 @@ class RequestLoggingMiddleware(BaseHTTPMiddleware):
 
 
 def add_middleware(app: FastAPI) -> None:
+    """Attach CORS and request-logging middleware to *app*."""
     origins_raw = settings.cors_origins
     if origins_raw:
         allow_origins = [o.strip() for o in origins_raw.split(",") if o.strip()]

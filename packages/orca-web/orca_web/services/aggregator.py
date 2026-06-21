@@ -20,6 +20,7 @@ class Aggregator:
         self._client = client
 
     async def _safe_get(self, url: str) -> dict[str, Any]:
+        """GET *url* and return the JSON body, or ``{}`` on any failure."""
         try:
             resp = await self._client.get(url, timeout=10.0)
             resp.raise_for_status()

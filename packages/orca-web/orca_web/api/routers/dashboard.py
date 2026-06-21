@@ -18,6 +18,7 @@ async def overview(
     _user: User = Depends(get_current_user),
     aggregator: Aggregator = Depends(get_aggregator),
 ) -> dict[str, Any]:
+    """Return aggregated stats from all services.  Requires authentication."""
     return await aggregator.overview()
 
 

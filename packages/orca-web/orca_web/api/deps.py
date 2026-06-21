@@ -18,24 +18,29 @@ from orca_web.services.aggregator import Aggregator
 
 
 async def get_db(request: Request) -> AsyncGenerator[AsyncSession, None]:
+    """Yield an async database session scoped to a single transaction."""
     async with request.app.state.db_sessionmaker() as session:
         async with session.begin():
             yield session
 
 
 async def get_user_repo(session: AsyncSession = Depends(get_db)) -> UserRepository:
+    """Provide a ``UserRepository`` bound to the current session."""
     return UserRepository(session)
 
 
 async def get_session_repo(session: AsyncSession = Depends(get_db)) -> SessionRepository:
+    """Provide a ``SessionRepository`` bound to the current session."""
     return SessionRepository(session)
 
 
 async def get_history_repo(session: AsyncSession = Depends(get_db)) -> HistoryRepository:
+    """Provide a ``HistoryRepository`` bound to the current session."""
     return HistoryRepository(session)
 
 
 def get_aggregator(request: Request) -> Aggregator:
+    """Provide an ``Aggregator`` wrapping the app-level HTTP client."""
     return Aggregator(request.app.state.http_client)
 
 

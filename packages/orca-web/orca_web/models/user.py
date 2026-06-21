@@ -14,6 +14,13 @@ from orca_shared.registry.models import Base
 
 
 class User(Base):
+    """Registered user account.
+
+    OAuth-only users have ``password_hash`` set to ``None``; local users
+    always have one.  The ``preferences`` column stores arbitrary JSONB
+    (theme, default filters, notification settings, etc.).
+    """
+
     __tablename__ = "users"
 
     user_id: Mapped[uuid.UUID] = mapped_column(
@@ -40,6 +47,14 @@ class User(Base):
 
 
 class UserSession(Base):
+    """Refresh-token session record.
+
+    Each refresh token is identified by a unique JTI (JWT ID).  Token
+    rotation revokes the old JTI and creates a new session row, so
+    ``revoked`` acts as a soft-delete flag.  ``device_info`` and
+    ``ip_address`` are optional metadata for multi-device visibility.
+    """
+
     __tablename__ = "user_sessions"
 
     session_id: Mapped[uuid.UUID] = mapped_column(
@@ -61,6 +76,13 @@ class UserSession(Base):
 
 
 class ActivityLog(Base):
+    """Per-user audit trail entry.
+
+    Captures who did what, on which resource, in which service.  The
+    ``details`` column stores arbitrary JSONB context (request params,
+    response summaries, error messages).
+    """
+
     __tablename__ = "activity_log"
 
     log_id: Mapped[uuid.UUID] = mapped_column(
@@ -82,6 +104,13 @@ class ActivityLog(Base):
 
 
 class UserBookmark(Base):
+    """User bookmark for a resource in any Orca service.
+
+    ``resource_type`` identifies the entity kind (``task``,
+    ``experiment``, ``model``, etc.) and ``resource_id`` is its UUID
+    string.  ``note`` is an optional free-text annotation.
+    """
+
     __tablename__ = "user_bookmarks"
 
     bookmark_id: Mapped[uuid.UUID] = mapped_column(

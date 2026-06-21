@@ -56,6 +56,7 @@ class ProfileUpdate(BaseModel):
 # ── Helpers ───────────────────────────────────────────────────────────────
 
 def _set_refresh_cookie(response: Response, token: str) -> None:
+    """Set an httponly refresh_token cookie scoped to ``/api/v1/auth``."""
     response.set_cookie(
         key="refresh_token",
         value=token,
@@ -68,6 +69,7 @@ def _set_refresh_cookie(response: Response, token: str) -> None:
 
 
 def _clear_refresh_cookie(response: Response) -> None:
+    """Delete the refresh_token cookie."""
     response.delete_cookie(key="refresh_token", path="/api/v1/auth")
 
 
@@ -80,6 +82,7 @@ async def register(
     user_repo: UserRepository = Depends(get_user_repo),
     session_repo: SessionRepository = Depends(get_session_repo),
 ) -> TokenResponse:
+    """Register a new user with email and password.  Returns an access token."""
     if await user_repo.get_by_email(body.email):
         raise HTTPException(status_code=409, detail="Email already registered")
     if await user_repo.get_by_username(body.username):
@@ -105,6 +108,7 @@ async def login(
     user_repo: UserRepository = Depends(get_user_repo),
     session_repo: SessionRepository = Depends(get_session_repo),
 ) -> TokenResponse:
+    """Authenticate by email and password.  Returns an access token."""
     user = await user_repo.get_by_email(body.email)
     if user is None or user.password_hash is None:
         raise HTTPException(status_code=401, detail="Invalid credentials")
@@ -125,6 +129,7 @@ async def refresh_token(
     user_repo: UserRepository = Depends(get_user_repo),
     session_repo: SessionRepository = Depends(get_session_repo),
 ) -> TokenResponse:
+    """Rotate the refresh token and return a new access token."""
     token = request.cookies.get("refresh_token")
     if not token:
         raise HTTPException(status_code=401, detail="No refresh token")
@@ -161,6 +166,7 @@ async def logout(
     response: Response,
     session_repo: SessionRepository = Depends(get_session_repo),
 ) -> None:
+    """Revoke the current refresh token and clear the cookie."""
     token = request.cookies.get("refresh_token")
     if token:
         payload = decode_token_safe(token)
@@ -173,6 +179,7 @@ async def logout(
 
 @router.get("/oauth/{provider}")
 async def oauth_redirect(provider: str, request: Request) -> Any:
+    """Redirect the user to the OAuth provider's authorization page."""
     client = oauth.create_client(provider)
     if client is None:
         raise HTTPException(status_code=400, detail=f"OAuth provider '{provider}' not configured")
@@ -188,6 +195,7 @@ async def oauth_callback(
     user_repo: UserRepository = Depends(get_user_repo),
     session_repo: SessionRepository = Depends(get_session_repo),
 ) -> TokenResponse:
+    """Handle the OAuth callback: exchange code for token, upsert user, return access token."""
     client = oauth.create_client(provider)
     if client is None:
         raise HTTPException(status_code=400, detail=f"OAuth provider '{provider}' not configured")
@@ -241,6 +249,7 @@ async def oauth_callback(
 
 @router.get("/me", response_model=UserResponse)
 async def get_me(user: User = Depends(get_current_user)) -> UserResponse:
+    """Return the profile of the currently authenticated user."""
     return UserResponse.model_validate(user)
 
 
@@ -250,6 +259,7 @@ async def update_me(
     user: User = Depends(get_current_user),
     user_repo: UserRepository = Depends(get_user_repo),
 ) -> UserResponse:
+    """Update the current user's username and/or preferences."""
     updates = body.model_dump(exclude_unset=True)
     if updates:
         await user_repo.update_profile(user.user_id, **updates)
