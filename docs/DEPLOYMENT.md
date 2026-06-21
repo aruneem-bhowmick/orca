@@ -22,6 +22,8 @@ OrcaLab  (port 8001) ───────────────────�
 OrcaLab Dashboard (port 8502) ←─ depends on OrcaLab
                                                          ↓    ↓
 OrcaNet  (port 8002) ←─ depends on postgres, redis, orcamind, orcalab
+                                                         ↓    ↓
+Orca Web (port 8003) ←─ depends on postgres, redis, orcamind, orcalab, orcanet
 ```
 
 ---
@@ -83,6 +85,18 @@ OrcaNet  (port 8002) ←─ depends on postgres, redis, orcamind, orcalab
 | `ORCANET_LLM_API_KEY`  | no  | —                        | Explicit API key for the LLM provider (overrides provider-specific env vars above) |
 | `FAISS_INDEX_PATH`     | no  | `data/faiss_index`       | Path to the pre-built FAISS index; retriever disabled when the index file is absent |
 
+### Orca Web — BFF (port 8003)
+
+| Variable              | Required | Default (dev)                                          | Description                                   |
+|-----------------------|----------|--------------------------------------------------------|-----------------------------------------------|
+| `DATABASE_URL`        | yes      | `postgresql+asyncpg://orca:orca_dev_secret@postgres:5432/orca_registry` | Async PostgreSQL connection string |
+| `REDIS_URL`           | yes      | `redis://redis:6379`                                   | Redis connection string                       |
+| `ORCAMIND_API_URL`    | yes      | `http://orcamind:8000`                                 | OrcaMind service base URL                     |
+| `ORCALAB_API_URL`     | yes      | `http://orcalab:8001`                                  | OrcaLab service base URL                      |
+| `ORCANET_API_URL`     | yes      | `http://orcanet:8002`                                  | OrcaNet service base URL                      |
+| `JWT_SECRET_KEY`      | yes      | —                                                      | Secret key for signing JWT access tokens      |
+| `CORS_ORIGINS`        | no       | —                                                      | Comma-separated allowed CORS origins          |
+
 ---
 
 ## Service Startup Order
@@ -99,6 +113,7 @@ Services must start in dependency order. Docker Compose `depends_on` with `condi
 7. orcalab         ← healthcheck: httpx GET /health  (depends on all above + orcamind)
 8. orcalab-dashboard   ← no healthcheck (depends on orcalab)
 9. orcanet         ← healthcheck: httpx GET /health  (depends on postgres, redis, orcamind, orcalab)
+10. orca-web        ← healthcheck: httpx GET /health  (depends on postgres, redis, orcamind, orcalab, orcanet)
 ```
 
 Before OrcaMind starts, run the Alembic migrations:
@@ -152,6 +167,10 @@ curl http://localhost:8002/health
 curl "http://localhost:8002/health?deep=true"
 # {"status": "healthy", "orcamind": true, "orcalab": true, "llm": true}
 
+# Orca Web BFF
+curl http://localhost:8003/health
+# {"status":"healthy","services":{"postgres":true,"redis":true,"orcamind":true,"orcalab":true,"orcanet":true}}
+
 # MLflow
 curl http://localhost:5000/health
 
@@ -175,6 +194,7 @@ docker compose -f docker-compose.dev.yml run --rm orcamind \
 | OrcaMind API docs     | http://localhost:8000/docs  | Swagger UI for all OrcaMind endpoints       |
 | OrcaLab API docs      | http://localhost:8001/docs  | Swagger UI for all OrcaLab endpoints        |
 | OrcaNet API docs      | http://localhost:8002/docs  | Swagger UI for all OrcaNet endpoints        |
+| Orca Web BFF docs     | http://localhost:8003/docs  | Swagger UI for auth, dashboard, users       |
 | OrcaLab Dashboard     | http://localhost:8502       | Streamlit UI — Live Experiments, Search Progress, Results Explorer, Meta-Analysis |
 | MLflow UI             | http://localhost:5000       | Experiment runs, metrics, model registry    |
 | Prefect UI            | http://localhost:4200       | Flow runs, work pools, deployments          |

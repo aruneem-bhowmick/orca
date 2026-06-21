@@ -179,6 +179,24 @@ uv run pytest packages/orcanet/ --cov=orcanet --cov-fail-under=80
 # OrcaNet — skip benchmark tests (fast unit-only run)
 uv run pytest packages/orcanet/tests/unit/ -v -m "not benchmark"
 
+# Orca Web — all tests (no services required — all deps mocked)
+uv run pytest packages/orca-web/tests/ -v
+
+# Orca Web — app factory and health endpoint tests only
+uv run pytest packages/orca-web/tests/test_main.py -v
+
+# Orca Web — auth endpoint tests only
+uv run pytest packages/orca-web/tests/test_auth.py -v
+
+# Orca Web — dashboard endpoint tests only
+uv run pytest packages/orca-web/tests/test_dashboard.py -v
+
+# Orca Web — user endpoint tests only
+uv run pytest packages/orca-web/tests/test_users.py -v
+
+# Orca Web — full suite with coverage enforcement (≥80%)
+uv run pytest packages/orca-web/tests/ -v --cov=orca_web --cov-fail-under=80
+
 # Scripts — bootstrap_meta_dataset.py + init_prefect.py (55 tests, ≥80% coverage)
 uv run pytest scripts/tests/ -v --cov=scripts --cov-report=term-missing
 ```

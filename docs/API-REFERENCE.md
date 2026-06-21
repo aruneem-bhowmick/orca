@@ -6,17 +6,18 @@
 
 ## Overview
 
-The Orca platform exposes three independent HTTP services:
+The Orca platform exposes four independent HTTP services:
 
 | Service   | Default Port | Base URL              | Description                                        |
 |-----------|-------------|-----------------------|----------------------------------------------------|
 | OrcaMind  | `8000`       | `http://localhost:8000` | Meta-learning engine and recommendations           |
 | OrcaLab   | `8001`       | `http://localhost:8001` | Experiment orchestration and search                |
 | OrcaNet   | `8002`       | `http://localhost:8002` | Cross-domain knowledge transfer agent              |
+| Orca Web  | `8003`       | `http://localhost:8003` | Backend for Frontend — auth, dashboard, users      |
 
 All services auto-generate interactive API docs at `GET /docs` (Swagger UI) and `GET /redoc`.
 
-All endpoints use the `/api/v1/` prefix. All request and response bodies are JSON. There is no authentication layer in the current release.
+Backend services (OrcaMind, OrcaLab, OrcaNet) use the `/api/v1/` prefix and have no authentication. Orca Web provides JWT-based authentication and proxies backend services for the browser.
 
 ---
 
@@ -806,9 +807,148 @@ The returned list has exactly 64 elements and is L2-normalised.
 
 ---
 
+## Orca Web BFF API — port 8003
+
+Orca Web is the Backend for Frontend (BFF) that provides JWT authentication, dashboard aggregation, and user management. All endpoints are served under `root_path="/api/v1"`. The BFF proxies OrcaMind, OrcaLab, and OrcaNet for the browser.
+
+### Health
+
+#### `GET /health` — BFF health check (no auth)
+
+Checks Postgres, Redis, OrcaMind, OrcaLab, and OrcaNet in parallel.
+
+**Response** — `200 OK` (all healthy) or `503 Service Unavailable` (any degraded)
+
+```json
+{
+  "status": "healthy",
+  "services": {
+    "postgres": true,
+    "redis": true,
+    "orcamind": true,
+    "orcalab": true,
+    "orcanet": true
+  }
+}
+```
+
+---
+
+### Authentication
+
+#### `POST /auth/register` — Register a new user
+
+Status: **201 Created**
+
+**Request body**
+
+```json
+{
+  "email": "alice@example.com",
+  "username": "alice",
+  "password": "secret"
+}
+```
+
+**Response** — `TokenResponse`
+
+```json
+{ "access_token": "eyJ...", "token_type": "bearer" }
+```
+
+Sets an `httponly` refresh token cookie scoped to `/api/v1/auth`.
+
+---
+
+#### `POST /auth/login` — Authenticate with email and password
+
+**Response** — `TokenResponse` or **401**
+
+---
+
+#### `POST /auth/refresh` — Rotate refresh token
+
+Reads the `refresh_token` cookie, revokes the old session, and issues a new access + refresh token pair.
+
+**Response** — `TokenResponse` or **401**
+
+---
+
+#### `POST /auth/logout` — Revoke refresh token
+
+Status: **204 No Content**
+
+Revokes the current refresh session and clears the cookie.
+
+---
+
+#### `GET /auth/me` — Get current user profile (auth required)
+
+**Response** — `UserResponse`
+
+```json
+{
+  "user_id": "uuid",
+  "email": "alice@example.com",
+  "username": "alice",
+  "role": "user",
+  "preferences": null
+}
+```
+
+---
+
+#### `PATCH /auth/me` — Update current user profile (auth required)
+
+**Request body** — `ProfileUpdate`
+
+```json
+{ "username": "alice_updated", "preferences": {"theme": "dark"} }
+```
+
+**Response** — `UserResponse`
+
+---
+
+#### `GET /auth/oauth/{provider}` — Redirect to OAuth provider
+
+Supports `google` and `github`. Returns a redirect response.
+
+---
+
+#### `GET /auth/oauth/{provider}/callback` — Handle OAuth callback
+
+**Response** — `TokenResponse`
+
+---
+
+### Dashboard
+
+#### `GET /dashboard/overview` — Aggregated stats (auth required)
+
+Proxies OrcaMind, OrcaLab, and OrcaNet to return combined service stats.
+
+---
+
+#### `GET /dashboard/stats` — Public stats (no auth)
+
+Returns public counts for the landing page.
+
+---
+
+### Users
+
+#### `GET /users/{user_id}` — Get user profile (auth required)
+
+Callers may only access their own profile unless they have the `admin` role.
+
+**Response** — `UserResponse` or **403** / **404**
+
+---
+
 ## Health Endpoints
 
-All three services expose a health endpoint with no authentication requirement.
+All four services expose a health endpoint with no authentication requirement.
 
 | Service  | Endpoint      | `status` field          | Additional fields                                     |
 |----------|---------------|-------------------------|-------------------------------------------------------|

@@ -34,6 +34,7 @@ def mock_settings(monkeypatch):
     monkeypatch.setattr("orca_web.services.aggregator.settings", s)
     monkeypatch.setattr("orca_web.api.middleware.settings", s)
     monkeypatch.setattr("orca_web.api.routers.auth.settings", s)
+    monkeypatch.setattr("orca_web.api.main.settings", s)
     return s
 
 

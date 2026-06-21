@@ -1,6 +1,13 @@
 [tool.uv.workspace]
 members = ["packages/orca-shared", "packages/orcamind", "packages/orcalab", "packages/orcanet", "packages/orca-web"]
 
+[tool.uv.sources]
+orca-shared = { workspace = true }
+orcamind = { workspace = true }
+orcalab = { workspace = true }
+orcanet = { workspace = true }
+orca-web = { workspace = true }
+
 [tool.ruff]
 line-length = 100
 target-version = "py311"
@@ -15,7 +22,7 @@ module = "orca_shared.*"
 strict = true
 
 [tool.pytest.ini_options]
-testpaths = ["packages/orca-shared/tests", "packages/orcamind/tests", "packages/orcalab/tests", "packages/orcanet/tests", "scripts/tests"]
+testpaths = ["packages/orca-shared/tests", "packages/orcamind/tests", "packages/orcalab/tests", "packages/orcanet/tests", "packages/orca-web/tests", "scripts/tests"]
 asyncio_mode = "auto"
 addopts = "--cov=packages --cov=scripts --cov-report=term-missing"
 markers = [

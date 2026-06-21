@@ -11,15 +11,24 @@
 │                         Orca Platform                            │
 ├──────────────────────────────────────────────────────────────────┤
 │                                                                  │
-│   ┌─────────────┐     ┌─────────────┐     ┌─────────────┐        │
-│   │  OrcaMind   │ ←→  │   OrcaLab   │ ←→  │   OrcaNet   │        │
-│   │  port 8000  │     │  port 8001  │     │  port 8002  │        │
-│   └──────┬──────┘     └─────┬───────┘     └──────┬──────┘        │
-│          └─────────────────┬┘────────────────────┘               │
-│                            │                                     │
-│          ┌─────────────────▼────────────────────┐                │
-│          │          orca-shared                 │                │
-│          ├──────────────────────────────────────┤                │
+│   ┌─────────────────────────────────────────────────────┐        │
+│   │  Browser / SPA                                      │        │
+│   └──────────────────────┬──────────────────────────────┘        │
+│                          ↓                                       │
+│   ┌─────────────────────────────────────────────────────┐        │
+│   │  Orca Web (BFF)  ─  port 8003                       │        │
+│   │  /auth  /dashboard  /users  /health                 │        │
+│   └───────┬──────────────┬──────────────┬───────────────┘        │
+│           ↓              ↓              ↓                        │
+│   ┌─────────────┐  ┌─────────────┐  ┌─────────────┐             │
+│   │  OrcaMind   │←→│   OrcaLab   │←→│   OrcaNet   │             │
+│   │  port 8000  │  │  port 8001  │  │  port 8002  │             │
+│   └──────┬──────┘  └─────┬───────┘  └──────┬──────┘             │
+│          └───────────────┬┘────────────────┘                     │
+│                          │                                       │
+│          ┌───────────────▼──────────────────┐                    │
+│          │          orca-shared             │                    │
+│          ├─────────────────────────────────┤                    │
 │          │  Registry  (PostgreSQL + SQLAlchemy) │                │
 │          │  Migrations (Alembic)                │                │
 │          │  Artifacts  (MinIO / Local FS)       │                │
@@ -30,6 +39,10 @@
 │                                                                  │
 └──────────────────────────────────────────────────────────────────┘
 ```
+
+### Orca Web — Backend for Frontend (BFF)
+
+Orca Web sits between the browser and the three backend services, providing a single gateway with JWT-based authentication, session management, and dashboard aggregation. The `/health` endpoint probes Postgres, Redis, OrcaMind, OrcaLab, and OrcaNet in parallel and returns `"healthy"` (200) or `"degraded"` (503). All BFF endpoints are served under `root_path="/api/v1"` so the OpenAPI schema reflects the production URL structure.
 
 ### OrcaMind ↔ OrcaLab Bidirectional Data Flow
 
@@ -138,6 +151,20 @@ orca/
 │                   ├── test_search_spaces.py # Create and list search space records
 │                   └── test_websocket.py     # Direct handler invocation — metrics stream, disconnect, terminal status
 │
+│   ├── orca-web/                      # Backend for Frontend gateway (port 8003)
+│   │   ├── orca_web/
+│   │   │   ├── auth/                 # JWT tokens, OAuth providers, password hashing
+│   │   │   ├── models/               # SQLAlchemy User, UserSession, ActivityLog, UserBookmark
+│   │   │   ├── repository/           # UserRepository, SessionRepository, HistoryRepository
+│   │   │   ├── services/             # Aggregator (proxies OrcaMind, OrcaLab, OrcaNet)
+│   │   │   ├── api/
+│   │   │   │   ├── main.py           # create_app() factory + lifespan (DB, httpx, Redis); GET /health
+│   │   │   │   ├── deps.py           # get_db, get_current_user, get_aggregator
+│   │   │   │   ├── middleware.py     # CORS + RequestLoggingMiddleware
+│   │   │   │   └── routers/          # auth.py, dashboard.py, users.py
+│   │   │   └── config.py            # pydantic-settings (database, Redis, JWT, OAuth, upstream URLs)
+│   │   └── tests/                    # 121 tests, 98% coverage
+│   │
 │   └── orcanet/                      # Cross-domain knowledge transfer agent (port 8002)
 │       ├── orcanet/
 │       │   ├── embeddings/           # CrossDomainEmbedder (DANN, implemented); TextTaskEmbedder (sentence-transformers + stats fusion, implemented); ArchitectureEmbedder (GNN-based, implemented)
