@@ -221,6 +221,18 @@ uv run pytest packages/orca-web/tests/test_websocket.py -v -k "TestValidateToken
 # Orca Web — WebSocket relay tests only (upstream-to-browser and browser-to-upstream)
 uv run pytest packages/orca-web/tests/test_websocket.py -v -k "TestUpstreamToBrowserRelay or TestBrowserToUpstreamRelay"
 
+# Orca Web — history and bookmark endpoint tests only
+uv run pytest packages/orca-web/tests/test_api_history.py -v
+
+# Orca Web — bookmark CRUD tests only (create, delete with ownership, list)
+uv run pytest packages/orca-web/tests/test_api_history.py -v -k "TestCreateBookmark or TestDeleteBookmark or TestListBookmarks"
+
+# Orca Web — history pagination and service-filter tests only
+uv run pytest packages/orca-web/tests/test_api_history.py -v -k "TestListHistory or TestListTaskHistory or TestListExperimentHistory"
+
+# Orca Web — global feed tests only
+uv run pytest packages/orca-web/tests/test_api_history.py -v -k "TestGlobalFeed"
+
 # Orca Web — full suite with coverage enforcement (≥80%)
 uv run pytest packages/orca-web/tests/ -v --cov=orca_web --cov-fail-under=80
 

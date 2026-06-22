@@ -5,7 +5,7 @@ from __future__ import annotations
 import uuid
 from typing import Any
 
-from sqlalchemy import delete, desc, select
+from sqlalchemy import delete, desc, func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from orca_web.models.user import ActivityLog, UserBookmark
@@ -66,6 +66,24 @@ class HistoryRepository:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
+    async def count_for_user(
+        self,
+        user_id: uuid.UUID,
+        *,
+        service: str | None = None,
+        resource_type: str | None = None,
+    ) -> int:
+        """Return the total number of activity entries matching the filters for *user_id*."""
+        stmt = select(func.count(ActivityLog.log_id)).where(
+            ActivityLog.user_id == user_id
+        )
+        if service:
+            stmt = stmt.where(ActivityLog.service == service)
+        if resource_type:
+            stmt = stmt.where(ActivityLog.resource_type == resource_type)
+        result = await self._session.execute(stmt)
+        return result.scalar_one()
+
     async def list_global_feed(self, *, limit: int = 50, offset: int = 0) -> list[ActivityLog]:
         """Return a paginated cross-user activity feed, newest first."""
         stmt = (
@@ -76,6 +94,13 @@ class HistoryRepository:
         )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
+
+    async def count_global_feed(self) -> int:
+        """Return the total number of entries in the global activity feed."""
+        result = await self._session.execute(
+            select(func.count(ActivityLog.log_id))
+        )
+        return result.scalar_one()
 
     # ── Bookmarks ─────────────────────────────────────────────────────────
 
@@ -98,6 +123,13 @@ class HistoryRepository:
         self._session.add(row)
         await self._session.flush()
         return row
+
+    async def get_bookmark_by_id(self, bookmark_id: uuid.UUID) -> UserBookmark | None:
+        """Return the bookmark with the given ID regardless of owner, or ``None``."""
+        result = await self._session.execute(
+            select(UserBookmark).where(UserBookmark.bookmark_id == bookmark_id)
+        )
+        return result.scalar_one_or_none()
 
     async def delete_bookmark(self, bookmark_id: uuid.UUID, user_id: uuid.UUID) -> bool:
         """Delete a bookmark owned by *user_id*.  Returns ``True`` if a row was removed."""
@@ -123,3 +155,12 @@ class HistoryRepository:
         )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
+
+    async def count_bookmarks(self, user_id: uuid.UUID) -> int:
+        """Return the total number of bookmarks owned by *user_id*."""
+        result = await self._session.execute(
+            select(func.count(UserBookmark.bookmark_id)).where(
+                UserBookmark.user_id == user_id
+            )
+        )
+        return result.scalar_one()

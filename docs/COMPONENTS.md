@@ -1291,7 +1291,7 @@ All external service URLs (Prefect API, OrcaMind API) are resolved via `${oc.env
 
 - **Title:** `Orca Web`, **Version:** `0.1.0`, **root_path:** `/api/v1`
 - **Lifespan context manager** — on startup creates an async SQLAlchemy engine (via `get_engine`), an `async_sessionmaker(class_=AsyncSession, expire_on_commit=False)`, an `httpx.AsyncClient`, and a shared `redis.asyncio` client; stores all four on `app.state` for dependency injection. On shutdown, closes the Redis client, disposes the engine, and closes the httpx client.
-- **Routers included:** `auth_router` (`/auth`), `dashboard_router` (`/dashboard`), `users_router` (`/users`), `orcamind_router` (`/orcamind`), `orcalab_router` (`/orcalab`), `orcanet_router` (`/orcanet`), `websocket_router` (WebSocket endpoints)
+- **Routers included:** `auth_router` (`/auth`), `dashboard_router` (`/dashboard`), `history_router` (`/history`, `/bookmarks`, `/feed`), `users_router` (`/users`), `orcamind_router` (`/orcamind`), `orcalab_router` (`/orcalab`), `orcanet_router` (`/orcanet`), `websocket_router` (WebSocket endpoints)
 - **Middleware:** `add_middleware(app)` applies CORS (deny-by-default, origins from `settings.cors_origins`) and `RequestLoggingMiddleware`
 
 ### Health Endpoint (`GET /health`)
@@ -1324,7 +1324,7 @@ Four SQLAlchemy ORM models: `User` (email, username, hashed_password, role, pref
 
 - `UserRepository` — `create`, `get_by_id`, `get_by_email`, `update`
 - `SessionRepository` — `create`, `get_by_token_hash`, `revoke`, `revoke_all_for_user`
-- `HistoryRepository` — `log_activity`, `get_user_history`
+- `HistoryRepository` — `log_activity`, `list_for_user`, `count_for_user`, `list_global_feed`, `count_global_feed`, `add_bookmark`, `get_bookmark_by_id`, `delete_bookmark`, `list_bookmarks`, `count_bookmarks`
 
 ### Services (`services/aggregator.py`)
 
@@ -1372,6 +1372,34 @@ Three routers that forward authenticated browser requests to the upstream servic
 | `POST /orcanet/retrieve` | `POST {ORCANET}/api/v1/retrieve` | `tasks_retrieved` |
 | `POST /orcanet/explain` | `POST {ORCANET}/api/v1/explain` | `transfer_explained` |
 
+### History & Bookmark Router (`api/routers/history.py`)
+
+Authenticated endpoints that expose user activity history, bookmark management, and a global activity feed. All list endpoints return a paginated response envelope with `items`, `total`, `page`, `per_page`, and `pages` fields. Pagination uses `page` (default 1) and `per_page` (default 20, max 100) query parameters.
+
+**Activity Log** — 3 endpoints:
+
+| BFF Path | Service Filter | Description |
+|---|---|---|
+| `GET /history` | none | Full activity log for the current user |
+| `GET /history/tasks` | `orcamind` | Task-related activities only |
+| `GET /history/experiments` | `orcalab` | Experiment-related activities only |
+
+**Bookmarks** — 3 endpoints:
+
+| BFF Path | Method | Description |
+|---|---|---|
+| `POST /bookmarks` | Create | Accepts `resource_type`, `resource_id`, optional `note`; returns 201 |
+| `DELETE /bookmarks/{bookmark_id}` | Delete | Ownership check: 404 if missing, 403 if wrong owner; returns 204 |
+| `GET /bookmarks` | List | Paginated bookmarks for the current user |
+
+**Global Feed** — 1 endpoint:
+
+| BFF Path | Description |
+|---|---|
+| `GET /feed` | Cross-user activity feed, newest first |
+
+The delete-bookmark endpoint uses `get_bookmark_by_id` to distinguish between a non-existent bookmark (404) and an ownership violation (403) before delegating to `delete_bookmark`.
+
 ### WebSocket Proxy (`api/websocket.py`)
 
 Authenticated WebSocket proxy that relays live experiment metrics between the browser and OrcaLab's upstream WebSocket at `ws://{ORCALAB}/api/v1/experiments/{id}/live`. Since browsers cannot set `Authorization` headers on WebSocket connections, the JWT access token is passed as a `token` query parameter.
@@ -1384,11 +1412,12 @@ Authenticated WebSocket proxy that relays live experiment metrics between the br
 
 - `get_db` — yields an `AsyncSession` from `request.app.state.db_sessionmaker`
 - `get_current_user` — decodes the `Authorization: Bearer <token>` header, loads the user from the DB
+- `get_history_repo` — returns a `HistoryRepository` bound to the current session
 - `get_aggregator` — returns a `DashboardAggregator` backed by `request.app.state.http_client`
 
 ### Test Suite
 
-212 tests at 98% coverage. All external dependencies (DB, Redis, httpx, upstream services) are mocked. The `mock_settings` fixture patches `settings` across all modules that import it (including the three proxy router modules and the WebSocket module). The proxy test suites (`test_proxy_utils.py`, `test_proxy_orcamind.py`, `test_proxy_orcalab.py`, `test_proxy_orcanet.py`) verify URL construction, `X-Orca-User-ID` header injection, 502/504 error handling, and activity logging for all 15 proxy endpoints. The WebSocket test suite (`test_websocket.py`, 23 tests) covers JWT query-parameter authentication, upstream URL construction, bidirectional message relay, upstream connection failure handling, disconnect cleanup, and heartbeat behaviour using mock upstream objects and async handler invocation.
+248 tests at 98% coverage. All external dependencies (DB, Redis, httpx, upstream services) are mocked. The `mock_settings` fixture patches `settings` across all modules that import it (including the three proxy router modules and the WebSocket module). The proxy test suites (`test_proxy_utils.py`, `test_proxy_orcamind.py`, `test_proxy_orcalab.py`, `test_proxy_orcanet.py`) verify URL construction, `X-Orca-User-ID` header injection, 502/504 error handling, and activity logging for all 15 proxy endpoints. The WebSocket test suite (`test_websocket.py`, 23 tests) covers JWT query-parameter authentication, upstream URL construction, bidirectional message relay, upstream connection failure handling, disconnect cleanup, and heartbeat behaviour using mock upstream objects and async handler invocation. The history and bookmark test suite (`test_api_history.py`, 27 tests) covers pagination envelope construction, offset calculation, service-filtered activity queries (orcamind and orcalab), bookmark CRUD with ownership enforcement (404 for missing, 403 for wrong owner with assertion that delete is never called), the global feed, and boundary cases (page beyond total, per_page=1, max per_page). Repository tests (`test_repos.py`) additionally cover `count_for_user`, `count_global_feed`, `count_bookmarks`, and `get_bookmark_by_id`.
 
 ---
 

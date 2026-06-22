@@ -48,6 +48,7 @@ def create_app() -> FastAPI:
     """Build and return the fully-configured FastAPI application."""
     from .routers.auth import router as auth_router
     from .routers.dashboard import router as dashboard_router
+    from .routers.history import router as history_router
     from .routers.orcalab import router as orcalab_router
     from .routers.orcamind import router as orcamind_router
     from .routers.orcanet import router as orcanet_router
@@ -65,6 +66,7 @@ def create_app() -> FastAPI:
 
     app.include_router(auth_router)
     app.include_router(dashboard_router)
+    app.include_router(history_router)
     app.include_router(users_router)
     app.include_router(orcamind_router)
     app.include_router(orcalab_router)
