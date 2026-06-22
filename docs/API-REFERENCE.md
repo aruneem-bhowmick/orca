@@ -1042,6 +1042,8 @@ Authenticated WebSocket proxy that relays real-time experiment metrics between t
 
 **Metric update frame** (OrcaLab → Browser):
 
+The BFF relays frames verbatim; the schema below is defined by OrcaLab's `WS /api/v1/experiments/{id}/live` endpoint and may evolve independently of the BFF.
+
 ```json
 {
   "experiment_id": "uuid-string",
@@ -1053,6 +1055,8 @@ Authenticated WebSocket proxy that relays real-time experiment metrics between t
 ```
 
 **Control message frame** (Browser → OrcaLab):
+
+Control frames are forwarded to OrcaLab without interpretation. The schema below reflects the current OrcaLab contract.
 
 ```json
 { "action": "pause" }
