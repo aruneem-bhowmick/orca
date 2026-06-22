@@ -29,7 +29,7 @@ class ActivityResponse(BaseModel):
     resource_id: str | None = None
     service: str | None = None
     details: dict[str, Any] | None = None
-    created_at: str
+    created_at: str | None = None
 
     model_config = {"from_attributes": True}
 
@@ -52,7 +52,7 @@ class BookmarkResponse(BaseModel):
     resource_type: str
     resource_id: str
     note: str | None = None
-    created_at: str
+    created_at: str | None = None
 
     model_config = {"from_attributes": True}
 
