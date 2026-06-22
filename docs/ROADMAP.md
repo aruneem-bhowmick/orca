@@ -57,7 +57,8 @@
 - User management: `GET /users/{user_id}` with role-based access control
 - FastAPI application factory: `create_app()` with lifespan-managed DB engine, sessionmaker, and httpx client; CORS + request logging middleware; module-level `app` export for uvicorn
 - Comprehensive health endpoint: `GET /health` checks Postgres, Redis, OrcaMind, OrcaLab, and OrcaNet in parallel; returns 200/healthy or 503/degraded
-- Test suite: 121 tests at 98% coverage across auth, dashboard, users, app factory, and health endpoint
+- Service proxy routers: shared `proxy_utils` module with generic request-forwarding and activity-logging helpers; three proxy routers (OrcaMind 6 endpoints, OrcaLab 5 endpoints, OrcaNet 4 endpoints) forwarding authenticated browser requests to upstream services with `X-Orca-User-ID` header injection, 502/504 error handling, and activity logging for all mutating operations; activity actions include `task_created`, `model_recommended`, `similar_tasks_searched`, `performance_predicted`, `experiment_started`, `sweep_started`, `transfer_scored`, `transfer_recommended`, `tasks_retrieved`, `transfer_explained`
+- Test suite: 188 tests at 98% coverage across auth, dashboard, users, app factory, health endpoint, proxy utilities, and all three proxy routers
 
 **Next:**
 - WebSocket real-time notifications

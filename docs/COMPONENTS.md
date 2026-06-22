@@ -1291,7 +1291,7 @@ All external service URLs (Prefect API, OrcaMind API) are resolved via `${oc.env
 
 - **Title:** `Orca Web`, **Version:** `0.1.0`, **root_path:** `/api/v1`
 - **Lifespan context manager** — on startup creates an async SQLAlchemy engine (via `get_engine`), an `async_sessionmaker(class_=AsyncSession, expire_on_commit=False)`, an `httpx.AsyncClient`, and a shared `redis.asyncio` client; stores all four on `app.state` for dependency injection. On shutdown, closes the Redis client, disposes the engine, and closes the httpx client.
-- **Routers included:** `auth_router` (`/auth`), `dashboard_router` (`/dashboard`), `users_router` (`/users`)
+- **Routers included:** `auth_router` (`/auth`), `dashboard_router` (`/dashboard`), `users_router` (`/users`), `orcamind_router` (`/orcamind`), `orcalab_router` (`/orcalab`), `orcanet_router` (`/orcanet`)
 - **Middleware:** `add_middleware(app)` applies CORS (deny-by-default, origins from `settings.cors_origins`) and `RequestLoggingMiddleware`
 
 ### Health Endpoint (`GET /health`)
@@ -1330,6 +1330,48 @@ Four SQLAlchemy ORM models: `User` (email, username, hashed_password, role, pref
 
 `DashboardAggregator` — proxies `GET /health` from OrcaMind, OrcaLab, and OrcaNet via the shared `httpx.AsyncClient`, merging results into a unified dashboard overview response.
 
+### Proxy Utilities (`api/proxy_utils.py`)
+
+Shared utilities used by the three service proxy routers:
+
+- `proxy_request(request, method, target_url, user)` — forwards an HTTP request to an upstream service, copying query params (including multi-valued keys via `multi_items()`), body, and content-type. Injects an `X-Orca-User-ID` header. Returns 502 on connection errors, 504 on timeout (10 s). Uses the shared `httpx.AsyncClient` from `request.app.state.http_client`.
+- `_parse_resource_id(response_body)` — extracts a resource ID (`task_id`, `experiment_id`, `sweep_id`, or `mapping_id`) from upstream JSON response bodies.
+- `log_proxy_activity(history_repo, user_id, action, resource_type, service, response)` — persists mutating proxy calls to the `activity_log` table. Swallows logging exceptions to avoid masking the upstream response.
+
+### Proxy Routers (`api/routers/orcamind.py`, `orcalab.py`, `orcanet.py`)
+
+Three routers that forward authenticated browser requests to the upstream services. Each endpoint requires JWT authentication via `get_current_user`.
+
+**OrcaMind** — 6 endpoints (2 GET, 4 POST):
+
+| BFF Path | Upstream Path | Activity Action |
+|---|---|---|
+| `GET /orcamind/tasks` | `GET {ORCAMIND}/api/v1/tasks` | — |
+| `GET /orcamind/tasks/{id}` | `GET {ORCAMIND}/api/v1/tasks/{id}` | — |
+| `POST /orcamind/tasks` | `POST {ORCAMIND}/api/v1/tasks/embed` | `task_created` |
+| `POST /orcamind/recommend` | `POST {ORCAMIND}/api/v1/recommend-model` | `model_recommended` |
+| `POST /orcamind/similar-tasks` | `POST {ORCAMIND}/api/v1/similar-tasks` | `similar_tasks_searched` |
+| `POST /orcamind/predict-performance` | `POST {ORCAMIND}/api/v1/predict-performance` | `performance_predicted` |
+
+**OrcaLab** — 5 endpoints (3 GET, 2 POST):
+
+| BFF Path | Upstream Path | Activity Action |
+|---|---|---|
+| `GET /orcalab/experiments` | `GET {ORCALAB}/api/v1/experiments` | — |
+| `GET /orcalab/experiments/{id}` | `GET {ORCALAB}/api/v1/experiments/{id}` | — |
+| `POST /orcalab/experiments` | `POST {ORCALAB}/api/v1/experiments` | `experiment_started` |
+| `POST /orcalab/sweeps` | `POST {ORCALAB}/api/v1/sweeps` | `sweep_started` |
+| `GET /orcalab/sweeps/{id}` | `GET {ORCALAB}/api/v1/sweeps/{id}` | — |
+
+**OrcaNet** — 4 endpoints (all POST):
+
+| BFF Path | Upstream Path | Activity Action |
+|---|---|---|
+| `POST /orcanet/transfer/score` | `POST {ORCANET}/api/v1/transfer/score` | `transfer_scored` |
+| `POST /orcanet/transfer/recommend` | `POST {ORCANET}/api/v1/transfer/recommend` | `transfer_recommended` |
+| `POST /orcanet/retrieve` | `POST {ORCANET}/api/v1/retrieve` | `tasks_retrieved` |
+| `POST /orcanet/explain` | `POST {ORCANET}/api/v1/explain` | `transfer_explained` |
+
 ### Dependency Injection (`api/deps.py`)
 
 - `get_db` — yields an `AsyncSession` from `request.app.state.db_sessionmaker`
@@ -1338,7 +1380,7 @@ Four SQLAlchemy ORM models: `User` (email, username, hashed_password, role, pref
 
 ### Test Suite
 
-121 tests at 98% coverage. All external dependencies (DB, Redis, httpx, upstream services) are mocked. The `mock_settings` fixture patches `settings` across all modules that import it.
+188 tests at 98% coverage. All external dependencies (DB, Redis, httpx, upstream services) are mocked. The `mock_settings` fixture patches `settings` across all modules that import it (including the three proxy router modules). The proxy test suites (`test_proxy_utils.py`, `test_proxy_orcamind.py`, `test_proxy_orcalab.py`, `test_proxy_orcanet.py`) verify URL construction, `X-Orca-User-ID` header injection, 502/504 error handling, and activity logging for all 15 proxy endpoints.
 
 ---
 

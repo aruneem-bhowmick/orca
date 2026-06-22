@@ -194,6 +194,24 @@ uv run pytest packages/orca-web/tests/test_dashboard.py -v
 # Orca Web — user endpoint tests only
 uv run pytest packages/orca-web/tests/test_users.py -v
 
+# Orca Web — proxy utility tests only (shared forwarding + activity logging)
+uv run pytest packages/orca-web/tests/test_proxy_utils.py -v
+
+# Orca Web — OrcaMind proxy endpoint tests only
+uv run pytest packages/orca-web/tests/test_proxy_orcamind.py -v
+
+# Orca Web — OrcaLab proxy endpoint tests only
+uv run pytest packages/orca-web/tests/test_proxy_orcalab.py -v
+
+# Orca Web — OrcaNet proxy endpoint tests only
+uv run pytest packages/orca-web/tests/test_proxy_orcanet.py -v
+
+# Orca Web — all proxy tests together
+uv run pytest packages/orca-web/tests/test_proxy_utils.py \
+       packages/orca-web/tests/test_proxy_orcamind.py \
+       packages/orca-web/tests/test_proxy_orcalab.py \
+       packages/orca-web/tests/test_proxy_orcanet.py -v
+
 # Orca Web — full suite with coverage enforcement (≥80%)
 uv run pytest packages/orca-web/tests/ -v --cov=orca_web --cov-fail-under=80
 
@@ -201,7 +219,7 @@ uv run pytest packages/orca-web/tests/ -v --cov=orca_web --cov-fail-under=80
 uv run pytest scripts/tests/ -v --cov=scripts --cov-report=term-missing
 ```
 
-The test suite spans 80+ test files across unit, integration, performance, deployment-validation, and scripts categories.
+The test suite spans 80+ test files across unit, integration, performance, deployment-validation, proxy, and scripts categories.
 
 The OrcaLab API integration tests run without a live database, Prefect server, or MLflow instance. An `ASGITransport` client fixture pre-populates `app.state` manually (bypassing the ASGI lifespan) and overrides all dependency providers via `dependency_overrides`, so tests exercise the full request/response cycle including middleware, routing, and validation while every external call goes to an `AsyncMock`.
 
