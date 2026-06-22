@@ -75,6 +75,23 @@ class TestProxyRequest:
         assert call_kwargs.kwargs["params"] == [("limit", "5")]
         assert resp.status_code == 200
 
+    async def test_preserves_duplicate_query_keys(self):
+        """Repeated query keys (e.g. ?tag=a&tag=b) are forwarded intact."""
+        upstream = _make_upstream()
+        client = AsyncMock()
+        client.request = AsyncMock(return_value=upstream)
+        user = _make_user()
+        request = _make_request(
+            client, query_params=[("tag", "a"), ("tag", "b"), ("limit", "5")],
+        )
+
+        await proxy_request(
+            request=request, method="GET", target_url="http://svc/tasks", user=user,
+        )
+
+        forwarded = client.request.call_args.kwargs["params"]
+        assert forwarded == [("tag", "a"), ("tag", "b"), ("limit", "5")]
+
     async def test_forwards_post_with_body_and_content_type(self):
         """POST requests copy body and content-type to the upstream call."""
         upstream = _make_upstream(content=b'{"task_id":"new"}', status_code=201)
