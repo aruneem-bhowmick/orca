@@ -196,11 +196,11 @@ async def experiment_live_proxy(
         try:
             await upstream.close()
         except Exception:  # noqa: BLE001
-            pass
+            logger.debug("Failed to close upstream connection", exc_info=True)
         try:
             await websocket.close()
         except Exception:  # noqa: BLE001
-            pass
+            logger.debug("Failed to close browser connection", exc_info=True)
 
     logger.info(
         "WebSocket relay ended for experiment %s (user %s)",
