@@ -155,6 +155,17 @@ class TestBuildUpstreamWsUrl:
         url = _build_upstream_ws_url("exp-42")
         assert url == "ws://orcalab:8001/api/v1/experiments/exp-42/live"
 
+    def test_strips_trailing_slash_from_base_url(self, mock_settings):
+        """Trailing slashes on the base URL do not produce double slashes."""
+        mock_settings.orcalab_api_url = "http://orcalab:8001/"
+        url = _build_upstream_ws_url("exp-42")
+        assert url == "ws://orcalab:8001/api/v1/experiments/exp-42/live"
+
+    def test_encodes_special_characters_in_experiment_id(self, mock_settings):
+        """Characters unsafe in URL path segments are percent-encoded."""
+        url = _build_upstream_ws_url("exp 42/foo")
+        assert "/experiments/exp%2042%2Ffoo/live" in url
+
     def test_includes_experiment_id_in_path(self, mock_settings):
         """The experiment identifier is embedded in the URL path."""
         url = _build_upstream_ws_url("abc-123-def")

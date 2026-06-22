@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from urllib.parse import quote
 
 import websockets
 import websockets.exceptions
@@ -62,7 +63,8 @@ def _build_upstream_ws_url(experiment_id: str) -> str:
         ws_base = "ws://" + base[len("http://"):]
     else:
         ws_base = "ws://" + base
-    return f"{ws_base}/api/v1/experiments/{experiment_id}/live"
+    ws_base = ws_base.rstrip("/")
+    return f"{ws_base}/api/v1/experiments/{quote(experiment_id, safe='')}/live"
 
 
 def _validate_token(token: str | None) -> str | None:
