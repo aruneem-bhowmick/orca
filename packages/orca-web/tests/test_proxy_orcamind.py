@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
+from starlette.datastructures import QueryParams
 
 from orca_web.api.routers.orcamind import (
     create_task,
@@ -52,7 +53,7 @@ def _make_request(client, *, body=b"", query_params=None, content_type=None):
     req = MagicMock()
     req.app.state.http_client = client
     req.body = AsyncMock(return_value=body)
-    req.query_params = query_params or {}
+    req.query_params = QueryParams(query_params or [])
     headers = {}
     if content_type:
         headers["content-type"] = content_type
@@ -95,7 +96,7 @@ class TestListTasks:
 
         await list_tasks(request=request, user=user)
 
-        assert client.request.call_args.kwargs["params"] == {"limit": "10", "domain": "vision"}
+        assert client.request.call_args.kwargs["params"] == [("limit", "10"), ("domain", "vision")]
 
     async def test_injects_user_id_header(self, mock_settings):
         """X-Orca-User-ID header is set to the current user's UUID."""

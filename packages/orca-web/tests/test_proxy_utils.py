@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
+from starlette.datastructures import QueryParams
 
 from orca_web.api.proxy_utils import (
     _parse_resource_id,
@@ -25,7 +26,7 @@ def _make_request(http_client, *, body=b"", query_params=None, content_type=None
     request = MagicMock()
     request.app.state.http_client = http_client
     request.body = AsyncMock(return_value=body)
-    request.query_params = query_params or {}
+    request.query_params = QueryParams(query_params or [])
     headers = {}
     if content_type:
         headers["content-type"] = content_type
@@ -71,7 +72,7 @@ class TestProxyRequest:
         call_kwargs = client.request.call_args
         assert call_kwargs.kwargs["method"] == "GET"
         assert call_kwargs.kwargs["url"] == "http://svc/tasks"
-        assert call_kwargs.kwargs["params"] == {"limit": "5"}
+        assert call_kwargs.kwargs["params"] == [("limit", "5")]
         assert resp.status_code == 200
 
     async def test_forwards_post_with_body_and_content_type(self):

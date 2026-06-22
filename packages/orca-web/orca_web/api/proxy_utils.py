@@ -65,7 +65,7 @@ async def proxy_request(
         upstream = await http_client.request(
             method=method,
             url=target_url,
-            params=dict(request.query_params),
+            params=request.query_params.multi_items(),
             content=body,
             headers=headers,
             timeout=10.0,

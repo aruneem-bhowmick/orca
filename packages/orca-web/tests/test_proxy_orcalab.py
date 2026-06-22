@@ -13,6 +13,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import httpx
 import pytest
+from starlette.datastructures import QueryParams
 
 from orca_web.api.routers.orcalab import (
     create_experiment,
@@ -51,7 +52,7 @@ def _make_request(client, *, body=b"", query_params=None, content_type=None):
     req = MagicMock()
     req.app.state.http_client = client
     req.body = AsyncMock(return_value=body)
-    req.query_params = query_params or {}
+    req.query_params = QueryParams(query_params or [])
     headers = {}
     if content_type:
         headers["content-type"] = content_type
@@ -103,7 +104,7 @@ class TestListExperiments:
 
         await list_experiments(request=request, user=_make_user())
 
-        assert client.request.call_args.kwargs["params"] == {"limit": "20", "offset": "5"}
+        assert client.request.call_args.kwargs["params"] == [("limit", "20"), ("offset", "5")]
 
     async def test_returns_502_on_connection_error(self, mock_settings):
         """Network failures produce a 502 response."""
