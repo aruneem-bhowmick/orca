@@ -1121,6 +1121,114 @@ On success, the response mirrors the upstream's status code, body, and content-t
 
 ---
 
+### History & Activity Log (auth required)
+
+All activity log endpoints require JWT authentication and return paginated results scoped to the current user.
+
+**Pagination query parameters** (shared by all list endpoints below)
+
+| Parameter  | Type  | Default | Constraints  |
+|------------|-------|---------|--------------|
+| `page`     | `int` | `1`     | `≥ 1`        |
+| `per_page` | `int` | `20`    | `1 – 100`    |
+
+**Paginated response envelope** (shared by all list endpoints below)
+
+```json
+{
+  "items": [ ... ],
+  "total": 142,
+  "page": 1,
+  "per_page": 20,
+  "pages": 8
+}
+```
+
+#### `GET /history` — Paginated activity log
+
+Returns the full activity log for the current user, newest first.
+
+---
+
+#### `GET /history/tasks` — Task activity log
+
+Returns the activity log filtered to `service=orcamind` (task-related actions such as `task_created`, `model_recommended`, `similar_tasks_searched`, `performance_predicted`).
+
+---
+
+#### `GET /history/experiments` — Experiment activity log
+
+Returns the activity log filtered to `service=orcalab` (experiment-related actions such as `experiment_started`, `sweep_started`).
+
+---
+
+### Bookmarks (auth required)
+
+Bookmark endpoints let users save and manage references to tasks, experiments, and other resources.
+
+#### `POST /bookmarks` — Create a bookmark
+
+Status: **201 Created**
+
+**Request body**
+
+```json
+{
+  "resource_type": "task",
+  "resource_id": "uuid-here",
+  "note": "optional note"
+}
+```
+
+| Field           | Type         | Required | Constraints        |
+|-----------------|--------------|----------|--------------------|
+| `resource_type` | `string`     | yes      | 1 – 50 characters  |
+| `resource_id`   | `string`     | yes      | 1 – 255 characters |
+| `note`          | `string`     | no       |                    |
+
+**Response**
+
+```json
+{
+  "bookmark_id": "uuid",
+  "user_id": "uuid",
+  "resource_type": "task",
+  "resource_id": "uuid-here",
+  "note": "optional note",
+  "created_at": "2025-01-15T12:00:00+00:00"
+}
+```
+
+---
+
+#### `DELETE /bookmarks/{bookmark_id}` — Delete a bookmark
+
+Status: **204 No Content**
+
+Deletes the bookmark identified by `bookmark_id`. The bookmark must belong to the current user.
+
+| Status | Condition |
+|--------|-----------|
+| `204`  | Bookmark deleted successfully |
+| `403`  | Bookmark belongs to a different user |
+| `404`  | Bookmark ID does not exist |
+
+---
+
+#### `GET /bookmarks` — List bookmarks
+
+Returns the paginated bookmarks for the current user, newest first. Uses the same pagination query parameters and response envelope as the history endpoints.
+
+---
+
+### Global Feed (auth required)
+
+#### `GET /feed` — Global activity feed
+
+Returns the paginated cross-user activity feed, newest first. Unlike `/history`, this endpoint shows activities from all users and is intended for a shared timeline view. Uses the same pagination query parameters and response envelope as the history endpoints.
+
+---
+
 ## Health Endpoints
 
 All four services expose a health endpoint with no authentication requirement.
