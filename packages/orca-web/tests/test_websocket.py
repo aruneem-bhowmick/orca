@@ -61,18 +61,24 @@ class _MockUpstream:
 
 
 class _BlockingUpstream(_MockUpstream):
-    """Upstream that blocks on iteration for *delay* seconds before stopping.
+    """Upstream that blocks on iteration until explicitly released.
 
-    Useful for tests where the upstream must stay alive long enough for
-    the browser relay or heartbeat to execute.
+    Uses an ``asyncio.Event`` rather than a fixed sleep so that the
+    upstream stays alive exactly as long as the test needs it to,
+    avoiding timing-sensitive failures.  Call ``release()`` or set
+    ``_done`` from the test (or rely on task cancellation) to unblock.
     """
 
-    def __init__(self, delay: float = 0.2):
+    def __init__(self):
         super().__init__()
-        self._delay = delay
+        self._done = asyncio.Event()
+
+    def release(self):
+        """Signal the upstream to stop iteration."""
+        self._done.set()
 
     async def __anext__(self):
-        await asyncio.sleep(self._delay)
+        await self._done.wait()
         raise StopAsyncIteration
 
 
@@ -370,7 +376,7 @@ class TestBrowserToUpstreamRelay:
         ws = _make_browser_ws(token=token)
         ws.receive_text = _ReceiveSequence('{"action": "pause"}')
 
-        upstream = _BlockingUpstream(delay=0.2)
+        upstream = _BlockingUpstream()
 
         with patch(
             "orca_web.api.websocket.websockets.connect",
@@ -388,7 +394,7 @@ class TestBrowserToUpstreamRelay:
             '{"action": "pause"}', '{"action": "resume"}',
         )
 
-        upstream = _BlockingUpstream(delay=0.3)
+        upstream = _BlockingUpstream()
 
         with patch(
             "orca_web.api.websocket.websockets.connect",
@@ -412,7 +418,7 @@ class TestDisconnectHandling:
         token = _valid_token(mock_settings)
         ws = _make_browser_ws(token=token)  # receive_text raises immediately
 
-        upstream = _BlockingUpstream(delay=0.2)
+        upstream = _BlockingUpstream()
 
         with patch(
             "orca_web.api.websocket.websockets.connect",
@@ -451,7 +457,7 @@ class TestHeartbeat:
         ws = _make_browser_ws(token=token)
         # Both sides block long enough for the heartbeat to fire
         ws.receive_text = _DelayedDisconnect(delay=0.2)
-        upstream = _BlockingUpstream(delay=0.2)
+        upstream = _BlockingUpstream()
 
         with (
             patch(
