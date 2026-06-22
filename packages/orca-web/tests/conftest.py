@@ -38,6 +38,7 @@ def mock_settings(monkeypatch):
     monkeypatch.setattr("orca_web.api.routers.orcalab.settings", s)
     monkeypatch.setattr("orca_web.api.routers.orcanet.settings", s)
     monkeypatch.setattr("orca_web.api.main.settings", s)
+    monkeypatch.setattr("orca_web.api.websocket.settings", s)
     return s
 
 
