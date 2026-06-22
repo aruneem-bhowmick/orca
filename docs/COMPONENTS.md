@@ -1291,7 +1291,7 @@ All external service URLs (Prefect API, OrcaMind API) are resolved via `${oc.env
 
 - **Title:** `Orca Web`, **Version:** `0.1.0`, **root_path:** `/api/v1`
 - **Lifespan context manager** — on startup creates an async SQLAlchemy engine (via `get_engine`), an `async_sessionmaker(class_=AsyncSession, expire_on_commit=False)`, an `httpx.AsyncClient`, and a shared `redis.asyncio` client; stores all four on `app.state` for dependency injection. On shutdown, closes the Redis client, disposes the engine, and closes the httpx client.
-- **Routers included:** `auth_router` (`/auth`), `dashboard_router` (`/dashboard`), `users_router` (`/users`), `orcamind_router` (`/orcamind`), `orcalab_router` (`/orcalab`), `orcanet_router` (`/orcanet`)
+- **Routers included:** `auth_router` (`/auth`), `dashboard_router` (`/dashboard`), `users_router` (`/users`), `orcamind_router` (`/orcamind`), `orcalab_router` (`/orcalab`), `orcanet_router` (`/orcanet`), `websocket_router` (WebSocket endpoints)
 - **Middleware:** `add_middleware(app)` applies CORS (deny-by-default, origins from `settings.cors_origins`) and `RequestLoggingMiddleware`
 
 ### Health Endpoint (`GET /health`)
@@ -1372,6 +1372,14 @@ Three routers that forward authenticated browser requests to the upstream servic
 | `POST /orcanet/retrieve` | `POST {ORCANET}/api/v1/retrieve` | `tasks_retrieved` |
 | `POST /orcanet/explain` | `POST {ORCANET}/api/v1/explain` | `transfer_explained` |
 
+### WebSocket Proxy (`api/websocket.py`)
+
+Authenticated WebSocket proxy that relays live experiment metrics between the browser and OrcaLab's upstream WebSocket at `ws://{ORCALAB}/api/v1/experiments/{id}/live`. Since browsers cannot set `Authorization` headers on WebSocket connections, the JWT access token is passed as a `token` query parameter.
+
+- `_build_upstream_ws_url(experiment_id)` — converts the HTTP-scheme `orcalab_api_url` setting to `ws://` (or `wss://`) and appends the experiment live-metrics path
+- `_validate_token(token)` — validates a JWT access token and returns the user ID; returns `None` on any failure (missing, malformed, expired, wrong type)
+- `experiment_live_proxy(websocket, experiment_id)` — the WebSocket endpoint handler. Validates the token, opens an upstream connection using the `websockets` library, and relays messages bidirectionally using three concurrent asyncio tasks: upstream-to-browser relay, browser-to-upstream relay, and a 30-second heartbeat ping. Closes with code **4001** on auth failure; sends `{"error": "upstream_unavailable"}` on upstream connection failure.
+
 ### Dependency Injection (`api/deps.py`)
 
 - `get_db` — yields an `AsyncSession` from `request.app.state.db_sessionmaker`
@@ -1380,7 +1388,7 @@ Three routers that forward authenticated browser requests to the upstream servic
 
 ### Test Suite
 
-188 tests at 98% coverage. All external dependencies (DB, Redis, httpx, upstream services) are mocked. The `mock_settings` fixture patches `settings` across all modules that import it (including the three proxy router modules). The proxy test suites (`test_proxy_utils.py`, `test_proxy_orcamind.py`, `test_proxy_orcalab.py`, `test_proxy_orcanet.py`) verify URL construction, `X-Orca-User-ID` header injection, 502/504 error handling, and activity logging for all 15 proxy endpoints.
+212 tests at 98% coverage. All external dependencies (DB, Redis, httpx, upstream services) are mocked. The `mock_settings` fixture patches `settings` across all modules that import it (including the three proxy router modules and the WebSocket module). The proxy test suites (`test_proxy_utils.py`, `test_proxy_orcamind.py`, `test_proxy_orcalab.py`, `test_proxy_orcanet.py`) verify URL construction, `X-Orca-User-ID` header injection, 502/504 error handling, and activity logging for all 15 proxy endpoints. The WebSocket test suite (`test_websocket.py`, 23 tests) covers JWT query-parameter authentication, upstream URL construction, bidirectional message relay, upstream connection failure handling, disconnect cleanup, and heartbeat behaviour using mock upstream objects and async handler invocation.
 
 ---
 

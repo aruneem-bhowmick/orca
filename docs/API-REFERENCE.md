@@ -1020,6 +1020,66 @@ Proxies to `GET {ORCALAB}/api/v1/sweeps/{sweep_id}`.
 
 ---
 
+#### `WS /orcalab/ws/experiments/{experiment_id}/live` — Live experiment metrics stream
+
+Authenticated WebSocket proxy that relays real-time experiment metrics between the browser and OrcaLab. Since browsers cannot set `Authorization` headers on WebSocket connections, the JWT access token is passed as a `token` query parameter.
+
+**Authentication:** Pass `?token=<jwt_access_token>` as a query parameter. The server validates the token and extracts the user ID before accepting the connection. Invalid or missing tokens result in close code **4001**.
+
+**Connection flow:**
+
+1. Browser opens WebSocket to the BFF with `?token=<jwt>`
+2. BFF validates the JWT and extracts the user ID
+3. BFF opens an upstream WebSocket to OrcaLab at `ws://{ORCALAB}/api/v1/experiments/{experiment_id}/live`
+4. Messages are relayed bidirectionally until either side disconnects
+
+**Message directions:**
+
+| Direction | Content | Format |
+|-----------|---------|--------|
+| OrcaLab → Browser | Metric updates (epoch, loss, status) | JSON text frames |
+| Browser → OrcaLab | Control messages (pause, resume, cancel) | JSON text frames |
+
+**Metric update frame** (OrcaLab → Browser):
+
+The BFF relays frames verbatim; the schema below is defined by OrcaLab's `WS /api/v1/experiments/{id}/live` endpoint and may evolve independently of the BFF.
+
+```json
+{
+  "experiment_id": "uuid-string",
+  "status": "running",
+  "epoch": 3,
+  "loss": 0.4721,
+  "metrics": { "loss": 0.4721, "epoch": 3 }
+}
+```
+
+**Control message frame** (Browser → OrcaLab):
+
+Control frames are forwarded to OrcaLab without interpretation. The schema below reflects the current OrcaLab contract.
+
+```json
+{ "action": "pause" }
+```
+
+**Error handling:**
+
+| Condition | Behaviour |
+|-----------|-----------|
+| Missing or invalid JWT | Accept, then close with code **4001** |
+| Upstream connection failure (refused, DNS, timeout) | Send `{"error": "upstream_unavailable"}` and close |
+| Upstream disconnect (experiment completed/failed) | Close browser connection normally |
+| Browser disconnect | Close upstream connection |
+
+**Implementation notes:**
+
+- A 30-second heartbeat ping detects stale upstream connections
+- Both relay directions run as concurrent asyncio tasks
+- Uses the `websockets` library for the upstream connection
+- Binary upstream messages are decoded to text before forwarding
+
+---
+
 ### OrcaNet Proxy (auth required)
 
 All OrcaNet proxy endpoints require JWT authentication. Same error handling and header injection as OrcaMind proxy.

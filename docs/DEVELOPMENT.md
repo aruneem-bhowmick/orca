@@ -212,6 +212,15 @@ uv run pytest packages/orca-web/tests/test_proxy_utils.py \
        packages/orca-web/tests/test_proxy_orcalab.py \
        packages/orca-web/tests/test_proxy_orcanet.py -v
 
+# Orca Web — WebSocket proxy tests (auth, relay, heartbeat)
+uv run pytest packages/orca-web/tests/test_websocket.py -v
+
+# Orca Web — WebSocket token validation tests only
+uv run pytest packages/orca-web/tests/test_websocket.py -v -k "TestValidateToken"
+
+# Orca Web — WebSocket relay tests only (upstream-to-browser and browser-to-upstream)
+uv run pytest packages/orca-web/tests/test_websocket.py -v -k "TestUpstreamToBrowserRelay or TestBrowserToUpstreamRelay"
+
 # Orca Web — full suite with coverage enforcement (≥80%)
 uv run pytest packages/orca-web/tests/ -v --cov=orca_web --cov-fail-under=80
 

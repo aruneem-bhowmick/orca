@@ -52,6 +52,7 @@ def create_app() -> FastAPI:
     from .routers.orcamind import router as orcamind_router
     from .routers.orcanet import router as orcanet_router
     from .routers.users import router as users_router
+    from .websocket import router as websocket_router
 
     app = FastAPI(
         title="Orca Web",
@@ -68,6 +69,7 @@ def create_app() -> FastAPI:
     app.include_router(orcamind_router)
     app.include_router(orcalab_router)
     app.include_router(orcanet_router)
+    app.include_router(websocket_router)
 
     @app.get("/health", tags=["health"])
     async def health(request: Request) -> JSONResponse:

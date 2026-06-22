@@ -59,9 +59,9 @@
 - Comprehensive health endpoint: `GET /health` checks Postgres, Redis, OrcaMind, OrcaLab, and OrcaNet in parallel; returns 200/healthy or 503/degraded
 - Service proxy routers: shared `proxy_utils` module with generic request-forwarding and activity-logging helpers; three proxy routers (OrcaMind 6 endpoints, OrcaLab 5 endpoints, OrcaNet 4 endpoints) forwarding authenticated browser requests to upstream services with `X-Orca-User-ID` header injection, 502/504 error handling, and activity logging for all mutating operations; activity actions include `task_created`, `model_recommended`, `similar_tasks_searched`, `performance_predicted`, `experiment_started`, `sweep_started`, `transfer_scored`, `transfer_recommended`, `tasks_retrieved`, `transfer_explained`
 - Test suite: 188 tests at 98% coverage across auth, dashboard, users, app factory, health endpoint, proxy utilities, and all three proxy routers
+- WebSocket proxy for live experiment metrics: authenticated WebSocket endpoint at `WS /orcalab/ws/experiments/{id}/live` that relays real-time experiment metrics between the browser and OrcaLab's upstream WebSocket; JWT access token passed as a `token` query parameter (browsers cannot set Authorization headers on WebSocket connections); bidirectional message relay using concurrent asyncio tasks (OrcaLab → browser metric updates, browser → OrcaLab control messages); 30-second heartbeat ping for stale connection detection; close code 4001 for auth failure, `{"error": "upstream_unavailable"}` for upstream connection failure; 23-test suite covering auth rejection, URL construction, bidirectional relay, disconnect cleanup, and heartbeat — **212 tests total** across the package
 
 **Next:**
-- WebSocket real-time notifications
 - User bookmarks and activity history endpoints
 - Rate limiting middleware
 - Docker service definition and Compose wiring
