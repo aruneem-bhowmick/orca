@@ -189,6 +189,14 @@ class TestHistoryRepository:
         )
         assert result == 2
 
+    async def test_count_for_user_with_both_filters(self, mock_async_session):
+        mock_async_session.execute.return_value.scalar_one.return_value = 1
+        repo = HistoryRepository(mock_async_session)
+        result = await repo.count_for_user(
+            uuid.uuid4(), service="orcamind", resource_type="task"
+        )
+        assert result == 1
+
     async def test_count_global_feed(self, mock_async_session):
         mock_async_session.execute.return_value.scalar_one.return_value = 42
         repo = HistoryRepository(mock_async_session)
