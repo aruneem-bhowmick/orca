@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import math
-from typing import Any
+from typing import Any, Generic, TypeVar
 from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
@@ -14,6 +14,8 @@ from orca_web.models.user import User
 from orca_web.repository.history_repo import HistoryRepository
 
 router = APIRouter(tags=["history"])
+
+T = TypeVar("T")
 
 
 # ── Request / response schemas ────────────────────────────────────────────
@@ -34,10 +36,15 @@ class ActivityResponse(BaseModel):
     model_config = {"from_attributes": True}
 
 
-class PaginatedResponse(BaseModel):
-    """Envelope for paginated list endpoints."""
+class PaginatedResponse(BaseModel, Generic[T]):
+    """Envelope for paginated list endpoints.
 
-    items: list[dict[str, Any]]
+    The type parameter *T* describes the shape of each item.  Endpoints
+    specify a concrete type (e.g. ``PaginatedResponse[ActivityResponse]``)
+    so the OpenAPI schema reflects the actual payload.
+    """
+
+    items: list[T]
     total: int
     page: int
     per_page: int
@@ -95,8 +102,8 @@ def _serialize_bookmark(row: Any) -> dict[str, Any]:
 
 
 def _paginate(
-    items: list[dict[str, Any]], *, total: int, page: int, per_page: int
-) -> PaginatedResponse:
+    items: list[Any], *, total: int, page: int, per_page: int
+) -> PaginatedResponse[Any]:
     """Build a paginated response envelope from pre-fetched items."""
     return PaginatedResponse(
         items=items,
@@ -110,13 +117,13 @@ def _paginate(
 # ── Activity log endpoints ────────────────────────────────────────────────
 
 
-@router.get("/history", response_model=PaginatedResponse)
+@router.get("/history", response_model=PaginatedResponse[ActivityResponse])
 async def list_history(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     user: User = Depends(get_current_user),
     history_repo: HistoryRepository = Depends(get_history_repo),
-) -> PaginatedResponse:
+) -> PaginatedResponse[ActivityResponse]:
     """Return the paginated activity log for the current user."""
     offset = (page - 1) * per_page
     total = await history_repo.count_for_user(user.user_id)
@@ -127,13 +134,13 @@ async def list_history(
     return _paginate(items, total=total, page=page, per_page=per_page)
 
 
-@router.get("/history/tasks", response_model=PaginatedResponse)
+@router.get("/history/tasks", response_model=PaginatedResponse[ActivityResponse])
 async def list_task_history(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     user: User = Depends(get_current_user),
     history_repo: HistoryRepository = Depends(get_history_repo),
-) -> PaginatedResponse:
+) -> PaginatedResponse[ActivityResponse]:
     """Return the paginated activity log filtered to OrcaMind (task) actions."""
     offset = (page - 1) * per_page
     total = await history_repo.count_for_user(user.user_id, service="orcamind")
@@ -144,13 +151,13 @@ async def list_task_history(
     return _paginate(items, total=total, page=page, per_page=per_page)
 
 
-@router.get("/history/experiments", response_model=PaginatedResponse)
+@router.get("/history/experiments", response_model=PaginatedResponse[ActivityResponse])
 async def list_experiment_history(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     user: User = Depends(get_current_user),
     history_repo: HistoryRepository = Depends(get_history_repo),
-) -> PaginatedResponse:
+) -> PaginatedResponse[ActivityResponse]:
     """Return the paginated activity log filtered to OrcaLab (experiment) actions."""
     offset = (page - 1) * per_page
     total = await history_repo.count_for_user(user.user_id, service="orcalab")
@@ -209,13 +216,13 @@ async def delete_bookmark(
     await history_repo.delete_bookmark(bookmark_id, user.user_id)
 
 
-@router.get("/bookmarks", response_model=PaginatedResponse)
+@router.get("/bookmarks", response_model=PaginatedResponse[BookmarkResponse])
 async def list_bookmarks(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     user: User = Depends(get_current_user),
     history_repo: HistoryRepository = Depends(get_history_repo),
-) -> PaginatedResponse:
+) -> PaginatedResponse[BookmarkResponse]:
     """Return the paginated bookmarks for the current user."""
     offset = (page - 1) * per_page
     total = await history_repo.count_bookmarks(user.user_id)
@@ -229,13 +236,13 @@ async def list_bookmarks(
 # ── Global feed ───────────────────────────────────────────────────────────
 
 
-@router.get("/feed", response_model=PaginatedResponse)
+@router.get("/feed", response_model=PaginatedResponse[ActivityResponse])
 async def global_feed(
     page: int = Query(1, ge=1),
     per_page: int = Query(20, ge=1, le=100),
     user: User = Depends(get_current_user),
     history_repo: HistoryRepository = Depends(get_history_repo),
-) -> PaginatedResponse:
+) -> PaginatedResponse[ActivityResponse]:
     """Return the paginated global activity feed across all users."""
     offset = (page - 1) * per_page
     total = await history_repo.count_global_feed()
