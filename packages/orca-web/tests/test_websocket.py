@@ -26,18 +26,27 @@ from orca_web.auth.jwt import create_access_token, create_refresh_token
 # ── Helpers ────────────────────────────────────────────────────────────
 
 
+def _resolved_future():
+    """Return an already-resolved ``asyncio.Future`` mimicking a pong waiter."""
+    fut = asyncio.get_event_loop().create_future()
+    fut.set_result(None)
+    return fut
+
+
 class _MockUpstream:
     """Simulates an upstream ``websockets`` connection.
 
     Yields *messages* via ``async for``, then stops iteration.  Tracks
     calls to ``close``, ``ping``, and ``send`` via ``AsyncMock`` stubs.
+    ``ping`` returns a resolved future so that ``await pong`` succeeds
+    immediately, matching the ``websockets`` library behaviour.
     """
 
     def __init__(self, messages=None):
         self._messages = list(messages or [])
         self._idx = 0
         self.close = AsyncMock()
-        self.ping = AsyncMock()
+        self.ping = AsyncMock(side_effect=lambda: _resolved_future())
         self.send = AsyncMock()
 
     def __aiter__(self):

@@ -38,6 +38,9 @@ _HEARTBEAT_INTERVAL: int = 30
 _UPSTREAM_CONNECT_TIMEOUT: int = 10
 """Maximum seconds to wait for the upstream WebSocket handshake."""
 
+_PONG_TIMEOUT: int = 10
+"""Maximum seconds to wait for a pong reply before treating the upstream as stale."""
+
 
 def _build_upstream_ws_url(experiment_id: str) -> str:
     """Construct the OrcaLab WebSocket URL for a live experiment stream.
@@ -165,11 +168,12 @@ async def experiment_live_proxy(
             pass
 
     async def _heartbeat() -> None:
-        """Ping upstream every 30 s to detect stale connections."""
+        """Ping upstream every 30 s and await the pong to detect stale connections."""
         try:
             while True:
                 await asyncio.sleep(_HEARTBEAT_INTERVAL)
-                await upstream.ping()
+                pong = await upstream.ping()
+                await asyncio.wait_for(pong, timeout=_PONG_TIMEOUT)
         except Exception:  # noqa: BLE001
             pass
 
