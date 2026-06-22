@@ -18,6 +18,7 @@
 │   ┌─────────────────────────────────────────────────────┐        │
 │   │  Orca Web (BFF)  ─  port 8003                       │        │
 │   │  /auth  /dashboard  /users  /health                 │        │
+│   │  /history  /bookmarks  /feed  (activity & bookmarks)│        │
 │   │  /orcamind  /orcalab  /orcanet  (proxy routers)     │        │
 │   │  WS /orcalab/ws/experiments/{id}/live (WebSocket)   │        │
 │   └───────┬──────────────┬──────────────┬───────────────┘        │
@@ -44,7 +45,7 @@
 
 ### Orca Web — Backend for Frontend (BFF)
 
-Orca Web sits between the browser and the three backend services, providing a single gateway with JWT-based authentication, session management, dashboard aggregation, service proxy routers, and a WebSocket relay for live experiment metrics. The proxy routers (`/orcamind`, `/orcalab`, `/orcanet`) forward authenticated requests to the upstream services, injecting an `X-Orca-User-ID` header and logging mutating operations (POST) to the `activity_log` table via the `HistoryRepository`. Connection errors return 502; timeouts (10 s) return 504. All responses mirror the upstream status code and body. The WebSocket endpoint at `WS /orcalab/ws/experiments/{id}/live` authenticates via a JWT `token` query parameter and relays metric updates from OrcaLab to the browser bidirectionally using concurrent asyncio tasks with a 30-second heartbeat ping. The `/health` endpoint probes Postgres, Redis, OrcaMind, OrcaLab, and OrcaNet in parallel and returns `"healthy"` (200) or `"degraded"` (503). All BFF endpoints are served under `root_path="/api/v1"` so the OpenAPI schema reflects the production URL structure.
+Orca Web sits between the browser and the three backend services, providing a single gateway with JWT-based authentication, session management, dashboard aggregation, service proxy routers, a WebSocket relay for live experiment metrics, and a history/bookmark API for user activity tracking. The proxy routers (`/orcamind`, `/orcalab`, `/orcanet`) forward authenticated requests to the upstream services, injecting an `X-Orca-User-ID` header and logging mutating operations (POST) to the `activity_log` table via the `HistoryRepository`. The history router (`/history`, `/bookmarks`, `/feed`) exposes this logged activity to the frontend as paginated REST endpoints — including service-filtered views (`/history/tasks` for OrcaMind, `/history/experiments` for OrcaLab), user bookmark CRUD with ownership enforcement, and a global cross-user activity feed. Connection errors return 502; timeouts (10 s) return 504. All responses mirror the upstream status code and body. The WebSocket endpoint at `WS /orcalab/ws/experiments/{id}/live` authenticates via a JWT `token` query parameter and relays metric updates from OrcaLab to the browser bidirectionally using concurrent asyncio tasks with a 30-second heartbeat ping. The `/health` endpoint probes Postgres, Redis, OrcaMind, OrcaLab, and OrcaNet in parallel and returns `"healthy"` (200) or `"degraded"` (503). All BFF endpoints are served under `root_path="/api/v1"` so the OpenAPI schema reflects the production URL structure.
 
 ### OrcaMind ↔ OrcaLab Bidirectional Data Flow
 
@@ -165,7 +166,7 @@ orca/
 │   │   │   │   ├── middleware.py     # CORS + RequestLoggingMiddleware
 │   │   │   │   ├── proxy_utils.py    # Shared proxy forwarding + activity logging utilities
 │   │   │   │   ├── websocket.py      # Authenticated WebSocket proxy for live experiment metrics
-│   │   │   │   └── routers/          # auth.py, dashboard.py, users.py, orcamind.py, orcalab.py, orcanet.py
+│   │   │   │   └── routers/          # auth.py, dashboard.py, history.py, users.py, orcamind.py, orcalab.py, orcanet.py
 │   │   │   └── config.py            # pydantic-settings (database, Redis, JWT, OAuth, upstream URLs)
 │   │   └── tests/                    # 212 tests, 98% coverage
 │   │
