@@ -228,13 +228,13 @@ class TestAuthRejection:
             code=4001, reason="Invalid or missing token",
         )
 
-    async def test_does_not_accept_on_auth_failure(self, mock_settings):
-        """The connection is never accepted when authentication fails."""
+    async def test_accepts_before_closing_on_auth_failure(self, mock_settings):
+        """The connection is accepted before close so the 4001 code is delivered."""
         ws = _make_browser_ws()
 
         await experiment_live_proxy(ws, "exp-1")
 
-        ws.accept.assert_not_awaited()
+        ws.accept.assert_awaited_once()
 
 
 # ── Upstream connection failure ────────────────────────────────────────

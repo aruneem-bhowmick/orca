@@ -125,10 +125,9 @@ async def experiment_live_proxy(
     token = websocket.query_params.get("token")
     user_id = _validate_token(token)
     if user_id is None:
+        await websocket.accept()
         await websocket.close(code=4001, reason="Invalid or missing token")
         return
-
-    await websocket.accept()
 
     # ── Connect to upstream OrcaLab WebSocket ──────────────────────────
     upstream_url = _build_upstream_ws_url(experiment_id)

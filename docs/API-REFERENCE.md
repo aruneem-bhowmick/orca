@@ -1062,7 +1062,7 @@ Authenticated WebSocket proxy that relays real-time experiment metrics between t
 
 | Condition | Behaviour |
 |-----------|-----------|
-| Missing or invalid JWT | Close with code **4001** (connection never accepted) |
+| Missing or invalid JWT | Accept, then close with code **4001** |
 | Upstream connection failure (refused, DNS, timeout) | Send `{"error": "upstream_unavailable"}` and close |
 | Upstream disconnect (experiment completed/failed) | Close browser connection normally |
 | Browser disconnect | Close upstream connection |
