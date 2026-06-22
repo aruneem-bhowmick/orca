@@ -203,3 +203,76 @@ Hyperparameter search space definitions, optionally organized as a tree via self
 | `definition`      | `JSONB`                 | no       | Full space definition: `name`, `description`, `parameters[]` |
 | `parent_id`       | `UUID` FK → self        | yes      | Self-referential FK for nested / composed spaces    |
 | `created_at`      | `TIMESTAMPTZ`           | no       | Server-default `NOW()`                              |
+
+---
+
+## Orca Web Tables
+
+The BFF gateway (`orca-web`) manages its own set of tables for user accounts, sessions, activity tracking, and bookmarks. ORM source: `packages/orca-web/orca_web/models/user.py`.
+
+### `users`
+
+User accounts with local credentials or OAuth identity linkage.
+
+| Column           | Type           | Nullable | Notes                                      |
+|------------------|----------------|----------|--------------------------------------------|
+| `user_id`        | `UUID` PK      | no       |                                            |
+| `email`          | `VARCHAR(320)` | no       | Unique                                     |
+| `username`       | `VARCHAR(100)` | no       | Unique                                     |
+| `password_hash`  | `TEXT`         | yes      | `NULL` for OAuth-only users                |
+| `oauth_provider` | `VARCHAR(50)`  | yes      | `"google"`, `"github"`, etc.               |
+| `oauth_sub`      | `VARCHAR(255)` | yes      | OAuth subject identifier                   |
+| `role`           | `VARCHAR(20)`  | no       | Default `"user"`; also `"admin"`           |
+| `preferences`    | `JSONB`        | yes      | Arbitrary user settings                    |
+| `is_active`      | `BOOLEAN`      | no       | Default `true`                             |
+| `created_at`     | `TIMESTAMPTZ`  | no       | Server-default `NOW()`                     |
+| `updated_at`     | `TIMESTAMPTZ`  | no       | Updated on every row write                 |
+
+---
+
+### `user_sessions`
+
+JWT refresh token sessions with revocation support.
+
+| Column        | Type                  | Nullable | Notes                                    |
+|---------------|-----------------------|----------|------------------------------------------|
+| `session_id`  | `UUID` PK             | no       |                                          |
+| `user_id`     | `UUID` FK → users     | no       | `ON DELETE CASCADE`                      |
+| `jti`         | `VARCHAR(255)`        | no       | Unique JWT ID for token rotation         |
+| `device_info` | `TEXT`                | yes      | Optional device metadata                 |
+| `ip_address`  | `VARCHAR(45)`         | yes      | IPv4 or IPv6                             |
+| `expires_at`  | `TIMESTAMPTZ`         | no       | Token expiry                             |
+| `revoked`     | `BOOLEAN`             | no       | Default `false`; soft-delete flag        |
+| `created_at`  | `TIMESTAMPTZ`         | no       | Server-default `NOW()`                   |
+
+---
+
+### `activity_log`
+
+Per-user activity log populated by proxy routers on mutating (POST) operations. Read by the history router endpoints (`GET /history`, `/history/tasks`, `/history/experiments`, `/feed`).
+
+| Column          | Type                  | Nullable | Notes                                                |
+|-----------------|-----------------------|----------|------------------------------------------------------|
+| `log_id`        | `UUID` PK             | no       |                                                      |
+| `user_id`       | `UUID` FK → users     | no       | `ON DELETE CASCADE`                                  |
+| `action`        | `VARCHAR(100)`        | no       | e.g. `"task_created"`, `"experiment_started"`        |
+| `resource_type` | `VARCHAR(50)`         | yes      | e.g. `"task"`, `"experiment"`                        |
+| `resource_id`   | `VARCHAR(255)`        | yes      | UUID string of the affected resource                 |
+| `service`       | `VARCHAR(50)`         | yes      | `"orcamind"`, `"orcalab"`, or `"orcanet"`            |
+| `details`       | `JSONB`               | yes      | Arbitrary context                                    |
+| `created_at`    | `TIMESTAMPTZ`         | no       | Server-default `NOW()`                               |
+
+---
+
+### `user_bookmarks`
+
+User-created bookmarks referencing tasks, experiments, or other resources. Managed by the bookmark endpoints (`POST /bookmarks`, `DELETE /bookmarks/{id}`, `GET /bookmarks`).
+
+| Column          | Type                  | Nullable | Notes                                      |
+|-----------------|-----------------------|----------|--------------------------------------------|
+| `bookmark_id`   | `UUID` PK             | no       |                                            |
+| `user_id`       | `UUID` FK → users     | no       | `ON DELETE CASCADE`                        |
+| `resource_type` | `VARCHAR(50)`         | no       | e.g. `"task"`, `"experiment"`              |
+| `resource_id`   | `VARCHAR(255)`        | no       | UUID string of the bookmarked resource     |
+| `note`          | `TEXT`                | yes      | User-provided annotation                  |
+| `created_at`    | `TIMESTAMPTZ`         | no       | Server-default `NOW()`                     |
