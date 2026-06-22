@@ -7,8 +7,10 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
-from fastapi import HTTPException
+from fastapi import FastAPI, HTTPException
+from starlette.testclient import TestClient
 
+from orca_web.api.deps import get_current_user, get_history_repo
 from orca_web.api.routers.history import (
     BookmarkCreateRequest,
     PaginatedResponse,
@@ -22,6 +24,7 @@ from orca_web.api.routers.history import (
     list_experiment_history,
     list_history,
     list_task_history,
+    router,
 )
 
 
@@ -472,3 +475,63 @@ class TestPaginationEdgeCases:
         )
         assert result.per_page == 100
         assert result.pages == 2
+
+
+# ── HTTP-level validation (TestClient) ───────────────────────────────────
+
+
+def _build_test_client(user_factory):
+    """Build a TestClient with overridden auth and repository dependencies.
+
+    The history repo mock returns empty results for all queries so
+    that the tests can focus on FastAPI's query-parameter validation
+    and default binding without needing real data.
+    """
+    app = FastAPI()
+    app.include_router(router)
+
+    mock_user = user_factory()
+    mock_repo = AsyncMock()
+    mock_repo.count_for_user = AsyncMock(return_value=0)
+    mock_repo.list_for_user = AsyncMock(return_value=[])
+
+    app.dependency_overrides[get_current_user] = lambda: mock_user
+    app.dependency_overrides[get_history_repo] = lambda: mock_repo
+
+    return TestClient(app), mock_repo
+
+
+class TestQueryParameterValidation:
+    """Verify that FastAPI enforces Query constraints at the HTTP level.
+
+    Direct handler calls bypass FastAPI's parameter validation, so
+    these tests use TestClient to exercise the full request path.
+    """
+
+    def test_per_page_zero_returns_422(self, user_factory):
+        client, _ = _build_test_client(user_factory)
+        resp = client.get("/history?per_page=0")
+        assert resp.status_code == 422
+
+    def test_per_page_over_max_returns_422(self, user_factory):
+        client, _ = _build_test_client(user_factory)
+        resp = client.get("/history?per_page=101")
+        assert resp.status_code == 422
+
+    def test_page_zero_returns_422(self, user_factory):
+        client, _ = _build_test_client(user_factory)
+        resp = client.get("/history?page=0")
+        assert resp.status_code == 422
+
+    def test_page_negative_returns_422(self, user_factory):
+        client, _ = _build_test_client(user_factory)
+        resp = client.get("/history?page=-1")
+        assert resp.status_code == 422
+
+    def test_defaults_to_page_1_per_page_20(self, user_factory):
+        client, mock_repo = _build_test_client(user_factory)
+        resp = client.get("/history")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["page"] == 1
+        assert body["per_page"] == 20
