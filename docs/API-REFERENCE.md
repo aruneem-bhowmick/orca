@@ -948,7 +948,7 @@ Callers may only access their own profile unless they have the `admin` role.
 
 ### OrcaMind Proxy (auth required)
 
-All OrcaMind proxy endpoints require JWT authentication. The BFF forwards the request to the upstream OrcaMind service, injecting an `X-Orca-User-ID` header. Connection errors return 502; timeouts (10 s) return 504. POST endpoints log activity to the `activity_log` table.
+All OrcaMind proxy endpoints require JWT authentication. The BFF forwards the request to the upstream OrcaMind service, injecting an `X-Orca-User-ID` header. Query parameters are forwarded with full multi-value support (e.g. `?tag=a&tag=b` preserves both values). Connection errors return 502; timeouts (10 s) return 504. POST endpoints log activity to the `activity_log` table.
 
 #### `GET /orcamind/tasks` — List tasks
 

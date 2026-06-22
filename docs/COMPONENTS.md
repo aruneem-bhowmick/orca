@@ -1334,7 +1334,7 @@ Four SQLAlchemy ORM models: `User` (email, username, hashed_password, role, pref
 
 Shared utilities used by the three service proxy routers:
 
-- `proxy_request(request, method, target_url, user)` — forwards an HTTP request to an upstream service, copying query params, body, and content-type. Injects an `X-Orca-User-ID` header. Returns 502 on connection errors, 504 on timeout (10 s). Uses the shared `httpx.AsyncClient` from `request.app.state.http_client`.
+- `proxy_request(request, method, target_url, user)` — forwards an HTTP request to an upstream service, copying query params (including multi-valued keys via `multi_items()`), body, and content-type. Injects an `X-Orca-User-ID` header. Returns 502 on connection errors, 504 on timeout (10 s). Uses the shared `httpx.AsyncClient` from `request.app.state.http_client`.
 - `_parse_resource_id(response_body)` — extracts a resource ID (`task_id`, `experiment_id`, `sweep_id`, or `mapping_id`) from upstream JSON response bodies.
 - `log_proxy_activity(history_repo, user_id, action, resource_type, service, response)` — persists mutating proxy calls to the `activity_log` table. Swallows logging exceptions to avoid masking the upstream response.
 
