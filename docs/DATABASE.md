@@ -220,7 +220,7 @@ User accounts with local credentials or OAuth identity linkage.
 | `email`          | `VARCHAR(320)` | no       | Unique                                     |
 | `username`       | `VARCHAR(100)` | no       | Unique                                     |
 | `password_hash`  | `TEXT`         | yes      | `NULL` for OAuth-only users                |
-| `oauth_provider` | `VARCHAR(50)`  | yes      | `"google"`, `"github"`, etc.               |
+| `oauth_provider` | `VARCHAR(50)`  | yes      | Google (`"google"`), GitHub (`"github"`), etc. |
 | `oauth_sub`      | `VARCHAR(255)` | yes      | OAuth subject identifier                   |
 | `role`           | `VARCHAR(20)`  | no       | Default `"user"`; also `"admin"`           |
 | `preferences`    | `JSONB`        | yes      | Arbitrary user settings                    |
