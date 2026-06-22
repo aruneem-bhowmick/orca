@@ -194,7 +194,7 @@ docker compose -f docker-compose.dev.yml run --rm orcamind \
 | OrcaMind API docs     | http://localhost:8000/docs  | Swagger UI for all OrcaMind endpoints       |
 | OrcaLab API docs      | http://localhost:8001/docs  | Swagger UI for all OrcaLab endpoints        |
 | OrcaNet API docs      | http://localhost:8002/docs  | Swagger UI for all OrcaNet endpoints        |
-| Orca Web BFF docs     | http://localhost:8003/docs  | Swagger UI for auth, dashboard, users       |
+| Orca Web BFF docs     | http://localhost:8003/docs  | Swagger UI for auth, dashboard, users, and service proxies (OrcaMind, OrcaLab, OrcaNet) |
 | OrcaLab Dashboard     | http://localhost:8502       | Streamlit UI — Live Experiments, Search Progress, Results Explorer, Meta-Analysis |
 | MLflow UI             | http://localhost:5000       | Experiment runs, metrics, model registry    |
 | Prefect UI            | http://localhost:4200       | Flow runs, work pools, deployments          |
