@@ -167,3 +167,51 @@ class TestHistoryRepository:
         repo = HistoryRepository(mock_async_session)
         result = await repo.list_bookmarks(uuid.uuid4())
         assert result == []
+
+    async def test_count_for_user_returns_scalar(self, mock_async_session):
+        mock_async_session.execute.return_value.scalar_one.return_value = 5
+        repo = HistoryRepository(mock_async_session)
+        result = await repo.count_for_user(uuid.uuid4())
+        assert result == 5
+        mock_async_session.execute.assert_awaited()
+
+    async def test_count_for_user_with_service_filter(self, mock_async_session):
+        mock_async_session.execute.return_value.scalar_one.return_value = 3
+        repo = HistoryRepository(mock_async_session)
+        result = await repo.count_for_user(uuid.uuid4(), service="orcamind")
+        assert result == 3
+
+    async def test_count_for_user_with_resource_type_filter(self, mock_async_session):
+        mock_async_session.execute.return_value.scalar_one.return_value = 2
+        repo = HistoryRepository(mock_async_session)
+        result = await repo.count_for_user(
+            uuid.uuid4(), resource_type="task"
+        )
+        assert result == 2
+
+    async def test_count_global_feed(self, mock_async_session):
+        mock_async_session.execute.return_value.scalar_one.return_value = 42
+        repo = HistoryRepository(mock_async_session)
+        result = await repo.count_global_feed()
+        assert result == 42
+
+    async def test_get_bookmark_by_id_returns_none_when_missing(
+        self, mock_async_session
+    ):
+        repo = HistoryRepository(mock_async_session)
+        result = await repo.get_bookmark_by_id(uuid.uuid4())
+        assert result is None
+
+    async def test_get_bookmark_by_id_returns_bookmark(self, mock_async_session):
+        bookmark = MagicMock()
+        bookmark.bookmark_id = uuid.uuid4()
+        mock_async_session.execute.return_value.scalar_one_or_none.return_value = bookmark
+        repo = HistoryRepository(mock_async_session)
+        result = await repo.get_bookmark_by_id(bookmark.bookmark_id)
+        assert result is bookmark
+
+    async def test_count_bookmarks(self, mock_async_session):
+        mock_async_session.execute.return_value.scalar_one.return_value = 7
+        repo = HistoryRepository(mock_async_session)
+        result = await repo.count_bookmarks(uuid.uuid4())
+        assert result == 7
