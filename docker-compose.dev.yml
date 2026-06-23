@@ -242,7 +242,7 @@ services:
       ORCAMIND_API_URL: http://orcamind:8000
       ORCALAB_API_URL: http://orcalab:8001
       ORCANET_API_URL: http://orcanet:8002
-      JWT_SECRET_KEY: dev-secret-change-in-prod
+      JWT_SECRET_KEY: ${JWT_SECRET_KEY:-dev-secret-change-in-prod}
       FRONTEND_URL: http://localhost:5173
       CORS_ORIGINS: "http://localhost:5173,http://localhost:3000"
     depends_on:
