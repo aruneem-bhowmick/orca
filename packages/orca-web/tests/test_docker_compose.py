@@ -75,9 +75,11 @@ class TestBuildConfiguration:
     def test_dockerfile_path(self, orca_web_svc: dict[str, Any]) -> None:
         """The Dockerfile path must point to packages/orca-web/Dockerfile."""
         build = orca_web_svc.get("build", {})
-        if isinstance(build, dict):
-            dockerfile = build.get("dockerfile", "")
-            assert "orca-web" in dockerfile, f"Unexpected Dockerfile: {dockerfile}"
+        assert isinstance(build, dict), "build must be a mapping"
+        dockerfile = build.get("dockerfile", "")
+        assert dockerfile == "packages/orca-web/Dockerfile", (
+            f"Expected 'packages/orca-web/Dockerfile', got {dockerfile!r}"
+        )
 
 
 # ---------------------------------------------------------------------------
@@ -91,7 +93,7 @@ class TestPortMapping:
     def test_publishes_port_8003(self, orca_web_svc: dict[str, Any]) -> None:
         """The BFF must be mapped to host port 8003."""
         ports = orca_web_svc.get("ports", [])
-        assert any("8003" in str(p) for p in ports), f"Port 8003 not found in: {ports}"
+        assert "8003:8003" in ports, f"Expected '8003:8003' in ports, got: {ports}"
 
 
 # ---------------------------------------------------------------------------
