@@ -15,6 +15,7 @@ class HistoryRepository:
     """Async operations for activity logs and user bookmarks."""
 
     def __init__(self, session: AsyncSession) -> None:
+        """Bind the repository to an async database session."""
         self._session = session
 
     # ── Activity log ──────────────────────────────────────────────────────

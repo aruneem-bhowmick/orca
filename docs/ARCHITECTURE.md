@@ -155,6 +155,12 @@ orca/
 │                   └── test_websocket.py     # Direct handler invocation — metrics stream, disconnect, terminal status
 │
 │   ├── orca-web/                      # Backend for Frontend gateway (port 8003)
+│   │   ├── alembic.ini               # Alembic config — asyncpg driver, orca_registry target, DATABASE_URL override
+│   │   ├── alembic/
+│   │   │   ├── env.py               # Async migration environment (NullPool, Base.metadata from orca_web.models.user)
+│   │   │   ├── script.py.mako       # Revision file template
+│   │   │   └── versions/
+│   │   │       └── 0001_add_user_tables.py  # users, user_sessions, activity_log, user_bookmarks
 │   │   ├── orca_web/
 │   │   │   ├── auth/                 # JWT tokens, OAuth providers, password hashing
 │   │   │   ├── models/               # SQLAlchemy User, UserSession, ActivityLog, UserBookmark
@@ -168,7 +174,7 @@ orca/
 │   │   │   │   ├── websocket.py      # Authenticated WebSocket proxy for live experiment metrics
 │   │   │   │   └── routers/          # auth.py, dashboard.py, history.py, users.py, orcamind.py, orcalab.py, orcanet.py
 │   │   │   └── config.py            # pydantic-settings (database, Redis, JWT, OAuth, upstream URLs)
-│   │   └── tests/                    # 212 tests, 98% coverage
+│   │   └── tests/                    # 336 tests, 98% coverage
 │   │
 │   └── orcanet/                      # Cross-domain knowledge transfer agent (port 8002)
 │       ├── orcanet/

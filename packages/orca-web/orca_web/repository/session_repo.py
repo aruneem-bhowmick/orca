@@ -15,6 +15,7 @@ class SessionRepository:
     """Async operations for refresh-token session tracking."""
 
     def __init__(self, session: AsyncSession) -> None:
+        """Bind the repository to an async database session."""
         self._session = session
 
     async def create(

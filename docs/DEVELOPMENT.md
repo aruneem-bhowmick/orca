@@ -233,6 +233,9 @@ uv run pytest packages/orca-web/tests/test_api_history.py -v -k "TestListHistory
 # Orca Web — global feed tests only
 uv run pytest packages/orca-web/tests/test_api_history.py -v -k "TestGlobalFeed"
 
+# Orca Web — Alembic migration infrastructure tests only
+uv run pytest packages/orca-web/tests/test_alembic.py -v
+
 # Orca Web — full suite with coverage enforcement (≥80%)
 uv run pytest packages/orca-web/tests/ -v --cov=orca_web --cov-fail-under=80
 
