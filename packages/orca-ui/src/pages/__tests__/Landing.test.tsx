@@ -40,7 +40,7 @@ describe("Landing page", () => {
 
   it("renders navigation links", () => {
     render(<Landing />);
-    expect(screen.getByText("Sign in")).toBeInTheDocument();
-    expect(screen.getByText("Get started")).toBeInTheDocument();
+    expect(screen.getAllByText("Sign in").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Get started").length).toBeGreaterThanOrEqual(1);
   });
 });

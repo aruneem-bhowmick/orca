@@ -3,6 +3,7 @@ import axios from "axios";
 import apiClient from "@/api/client";
 import { useAuthStore } from "@/store/auth";
 import { mockUser } from "@/test/mocks/handlers";
+import type { InternalAxiosRequestConfig } from "axios";
 
 vi.mock("axios", async () => {
   const actual = await vi.importActual<typeof import("axios")>("axios");
@@ -28,7 +29,7 @@ describe("API client interceptors", () => {
     vi.restoreAllMocks();
   });
 
-  it("attaches Authorization header when token is present", () => {
+  it("attaches Authorization header when token is present", async () => {
     useAuthStore.getState().setAuth(mockUser, "my-jwt-token");
 
     const config = {
@@ -43,13 +44,14 @@ describe("API client interceptors", () => {
     // Simulate the request interceptor
     const interceptor = apiClient.interceptors.request.handlers?.[0];
     if (interceptor?.fulfilled) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result = interceptor.fulfilled(config as any);
+      const result = (await interceptor.fulfilled(
+        config as unknown as InternalAxiosRequestConfig,
+      )) as InternalAxiosRequestConfig;
       expect(result.headers.Authorization).toBe("Bearer my-jwt-token");
     }
   });
 
-  it("does not attach Authorization header when no token", () => {
+  it("does not attach Authorization header when no token", async () => {
     const config = {
       headers: {
         set: function () {},
@@ -58,8 +60,9 @@ describe("API client interceptors", () => {
 
     const interceptor = apiClient.interceptors.request.handlers?.[0];
     if (interceptor?.fulfilled) {
-      // eslint-disable-next-line @typescript-eslint/no-explicit-any
-      const result = interceptor.fulfilled(config as any);
+      const result = (await interceptor.fulfilled(
+        config as unknown as InternalAxiosRequestConfig,
+      )) as InternalAxiosRequestConfig;
       expect(result.headers.Authorization).toBeUndefined();
     }
   });
@@ -81,8 +84,7 @@ describe("API client interceptors", () => {
       };
 
       try {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await responseInterceptor.rejected(error as any);
+        await responseInterceptor.rejected(error);
       } catch {
         // Expected to reject
       }
