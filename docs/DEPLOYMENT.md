@@ -116,10 +116,15 @@ Services must start in dependency order. Docker Compose `depends_on` with `condi
 10. orca-web        ← healthcheck: httpx GET /health  (depends on postgres, redis, orcamind, orcalab, orcanet)
 ```
 
-Before OrcaMind starts, run the Alembic migrations:
+Before OrcaMind starts, run the Alembic migrations for both OrcaMind and Orca Web:
 
 ```bash
+# OrcaMind registry tables (7 tables)
 docker compose -f docker-compose.dev.yml run --rm orcamind python scripts/init_db.py
+
+# Orca Web user-management tables (4 tables)
+export DATABASE_URL="postgresql+asyncpg://orca:orca_dev_secret@localhost:5432/orca_registry"
+cd packages/orca-web && alembic upgrade head && cd ../..
 ```
 
 ---
@@ -127,8 +132,10 @@ docker compose -f docker-compose.dev.yml run --rm orcamind python scripts/init_d
 ## Starting the Stack
 
 ```bash
-# Apply database migrations first (required before OrcaMind starts)
+# Apply database migrations first (required before services start)
 docker compose -f docker-compose.dev.yml run --rm orcamind python scripts/init_db.py
+export DATABASE_URL="postgresql+asyncpg://orca:orca_dev_secret@localhost:5432/orca_registry"
+cd packages/orca-web && alembic upgrade head && cd ../..
 
 # Start all services
 docker compose -f docker-compose.dev.yml up -d
@@ -140,7 +147,10 @@ docker compose -f docker-compose.dev.yml run --rm orcalab python scripts/init_pr
 docker compose -f docker-compose.dev.yml logs -f orcamind orcalab orcanet
 ```
 
-> After schema changes on a running stack, re-run `init_db.py` (`docker compose ... run --rm orcamind python scripts/init_db.py`) while services are up — the migration runner uses `NullPool` and exits cleanly without disrupting live connections.
+> After schema changes on a running stack, re-run the relevant migration command while services are up — the migration runners use `NullPool` and exit cleanly without disrupting live connections:
+>
+> - OrcaMind: `docker compose ... run --rm orcamind python scripts/init_db.py`
+> - Orca Web: `cd packages/orca-web && alembic upgrade head`
 
 The `init_prefect.py` script creates the `orcalab-pool` Prefect work pool (type: `process`) that the `meta_informed_sweep` deployment requires. This is a one-time operation per Prefect server instance.
 
