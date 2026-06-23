@@ -245,15 +245,36 @@ uv run pytest packages/orca-web/tests/ -v --cov=orca_web --cov-fail-under=80
 
 # Scripts — bootstrap_meta_dataset.py + init_prefect.py (55 tests, ≥80% coverage)
 uv run pytest scripts/tests/ -v --cov=scripts --cov-report=term-missing
+
+# orca-ui — React frontend (Vitest, no services required)
+cd packages/orca-ui && npm test
+
+# orca-ui — ESLint
+cd packages/orca-ui && npm run lint
+
+# orca-ui — TypeScript type checking
+cd packages/orca-ui && npm run typecheck
+
+# orca-ui — all checks together via Makefile
+make ui-test
+make ui-lint
 ```
 
-The test suite spans 80+ test files across unit, integration, performance, deployment-validation, proxy, and scripts categories.
+The Python test suite spans 80+ test files across unit, integration, performance, deployment-validation, proxy, and scripts categories. The orca-ui frontend adds 8 test files with 33+ tests using Vitest and Testing Library.
 
 The OrcaLab API integration tests run without a live database, Prefect server, or MLflow instance. An `ASGITransport` client fixture pre-populates `app.state` manually (bypassing the ASGI lifespan) and overrides all dependency providers via `dependency_overrides`, so tests exercise the full request/response cycle including middleware, routing, and validation while every external call goes to an `AsyncMock`.
 
 The OrcaMind ↔ OrcaLab bidirectional integration tests run without a live OrcaMind service. `respx` intercepts all `httpx` calls and routes them to pre-configured mock responses, so the full client/task/strategy call chain is exercised at the network layer without running any external process. A lightweight Prefect stub in `tests/integration/conftest.py` replaces the `prefect` module in `sys.modules`, supporting both `@task(...)` and bare `@task` decorator forms.
 
 The visualization unit tests run without a live Streamlit or Plotly install. A session-scoped `_patch_streamlit` fixture in `tests/unit/visualization/conftest.py` replaces both libraries in `sys.modules` before any page or component module is imported, so the pure data-processing functions can be tested independently of the Streamlit runtime.
+
+**orca-ui test patterns:**
+
+- *Custom render wrapper* — `test/test-utils.tsx` exports a `render()` function that wraps the component under test with `QueryClientProvider` (retry disabled, gcTime 0 for test isolation) and `BrowserRouter`. All page and component tests import this wrapper rather than the raw `@testing-library/react` `render`.
+- *Mock API module pattern* — `vi.mock("@/api/auth")` replaces the entire auth API module with vitest mocks. Each test configures `vi.mocked(authApi.login).mockResolvedValueOnce(...)` for the specific scenario, avoiding any real HTTP calls.
+- *Zustand store reset* — each test suite calls `useAuthStore.getState().clearAuth()` in `beforeEach` to prevent auth state leaking between tests. Tests that need an authenticated user call `setAuth(mockUser, "test-token")` explicitly.
+- *Form interaction via Testing Library* — tests use `fireEvent.change()` and `fireEvent.click()` on elements found by `screen.getByLabelText()` and `screen.getByRole()` respectively, following Testing Library's accessible query priority. `waitFor()` handles async state updates from API calls.
+- *data-testid escape hatches* — components use `data-testid` attributes (`auth-loading`, `login-error`, `sidebar-toggle`, `dark-mode-toggle`, `service-cards`) only where accessible queries are not practical (e.g. distinguishing between multiple error messages or finding structural containers).
 
 OrcaMind integration tests auto-skip when their target service port is unreachable — run `make docker-up` first to exercise them.
 
@@ -440,5 +461,10 @@ make docker-up    # docker compose up -d
 make docker-down  # docker compose down
 make docker-logs  # docker compose logs -f
 make clean        # remove __pycache__, .pytest_cache, .mypy_cache
+make ui-install   # npm ci for orca-ui
+make ui-dev       # start orca-ui Vite dev server (port 5173)
+make ui-build     # production build → packages/orca-ui/dist/
+make ui-test      # run orca-ui Vitest suite
+make ui-lint      # ESLint + TypeScript typecheck for orca-ui
 make help         # list all targets
 ```

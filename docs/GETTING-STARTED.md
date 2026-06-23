@@ -10,6 +10,7 @@
 - Docker Compose v2
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/)
+- Node.js 20+ and npm (for orca-ui frontend)
 
 ---
 
@@ -143,4 +144,11 @@ export ORCANET_API_URL="http://localhost:8002"
 
 uvicorn orca_web.api.main:app --host 0.0.0.0 --port 8003 --reload
 # Interactive docs: http://localhost:8003/docs
+
+# 11. (Optional) Start the orca-ui frontend
+cd packages/orca-ui
+npm ci
+npm run dev
+# React SPA: http://localhost:5173
+# Vite proxies /api/* to localhost:8003 (Orca Web BFF)
 ```
