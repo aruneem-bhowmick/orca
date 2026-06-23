@@ -4,10 +4,19 @@ from __future__ import annotations
 
 import uuid
 from datetime import datetime, timezone
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+
+_REPO_ROOT = Path(__file__).parents[3]
+
+
+@pytest.fixture(scope="session")
+def repo_root() -> Path:
+    """Return the absolute path to the repository root directory."""
+    return _REPO_ROOT
 
 
 @pytest.fixture()

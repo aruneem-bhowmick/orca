@@ -15,7 +15,7 @@
 
 ## Quick Start with Docker Compose
 
-Starts OrcaMind, OrcaLab, OrcaNet, PostgreSQL, Redis, MinIO, MLflow, and Prefect in Docker containers.
+Starts OrcaMind, OrcaLab, OrcaNet, the Orca Web BFF, PostgreSQL, Redis, MinIO, MLflow, and Prefect in Docker containers.
 
 ```bash
 git clone https://github.com/AruneemB/orca.git
@@ -134,4 +134,13 @@ export ORCALAB_API_URL="http://localhost:8001"
 
 orcanet serve --reload
 # Interactive docs: http://localhost:8002/docs
+
+# 10. (Optional) Start the Orca Web BFF
+export JWT_SECRET_KEY="dev-secret-change-in-prod"
+export ORCAMIND_API_URL="http://localhost:8000"
+export ORCALAB_API_URL="http://localhost:8001"
+export ORCANET_API_URL="http://localhost:8002"
+
+uvicorn orca_web.api.main:app --host 0.0.0.0 --port 8003 --reload
+# Interactive docs: http://localhost:8003/docs
 ```

@@ -95,6 +95,7 @@ Orca Web (port 8003) ←─ depends on postgres, redis, orcamind, orcalab, orcan
 | `ORCALAB_API_URL`     | yes      | `http://orcalab:8001`                                  | OrcaLab service base URL                      |
 | `ORCANET_API_URL`     | yes      | `http://orcanet:8002`                                  | OrcaNet service base URL                      |
 | `JWT_SECRET_KEY`      | yes      | —                                                      | Secret key for signing JWT access tokens      |
+| `FRONTEND_URL`        | no       | `http://localhost:5173`                                | Frontend origin for OAuth redirect handling   |
 | `CORS_ORIGINS`        | no       | —                                                      | Comma-separated allowed CORS origins          |
 
 ---
@@ -144,7 +145,7 @@ docker compose -f docker-compose.dev.yml up -d
 docker compose -f docker-compose.dev.yml run --rm orcalab python scripts/init_prefect.py
 
 # Tail logs
-docker compose -f docker-compose.dev.yml logs -f orcamind orcalab orcanet
+docker compose -f docker-compose.dev.yml logs -f orcamind orcalab orcanet orca-web
 ```
 
 > After schema changes on a running stack, re-run the relevant migration command while services are up — the migration runners use `NullPool` and exit cleanly without disrupting live connections:
@@ -232,6 +233,7 @@ Replace the dev-mode inline passwords with proper secrets before deploying to an
 
 - Use Docker secrets (`secrets:` block) or environment files (`.env`) excluded from version control.
 - Rotate `POSTGRES_PASSWORD`, `MINIO_ROOT_PASSWORD`, and `MINIO_SECRET_KEY`.
+- Set a strong, unique `JWT_SECRET_KEY` for the Orca Web BFF. The dev-mode value (`dev-secret-change-in-prod`) must never be used in shared environments.
 - Set `CORS_ORIGINS` to your frontend origin(s); if unset, CORS requests are denied by default.
 
 ### Persistence
@@ -249,6 +251,8 @@ OrcaLab's FastAPI service is stateless except for `app.state.sweeps` (an in-memo
 - Using sticky sessions so sweep status reads hit the same instance that created the sweep.
 
 OrcaMind and OrcaNet are stateless (all state in PostgreSQL + FAISS on disk) and can be scaled horizontally without session affinity.
+
+Orca Web is stateless — all session state lives in PostgreSQL (user sessions) and Redis (token caching). It can be scaled horizontally behind a load balancer without session affinity.
 
 ### Log retention
 
