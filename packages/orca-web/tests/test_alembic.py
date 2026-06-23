@@ -421,6 +421,18 @@ class TestMigration0001Indexes:
     def _load_source(self):
         self.source = (_VERSIONS_DIR / "0001_add_user_tables.py").read_text()
 
+    def test_oauth_pair_check_constraint(self):
+        """CHECK constraint must enforce oauth_provider/oauth_sub pair consistency."""
+        assert '"ck_users_oauth_pair"' in self.source
+        assert "(oauth_provider IS NULL) = (oauth_sub IS NULL)" in self.source
+
+    def test_oauth_provider_sub_unique_index(self):
+        """Partial unique index on (oauth_provider, oauth_sub) must exist."""
+        assert '"ix_users_oauth_provider_sub"' in self.source
+        assert '["oauth_provider", "oauth_sub"]' in self.source
+        assert "unique=True" in self.source
+        assert "oauth_provider IS NOT NULL" in self.source
+
     def test_users_email_index(self):
         """Index on users(email) must be created."""
         assert '"ix_users_email"' in self.source

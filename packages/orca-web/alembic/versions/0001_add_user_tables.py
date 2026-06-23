@@ -61,6 +61,18 @@ def upgrade() -> None:
             nullable=False,
         ),
     )
+    op.create_check_constraint(
+        "ck_users_oauth_pair",
+        "users",
+        "(oauth_provider IS NULL) = (oauth_sub IS NULL)",
+    )
+    op.create_index(
+        "ix_users_oauth_provider_sub",
+        "users",
+        ["oauth_provider", "oauth_sub"],
+        unique=True,
+        postgresql_where=sa.text("oauth_provider IS NOT NULL"),
+    )
     op.create_index("ix_users_email", "users", ["email"])
     op.create_index("ix_users_username", "users", ["username"])
 
