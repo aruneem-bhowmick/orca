@@ -6,7 +6,14 @@
 
 ## Migrations
 
-OrcaMind uses [Alembic](https://alembic.sqlalchemy.org/) to manage the PostgreSQL schema. The migration environment is configured for SQLAlchemy's async engine (`asyncpg` driver) using `NullPool` so connections close after migrations complete.
+Two packages maintain their own Alembic migration environments against the shared `orca_registry` PostgreSQL instance:
+
+| Package   | Config                          | Tables managed                                                    |
+|-----------|---------------------------------|-------------------------------------------------------------------|
+| OrcaMind  | `packages/orcamind/alembic.ini` | 7 registry tables (tasks, models, experiments, performances, ...) |
+| Orca Web  | `packages/orca-web/alembic.ini` | 4 user-management tables (users, user_sessions, activity_log, user_bookmarks) |
+
+Both environments use SQLAlchemy's async engine (`asyncpg` driver) with `NullPool` so connections close after migrations complete.  Each reads the `DATABASE_URL` environment variable at runtime, falling back to the `sqlalchemy.url` value in its `alembic.ini`.
 
 ### Apply migrations
 
@@ -16,13 +23,17 @@ docker compose -f docker-compose.dev.yml run --rm orcamind python scripts/init_d
 
 # Or directly with Alembic (local dev, DATABASE_URL must be set)
 export DATABASE_URL="postgresql+asyncpg://orca:orca_dev_secret@localhost:5432/orca_registry"
-cd packages/orcamind
-alembic upgrade head
+
+# OrcaMind (registry tables)
+cd packages/orcamind && alembic upgrade head && cd ../..
+
+# Orca Web (user-management tables)
+cd packages/orca-web && alembic upgrade head && cd ../..
 ```
 
 `scripts/init_db.py` resolves `alembic.ini` relative to its own path, reads `DATABASE_URL` from the environment, and exits non-zero on any failure — making it safe to call as a Docker Compose pre-start step.
 
-### Revision history
+### OrcaMind revision history
 
 
 | Revision | Description                                                                                                                                                                |
@@ -31,10 +42,26 @@ alembic upgrade head
 | `0002`   | Add nullable JSONB `metrics` column to `experiments` — stores per-epoch snapshots (`{"loss": float, "epoch": int}`) written by `ExperimentRepository.update_metrics()`; nullable so existing rows default to `NULL` (treated as `{}` by the repository and WebSocket handler); fully reversible via `downgrade` |
 
 
-To generate a new revision after ORM changes:
+To generate a new OrcaMind revision after ORM changes:
 
 ```bash
 cd packages/orcamind
+alembic revision --autogenerate -m "describe your change"
+alembic upgrade head
+```
+
+### Orca Web revision history
+
+
+| Revision | Description |
+|----------|-------------|
+| `0001`   | Initial user-management schema — creates `users`, `user_sessions`, `activity_log`, and `user_bookmarks` with UUID primary keys, `gen_random_uuid()` defaults, foreign keys with `ON DELETE CASCADE`, JSONB columns for preferences and details, and indexes on email, username, jti, user_id, and the `(user_id, created_at)` composite for efficient history queries; downgrade drops all four tables in reverse dependency order |
+
+
+To generate a new Orca Web revision after ORM changes:
+
+```bash
+cd packages/orca-web
 alembic revision --autogenerate -m "describe your change"
 alembic upgrade head
 ```
