@@ -41,6 +41,28 @@ def _load_migration_module(filename: str):
     return module
 
 
+import re
+
+def _extract_table_block(source: str, table_name: str) -> str:
+    """Extract the create_table(...) block for *table_name* from migration source.
+
+    Returns the source text from ``create_table("table_name"`` through the
+    matching ``op.create_index`` calls (or next ``op.create_table`` /
+    ``def downgrade``), giving a block scoped to a single table definition.
+    """
+    pattern = rf'create_table\(\s*"{re.escape(table_name)}"'
+    match = re.search(pattern, source)
+    if match is None:
+        raise ValueError(f"Table {table_name!r} not found in migration source")
+    start = match.start()
+    # End at the next create_table call, or def downgrade, whichever comes first
+    rest = source[start + 1:]
+    end_match = re.search(r"op\.create_table\(|def downgrade", rest)
+    if end_match:
+        return source[start:start + 1 + end_match.start()]
+    return source[start:]
+
+
 # ---------------------------------------------------------------------------
 # alembic.ini configuration tests
 # ---------------------------------------------------------------------------
@@ -249,64 +271,65 @@ class TestMigration0001UsersColumns:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = (_VERSIONS_DIR / "0001_add_user_tables.py").read_text()
+        full = (_VERSIONS_DIR / "0001_add_user_tables.py").read_text()
+        self.block = _extract_table_block(full, "users")
 
     def test_user_id_pk(self):
         """users.user_id must be a UUID primary key."""
-        assert '"user_id"' in self.source
-        assert "primary_key=True" in self.source
+        assert '"user_id"' in self.block
+        assert "primary_key=True" in self.block
 
     def test_user_id_server_default(self):
         """users.user_id must use gen_random_uuid() server default."""
-        assert "gen_random_uuid()" in self.source
+        assert "gen_random_uuid()" in self.block
 
     def test_email_column(self):
         """users.email must be VARCHAR(255), unique, not nullable."""
-        assert '"email"' in self.source
-        assert "String(255)" in self.source
+        assert '"email"' in self.block
+        assert "String(255)" in self.block
 
     def test_username_column(self):
         """users.username must be VARCHAR(100), unique, not nullable."""
-        assert '"username"' in self.source
-        assert "String(100)" in self.source
+        assert '"username"' in self.block
+        assert "String(100)" in self.block
 
     def test_password_hash_nullable(self):
         """users.password_hash must be nullable (for OAuth-only users)."""
-        assert '"password_hash"' in self.source
+        assert '"password_hash"' in self.block
 
     def test_oauth_provider_column(self):
         """users.oauth_provider must be VARCHAR(50), nullable."""
-        assert '"oauth_provider"' in self.source
-        assert "String(50)" in self.source
+        assert '"oauth_provider"' in self.block
+        assert "String(50)" in self.block
 
     def test_oauth_sub_column(self):
         """users.oauth_sub must be VARCHAR(255), nullable."""
-        assert '"oauth_sub"' in self.source
+        assert '"oauth_sub"' in self.block
 
     def test_role_default(self):
         """users.role must default to 'user'."""
-        assert '"role"' in self.source
-        assert 'server_default="user"' in self.source
+        assert '"role"' in self.block
+        assert 'server_default="user"' in self.block
 
     def test_preferences_jsonb(self):
         """users.preferences must be JSONB, nullable."""
-        assert '"preferences"' in self.source
-        assert "JSONB()" in self.source
+        assert '"preferences"' in self.block
+        assert "JSONB()" in self.block
 
     def test_is_active_default(self):
         """users.is_active must default to true."""
-        assert '"is_active"' in self.source
-        assert 'server_default="true"' in self.source
+        assert '"is_active"' in self.block
+        assert 'server_default="true"' in self.block
 
     def test_created_at_timestamptz(self):
         """users.created_at must be TIMESTAMPTZ with NOW() default."""
-        assert '"created_at"' in self.source
-        assert "DateTime(timezone=True)" in self.source
-        assert "func.now()" in self.source
+        assert '"created_at"' in self.block
+        assert "DateTime(timezone=True)" in self.block
+        assert "func.now()" in self.block
 
     def test_updated_at_timestamptz(self):
         """users.updated_at must be TIMESTAMPTZ with NOW() default."""
-        assert '"updated_at"' in self.source
+        assert '"updated_at"' in self.block
 
 
 class TestMigration0001UserSessionsColumns:
@@ -314,37 +337,38 @@ class TestMigration0001UserSessionsColumns:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = (_VERSIONS_DIR / "0001_add_user_tables.py").read_text()
+        full = (_VERSIONS_DIR / "0001_add_user_tables.py").read_text()
+        self.block = _extract_table_block(full, "user_sessions")
 
     def test_session_id_pk(self):
         """user_sessions.session_id must be a UUID primary key."""
-        assert '"session_id"' in self.source
+        assert '"session_id"' in self.block
 
     def test_user_id_fk(self):
         """user_sessions.user_id must be a FK to users with CASCADE."""
-        assert 'ForeignKey("users.user_id", ondelete="CASCADE")' in self.source
+        assert 'ForeignKey("users.user_id", ondelete="CASCADE")' in self.block
 
     def test_jti_unique(self):
         """user_sessions.jti must be unique and not nullable."""
-        assert '"jti"' in self.source
+        assert '"jti"' in self.block
 
     def test_device_info_nullable(self):
         """user_sessions.device_info must be nullable text."""
-        assert '"device_info"' in self.source
+        assert '"device_info"' in self.block
 
     def test_ip_address_varchar45(self):
         """user_sessions.ip_address must be VARCHAR(45) for IPv6 support."""
-        assert '"ip_address"' in self.source
-        assert "String(45)" in self.source
+        assert '"ip_address"' in self.block
+        assert "String(45)" in self.block
 
     def test_expires_at_not_nullable(self):
         """user_sessions.expires_at must be TIMESTAMPTZ, not nullable."""
-        assert '"expires_at"' in self.source
+        assert '"expires_at"' in self.block
 
     def test_revoked_default_false(self):
         """user_sessions.revoked must default to false."""
-        assert '"revoked"' in self.source
-        assert 'server_default="false"' in self.source
+        assert '"revoked"' in self.block
+        assert 'server_default="false"' in self.block
 
 
 class TestMigration0001ActivityLogColumns:
@@ -352,32 +376,33 @@ class TestMigration0001ActivityLogColumns:
 
     @pytest.fixture(autouse=True)
     def _load_source(self):
-        self.source = (_VERSIONS_DIR / "0001_add_user_tables.py").read_text()
+        full = (_VERSIONS_DIR / "0001_add_user_tables.py").read_text()
+        self.block = _extract_table_block(full, "activity_log")
 
     def test_log_id_pk(self):
         """activity_log.log_id must be a UUID primary key."""
-        assert '"log_id"' in self.source
+        assert '"log_id"' in self.block
 
     def test_action_not_nullable(self):
         """activity_log.action must be VARCHAR(100), not nullable."""
-        assert '"action"' in self.source
-        assert "String(100)" in self.source
+        assert '"action"' in self.block
+        assert "String(100)" in self.block
 
     def test_resource_type_nullable(self):
         """activity_log.resource_type must be nullable."""
-        assert '"resource_type"' in self.source
+        assert '"resource_type"' in self.block
 
     def test_resource_id_nullable(self):
         """activity_log.resource_id must be nullable."""
-        assert '"resource_id"' in self.source
+        assert '"resource_id"' in self.block
 
     def test_service_nullable(self):
         """activity_log.service must be VARCHAR(50), nullable."""
-        assert '"service"' in self.source
+        assert '"service"' in self.block
 
     def test_details_jsonb(self):
         """activity_log.details must be JSONB, nullable."""
-        assert '"details"' in self.source
+        assert '"details"' in self.block
 
 
 class TestMigration0001BookmarksColumns:
