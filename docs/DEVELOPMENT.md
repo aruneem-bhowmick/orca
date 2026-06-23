@@ -236,6 +236,10 @@ uv run pytest packages/orca-web/tests/test_api_history.py -v -k "TestGlobalFeed"
 # Orca Web — Alembic migration infrastructure tests only
 uv run pytest packages/orca-web/tests/test_alembic.py -v
 
+# Orca Web — Dockerfile and Docker Compose configuration tests (no services required — reads config files)
+uv run pytest packages/orca-web/tests/test_dockerfile.py \
+       packages/orca-web/tests/test_docker_compose.py -v
+
 # Orca Web — full suite with coverage enforcement (≥80%)
 uv run pytest packages/orca-web/tests/ -v --cov=orca_web --cov-fail-under=80
 
@@ -324,6 +328,9 @@ docker compose -f docker-compose.dev.yml up -d orcalab-dashboard
 
 # 6. Start OrcaNet (waits for postgres, orcamind, and orcalab to be healthy)
 docker compose -f docker-compose.dev.yml up -d orcanet
+
+# 7. Start the Orca Web BFF (waits for postgres, redis, orcamind, orcalab, and orcanet)
+docker compose -f docker-compose.dev.yml up -d orca-web
 ```
 
 ### Verifying the Deployment
@@ -340,6 +347,10 @@ curl http://localhost:8001/health
 # OrcaNet
 curl http://localhost:8002/health
 # → {"status":"ok","orcamind":"http://orcamind:8000","orcalab":"http://orcalab:8001"}
+
+# Orca Web BFF
+curl http://localhost:8003/health
+# → {"status":"healthy","services":{"postgres":true,"redis":true,"orcamind":true,"orcalab":true,"orcanet":true}}
 
 # Run a test sweep (use_orcamind: false skips the OrcaMind warm-start)
 curl -X POST http://localhost:8001/api/v1/sweeps \
@@ -364,23 +375,33 @@ curl http://localhost:8001/api/v1/sweeps/<sweep_id>/results
 The deployment validation tests run without Docker — they inspect config files and the Python module graph:
 
 ```bash
-# Dockerfile structure
+# OrcaLab Dockerfile structure
 uv run pytest packages/orcalab/tests/unit/test_dockerfile.py -v
 
-# docker-compose.dev.yml service configuration
+# OrcaLab docker-compose.dev.yml service configuration
 uv run pytest packages/orcalab/tests/unit/test_docker_compose.py -v
 
-# Prefect work-pool initialisation script
+# OrcaLab Prefect work-pool initialisation script
 uv run pytest packages/orcalab/tests/unit/test_init_prefect.py -v
 
-# Module-level app export (uvicorn entrypoint)
+# OrcaLab module-level app export (uvicorn entrypoint)
 uv run pytest packages/orcalab/tests/unit/test_app_module_export.py -v
 
-# All deployment tests together
+# All OrcaLab deployment tests together
 uv run pytest packages/orcalab/tests/unit/test_dockerfile.py \
        packages/orcalab/tests/unit/test_docker_compose.py \
        packages/orcalab/tests/unit/test_init_prefect.py \
        packages/orcalab/tests/unit/test_app_module_export.py -v
+
+# Orca Web Dockerfile structure (22 tests — multi-stage build, base image, ports, healthcheck, CMD)
+uv run pytest packages/orca-web/tests/test_dockerfile.py -v
+
+# Orca Web docker-compose.dev.yml service configuration (27 tests — ports, env vars, dependencies, healthcheck)
+uv run pytest packages/orca-web/tests/test_docker_compose.py -v
+
+# All Orca Web deployment tests together
+uv run pytest packages/orca-web/tests/test_dockerfile.py \
+       packages/orca-web/tests/test_docker_compose.py -v
 ```
 
 ---
@@ -411,6 +432,7 @@ Hooks run: ruff lint, ruff format, mypy. The push stage runs the unit test suite
 
 ```bash
 make install      # uv venv + install all packages
+make install-web  # install orca-web package in editable mode with dev deps
 make test         # pytest with coverage
 make lint         # ruff check
 make type-check   # mypy
