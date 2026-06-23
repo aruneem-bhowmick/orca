@@ -52,6 +52,10 @@ class TestBuilderStage:
         """The builder must install the uv package manager."""
         assert "uv" in dockerfile_text
 
+    def test_copies_root_manifest(self, dockerfile_text: str) -> None:
+        """The builder must copy the root pyproject.toml for workspace resolution."""
+        assert "COPY pyproject.toml" in dockerfile_text
+
     def test_copies_orca_shared_manifest(self, dockerfile_text: str) -> None:
         """The builder must copy the orca-shared pyproject.toml for layer caching."""
         assert "orca-shared/pyproject.toml" in dockerfile_text
@@ -105,7 +109,7 @@ class TestRuntimeStage:
 
     def test_copies_alembic_directory(self, dockerfile_text: str) -> None:
         """The runtime must copy the alembic/ directory for migration scripts."""
-        assert "alembic" in dockerfile_text
+        assert "orca-web/alembic /app/alembic" in dockerfile_text
 
     def test_expose_8003(self, dockerfile_text: str) -> None:
         """The Dockerfile must expose port 8003."""

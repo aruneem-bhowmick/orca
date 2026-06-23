@@ -5,7 +5,8 @@ RUN pip install --no-cache-dir uv==0.6.16
 
 WORKDIR /build
 
-# Copy dependency manifests first for layer caching
+# Copy root workspace config and dependency manifests for layer caching
+COPY pyproject.toml pyproject.toml
 COPY packages/orca-shared/pyproject.toml packages/orca-shared/pyproject.toml
 COPY packages/orca-web/pyproject.toml packages/orca-web/pyproject.toml
 
