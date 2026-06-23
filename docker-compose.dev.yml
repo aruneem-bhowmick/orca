@@ -228,6 +228,41 @@ services:
       start_period: 30s
       retries: 3
 
+  # ── Orca Web (BFF) ────────────────────────────────────────────────────────
+  orca-web:
+    build:
+      context: .
+      dockerfile: packages/orca-web/Dockerfile
+    <<: [*restart-policy, *default-logging]
+    ports:
+      - "8003:8003"
+    environment:
+      DATABASE_URL: postgresql+asyncpg://orca:orca_dev_secret@postgres:5432/orca_registry
+      REDIS_URL: redis://redis:6379
+      ORCAMIND_API_URL: http://orcamind:8000
+      ORCALAB_API_URL: http://orcalab:8001
+      ORCANET_API_URL: http://orcanet:8002
+      JWT_SECRET_KEY: dev-secret-change-in-prod
+      FRONTEND_URL: http://localhost:5173
+      CORS_ORIGINS: "http://localhost:5173,http://localhost:3000"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      orcamind:
+        condition: service_healthy
+      orcalab:
+        condition: service_healthy
+      orcanet:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import httpx; httpx.get('http://localhost:8003/health').raise_for_status()"]
+      interval: 30s
+      timeout: 10s
+      start_period: 30s
+      retries: 3
+
 volumes:
   postgres-data:
   redis-data:
