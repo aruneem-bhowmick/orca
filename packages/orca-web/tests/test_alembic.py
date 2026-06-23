@@ -393,16 +393,23 @@ class TestMigration0001BookmarksColumns:
 
     def test_resource_type_not_nullable(self):
         """user_bookmarks.resource_type must not be nullable."""
-        # resource_type appears in both activity_log and bookmarks;
-        # verify the bookmarks table specifically has nullable=False
-        # by checking the table-creation block
-        bookmark_section = self.source.split('"user_bookmarks"')[1]
-        assert "nullable=False" in bookmark_section.split("def downgrade")[0]
+        bookmark_section = self.source.split('"user_bookmarks"')[1].split("def downgrade")[0]
+        lines = bookmark_section.splitlines()
+        resource_type_line = next(
+            (l for l in lines if '"resource_type"' in l), None,
+        )
+        assert resource_type_line is not None, "resource_type column not found in bookmarks block"
+        assert "nullable=False" in resource_type_line
 
     def test_resource_id_not_nullable(self):
         """user_bookmarks.resource_id must not be nullable."""
-        bookmark_section = self.source.split('"user_bookmarks"')[1]
-        assert '"resource_id"' in bookmark_section
+        bookmark_section = self.source.split('"user_bookmarks"')[1].split("def downgrade")[0]
+        lines = bookmark_section.splitlines()
+        resource_id_line = next(
+            (l for l in lines if '"resource_id"' in l), None,
+        )
+        assert resource_id_line is not None, "resource_id column not found in bookmarks block"
+        assert "nullable=False" in resource_id_line
 
     def test_note_nullable(self):
         """user_bookmarks.note must be TEXT, nullable."""
