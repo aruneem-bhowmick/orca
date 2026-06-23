@@ -532,13 +532,17 @@ class TestVersionsDirectory:
         filenames = [f.name for f in migration_files]
         assert "0001_add_user_tables.py" in filenames
 
-    def test_no_extra_migrations(self):
-        """Only the initial migration should exist at this point."""
+    def test_no_unexpected_migration_files(self):
+        """All migration files must follow the NNNN_ naming convention."""
         migration_files = [
             f for f in _VERSIONS_DIR.glob("*.py")
             if not f.name.startswith("__")
         ]
-        assert len(migration_files) == 1
+        assert len(migration_files) >= 1, "versions directory must contain at least one migration"
+        for f in migration_files:
+            assert f.stem[0:4].isdigit(), (
+                f"Migration file {f.name} does not start with a 4-digit revision prefix"
+            )
 
 
 # ---------------------------------------------------------------------------
