@@ -32,7 +32,7 @@ uv pip install -e "packages/orca-web[dev]"
 # Start backing services (Prefect required by OrcaLab)
 docker compose -f docker-compose.dev.yml up -d postgres redis minio mlflow prefect
 
-# Apply database migrations (creates the 7 registry tables)
+# Apply database migrations (creates the 7 registry tables + 4 user-management tables)
 docker compose -f docker-compose.dev.yml run --rm orcamind python scripts/init_db.py
 
 # Start OrcaMind, then initialise the Prefect work pool for sweep flows
@@ -82,9 +82,10 @@ To run OrcaMind outside Docker for hot-reload during development:
 # 1. Start backing services only
 docker compose -f docker-compose.dev.yml up -d postgres redis minio mlflow
 
-# 2. Apply migrations
+# 2. Apply migrations (OrcaMind registry tables + Orca Web user tables)
 export DATABASE_URL="postgresql+asyncpg://orca:orca_dev_secret@localhost:5432/orca_registry"
 cd packages/orcamind && alembic upgrade head && cd ../..
+cd packages/orca-web && alembic upgrade head && cd ../..
 
 # 3. Initialise a workspace
 orcamind init
