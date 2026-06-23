@@ -149,7 +149,7 @@ docker compose -f docker-compose.dev.yml logs -f orcamind orcalab orcanet
 
 > After schema changes on a running stack, re-run the relevant migration command while services are up — the migration runners use `NullPool` and exit cleanly without disrupting live connections:
 >
-> - OrcaMind: `docker compose ... run --rm orcamind python scripts/init_db.py`
+> - OrcaMind: `docker compose -f docker-compose.dev.yml run --rm orcamind python scripts/init_db.py`
 > - Orca Web: `cd packages/orca-web && alembic upgrade head`
 
 The `init_prefect.py` script creates the `orcalab-pool` Prefect work pool (type: `process`) that the `meta_informed_sweep` deployment requires. This is a one-time operation per Prefect server instance.
