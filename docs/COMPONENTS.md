@@ -1320,6 +1320,17 @@ Pydantic-settings `Settings` class with fields for `database_url`, `redis_url`, 
 
 Four SQLAlchemy ORM models: `User` (email, username, hashed_password, role, preferences JSONB, oauth_provider, oauth_id), `UserSession` (user_id FK, refresh_token_hash, expires_at, revoked), `ActivityLog` (user_id FK, action, ip_address, user_agent), `UserBookmark` (user_id FK, resource_type, resource_id, notes).
 
+### Alembic Migrations (`alembic/`)
+
+Async migration environment for the four user-management tables, following the same pattern established by OrcaMind:
+
+- **`alembic.ini`** — points at `alembic/` script location, uses `postgresql+asyncpg` driver targeting `orca_registry`, supports `DATABASE_URL` environment variable override
+- **`alembic/env.py`** — imports `Base.metadata` from `orca_web.models.user`, uses `async_engine_from_config` with `NullPool`, supports both online (asyncpg) and offline (SQL generation) modes
+- **`alembic/script.py.mako`** — Mako template for auto-generated revisions
+- **`alembic/versions/0001_add_user_tables.py`** — creates `users`, `user_sessions`, `activity_log`, and `user_bookmarks` with UUID PKs, `gen_random_uuid()` server defaults, `ON DELETE CASCADE` foreign keys, JSONB columns for preferences/details, and indexes on email, username, jti, user_id, and a composite `(user_id, created_at)` index for efficient history queries; downgrade drops all four tables in reverse dependency order
+
+See [Database](DATABASE.md#orca-web-revision-history) for the full revision history and migration commands.
+
 ### Repositories (`repository/`)
 
 - `UserRepository` — `create`, `get_by_id`, `get_by_email`, `update`
