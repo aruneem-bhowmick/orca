@@ -17,6 +17,7 @@ class Aggregator:
     """Queries OrcaMind, OrcaLab, and OrcaNet in parallel."""
 
     def __init__(self, client: httpx.AsyncClient) -> None:
+        """Bind the aggregator to an httpx async client for upstream calls."""
         self._client = client
 
     async def _safe_get(self, url: str) -> dict[str, Any]:
