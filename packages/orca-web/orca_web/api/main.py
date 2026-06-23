@@ -78,6 +78,7 @@ def create_app() -> FastAPI:
         """Check connectivity to all backing services."""
 
         async def _check_postgres() -> bool:
+            """Execute ``SELECT 1`` to verify PostgreSQL connectivity."""
             try:
                 async with request.app.state.db_sessionmaker() as session:
                     await session.execute(text("SELECT 1"))
@@ -87,6 +88,7 @@ def create_app() -> FastAPI:
                 return False
 
         async def _check_redis() -> bool:
+            """Send a PING command to verify Redis connectivity."""
             try:
                 await request.app.state.redis_client.ping()
                 return True
@@ -95,6 +97,7 @@ def create_app() -> FastAPI:
                 return False
 
         async def _check_upstream(name: str, url: str) -> bool:
+            """GET the ``/health`` endpoint of an upstream service."""
             try:
                 resp = await request.app.state.http_client.get(
                     f"{url}/health", timeout=2.0,
