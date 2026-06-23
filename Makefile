@@ -1,4 +1,4 @@
-.PHONY: install test test-unit test-integration lint format type-check \
+.PHONY: install install-web test test-unit test-integration lint format type-check \
         pre-commit-install docker-up docker-down docker-logs clean help
 
 UV := uv
@@ -11,6 +11,9 @@ install: ## Install all workspace packages in editable mode
 	$(UV) venv
 	$(UV) pip install -e packages/orca-shared
 	$(UV) pip install -e "packages/orcamind[dev]"
+
+install-web: ## Install orca-web package in editable mode
+	$(UV) pip install -e "packages/orca-web[dev]"
 
 test: ## Run all tests with coverage
 	$(UV) run pytest
