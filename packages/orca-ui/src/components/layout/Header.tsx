@@ -5,6 +5,10 @@ export function Header() {
   const { user } = useAuth();
   const [darkMode, setDarkMode] = useState(() => {
     if (typeof window !== "undefined") {
+      const saved = localStorage.getItem("darkMode");
+      if (saved !== null) {
+        return saved === "true";
+      }
       return document.documentElement.classList.contains("dark");
     }
     return false;
@@ -16,6 +20,7 @@ export function Header() {
     } else {
       document.documentElement.classList.remove("dark");
     }
+    localStorage.setItem("darkMode", String(darkMode));
   }, [darkMode]);
 
   return (

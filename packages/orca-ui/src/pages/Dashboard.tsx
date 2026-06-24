@@ -7,7 +7,9 @@ export function Dashboard() {
   const { data: health, isLoading } = useQuery({
     queryKey: ["dashboard-health"],
     queryFn: async () => {
-      const response = await apiClient.get<HealthStatus>("/health");
+      const response = await apiClient.get<HealthStatus>("/health", {
+        validateStatus: (status) => (status >= 200 && status < 300) || status === 503,
+      });
       return response.data;
     },
     refetchInterval: 15_000,

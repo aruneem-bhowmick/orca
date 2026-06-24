@@ -5,7 +5,7 @@ import { ROUTES } from "@/lib/constants";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/Card";
-import type { AxiosError } from "axios";
+import axios from "axios";
 
 function getPasswordStrength(password: string): { score: number; label: string } {
   let score = 0;
@@ -51,8 +51,11 @@ export function Register() {
       await register({ email, username, password });
       navigate(ROUTES.DASHBOARD);
     } catch (err) {
-      const axiosError = err as AxiosError<{ detail: string }>;
-      setError(axiosError.response?.data?.detail || "Registration failed.");
+      if (axios.isAxiosError<{ detail: string }>(err)) {
+        setError(err.response?.data?.detail || "Registration failed.");
+      } else {
+        setError("Registration failed.");
+      }
     } finally {
       setLoading(false);
     }
