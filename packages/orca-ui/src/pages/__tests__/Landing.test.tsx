@@ -1,0 +1,56 @@
+import { describe, it, expect, vi, beforeEach } from "vitest";
+import { screen, waitFor } from "@testing-library/react";
+import { render } from "@/test/test-utils";
+import { Landing } from "@/pages/Landing";
+import apiClient from "@/api/client";
+import { mockHealthStatus } from "@/test/mocks/handlers";
+
+vi.mock("@/api/client", () => ({
+  default: {
+    get: vi.fn(),
+    interceptors: {
+      request: { use: vi.fn(), handlers: [] },
+      response: { use: vi.fn(), handlers: [] },
+    },
+  },
+}));
+
+vi.mock("@/api/auth", () => ({
+  getMe: vi.fn().mockRejectedValue(new Error("No session")),
+}));
+
+describe("Landing page", () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    vi.mocked(apiClient.get).mockResolvedValue({ data: mockHealthStatus });
+  });
+
+  it("renders the hero section", () => {
+    render(<Landing />);
+    expect(screen.getByText("Meta-Learning Platform")).toBeInTheDocument();
+    expect(screen.getByText("Start building")).toBeInTheDocument();
+  });
+
+  it("renders three service cards", () => {
+    render(<Landing />);
+    expect(screen.getByText("OrcaMind")).toBeInTheDocument();
+    expect(screen.getByText("OrcaLab")).toBeInTheDocument();
+    expect(screen.getByText("OrcaNet")).toBeInTheDocument();
+  });
+
+  it("renders navigation links", () => {
+    render(<Landing />);
+    expect(screen.getAllByText("Sign in").length).toBeGreaterThanOrEqual(1);
+    expect(screen.getAllByText("Get started").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("renders health status indicators when data is available", async () => {
+    render(<Landing />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("status-orcamind")).toBeInTheDocument();
+      expect(screen.getByTestId("status-orcalab")).toBeInTheDocument();
+      expect(screen.getByTestId("status-orcanet")).toBeInTheDocument();
+    });
+  });
+});

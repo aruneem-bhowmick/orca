@@ -24,6 +24,8 @@ OrcaLab Dashboard (port 8502) ←─ depends on OrcaLab
 OrcaNet  (port 8002) ←─ depends on postgres, redis, orcamind, orcalab
                                                          ↓    ↓
 Orca Web (port 8003) ←─ depends on postgres, redis, orcamind, orcalab, orcanet
+                                                         ↓
+orca-ui  (port 80)   ←─ nginx static + /api/ proxy to orca-web
 ```
 
 ---
@@ -98,6 +100,34 @@ Orca Web (port 8003) ←─ depends on postgres, redis, orcamind, orcalab, orcan
 | `FRONTEND_URL`        | no       | `http://localhost:5173`                                | Frontend origin for OAuth redirect handling   |
 | `CORS_ORIGINS`        | no       | —                                                      | Comma-separated allowed CORS origins          |
 
+### orca-ui — React SPA (port 80)
+
+| Variable              | Required | Default                  | Description                                   |
+|-----------------------|----------|--------------------------|-----------------------------------------------|
+| `VITE_API_BASE_URL`   | no       | `/api/v1`                | BFF API base URL (compile-time, baked into build) |
+| `VITE_WS_BASE_URL`    | no       | —                        | WebSocket base URL for live experiment metrics |
+
+The orca-ui service is a static nginx container with no runtime environment variables. `VITE_*` vars are compile-time only (injected during `npm run build`). The nginx config proxies `/api/` to `orca-web:8003` and `/ws/` for WebSocket relay.
+
+**Docker Compose entry:**
+
+```yaml
+orca-ui:
+  build:
+    context: packages/orca-ui
+    dockerfile: Dockerfile
+  ports:
+    - "80:80"
+  depends_on:
+    orca-web:
+      condition: service_healthy
+  healthcheck:
+    test: ["CMD", "wget", "-q", "--spider", "http://localhost:80/"]
+    interval: 30s
+    timeout: 3s
+    retries: 3
+```
+
 ---
 
 ## Service Startup Order
@@ -115,6 +145,7 @@ Services must start in dependency order. Docker Compose `depends_on` with `condi
 8. orcalab-dashboard   ← no healthcheck (depends on orcalab)
 9. orcanet         ← healthcheck: httpx GET /health  (depends on postgres, redis, orcamind, orcalab)
 10. orca-web        ← healthcheck: httpx GET /health  (depends on postgres, redis, orcamind, orcalab, orcanet)
+11. orca-ui         ← healthcheck: wget --spider http://localhost:80/  (depends on orca-web)
 ```
 
 Before OrcaMind starts, run the Alembic migrations for both OrcaMind and Orca Web:
@@ -206,6 +237,7 @@ docker compose -f docker-compose.dev.yml run --rm orcamind \
 | OrcaLab API docs      | http://localhost:8001/docs  | Swagger UI for all OrcaLab endpoints        |
 | OrcaNet API docs      | http://localhost:8002/docs  | Swagger UI for all OrcaNet endpoints        |
 | Orca Web BFF docs     | http://localhost:8003/docs  | Swagger UI for auth, dashboard, users, and service proxies (OrcaMind, OrcaLab, OrcaNet) |
+| orca-ui React SPA     | http://localhost:80          | React frontend (production nginx); http://localhost:5173 in dev mode (Vite) |
 | OrcaLab Dashboard     | http://localhost:8502       | Streamlit UI — Live Experiments, Search Progress, Results Explorer, Meta-Analysis |
 | MLflow UI             | http://localhost:5000       | Experiment runs, metrics, model registry    |
 | Prefect UI            | http://localhost:4200       | Flow runs, work pools, deployments          |

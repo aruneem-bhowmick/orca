@@ -1,5 +1,6 @@
 .PHONY: install install-web test test-unit test-integration lint format type-check \
-        pre-commit-install docker-up docker-down docker-logs clean help
+        pre-commit-install docker-up docker-down docker-logs clean help \
+        ui-install ui-dev ui-build ui-test ui-lint
 
 UV := uv
 
@@ -44,6 +45,21 @@ docker-down: ## Stop development services
 
 docker-logs: ## Tail logs from all dev services
 	docker compose -f docker-compose.dev.yml logs -f
+
+ui-install: ## Install orca-ui npm dependencies
+	cd packages/orca-ui && npm ci
+
+ui-dev: ## Start orca-ui dev server (Vite, port 5173)
+	cd packages/orca-ui && npm run dev
+
+ui-build: ## Build orca-ui for production
+	cd packages/orca-ui && npm run build
+
+ui-test: ## Run orca-ui Vitest test suite
+	cd packages/orca-ui && npm test
+
+ui-lint: ## Run orca-ui ESLint and TypeScript checks
+	cd packages/orca-ui && npm run lint && npm run typecheck
 
 clean: ## Remove __pycache__, .pyc, and coverage artifacts
 	find . -type f -name "*.pyc" -delete

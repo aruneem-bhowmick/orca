@@ -67,6 +67,28 @@
 **Next:**
 - Rate limiting middleware
 
+## orca-ui — In Progress
+
+**Done:**
+- Package scaffold: Vite 5, React 18, TypeScript 5.3, Tailwind CSS 3.4, ESLint, Prettier, Vitest, Testing Library
+- TypeScript API types mirroring BFF Pydantic schemas (User, TokenResponse, RegisterRequest, LoginRequest, ProfileUpdate, PaginatedResponse, ActivityLogEntry, Bookmark, HealthStatus)
+- Axios client with JWT token-attachment interceptor, 401 refresh retry (cookie-based), and request queuing during refresh
+- Zustand auth store (user, accessToken, isAuthenticated, setAuth, clearAuth) and useAuth hook (login, register, logout, session restoration via GET /auth/me, isLoading state)
+- shadcn/ui-style base components: Button (6 variants, 4 sizes), Card (5 subcomponents), Input (with label and error support)
+- Layout components: collapsible Sidebar (240px/64px, NavLink items, user avatar with sign-out), Header (dark mode toggle, user email), MainLayout (Sidebar + Header + Outlet)
+- Page components: Landing (hero, service status cards via TanStack Query), Login (email/password form, Google/GitHub OAuth buttons, validation, error display), Register (password strength indicator, 8-char minimum), OAuthCallback (token extraction, session completion), Dashboard (service health cards)
+- React Router 6 routing: public routes (/, /login, /register, /oauth/callback), protected routes under MainLayout (/dashboard, /tasks, /experiments, /sweeps, /transfers, /history, /bookmarks, /settings), ProtectedRoute auth gate with loading spinner
+- Multi-stage Dockerfile (node:20-alpine builder → nginx:alpine runtime) with nginx config for static serving, /api/ proxy to orca-web:8003, /ws/ WebSocket proxy, SPA fallback
+- Makefile targets: ui-install, ui-dev, ui-build, ui-test, ui-lint
+- Test suite: 33 tests across 8 files — auth store (4), API client interceptors (3), auth API functions (7), useAuth hook (5), Login/Register/Landing pages (12), ProtectedRoute (3), Sidebar/Header (8), App routing (4)
+
+**Next:**
+- Rich dashboard with charts (Recharts) and TanStack Query for experiment/sweep/task data
+- WebSocket integration for live experiment metrics
+- Task, Experiment, Sweep, Transfer detail pages
+- History and Bookmarks pages with pagination
+- User settings page with profile editing
+
 ## Platform — Planned
 
 - Kubernetes + Helm charts

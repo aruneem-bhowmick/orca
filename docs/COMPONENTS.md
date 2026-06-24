@@ -1432,6 +1432,91 @@ Authenticated WebSocket proxy that relays live experiment metrics between the br
 
 ---
 
+## `orca-ui` — React Frontend SPA
+
+### Tech Stack
+
+React 18, TypeScript 5.3, Vite 5, Tailwind CSS 3.4, Zustand 4.4, TanStack React Query 5, React Router 6, Axios 1.6, Recharts 2.10, Vitest 1, Testing Library 14.
+
+### Directory Structure
+
+```text
+orca-ui/
+├── src/
+│   ├── api/                     # BFF communication layer
+│   │   ├── types.ts             # TS interfaces mirroring BFF Pydantic schemas (User, TokenResponse, etc.)
+│   │   ├── client.ts            # Axios instance with JWT interceptor and 401 refresh retry
+│   │   └── auth.ts              # login(), register(), refreshToken(), logout(), getMe()
+│   ├── store/
+│   │   └── auth.ts              # Zustand store: user, accessToken, isAuthenticated, setAuth, clearAuth
+│   ├── hooks/
+│   │   └── useAuth.ts           # Wraps Zustand store with login/register/logout + session restore on mount
+│   ├── lib/
+│   │   ├── utils.ts             # cn() (clsx + tailwind-merge), formatDate()
+│   │   └── constants.ts         # API_BASE_URL, ROUTES object
+│   ├── components/
+│   │   ├── ui/                  # shadcn/ui-style: Button (6 variants), Card (5 subcomponents), Input (with label/error)
+│   │   ├── layout/
+│   │   │   ├── Sidebar.tsx      # Collapsible nav (240px/64px), NavLink items, user avatar with sign-out
+│   │   │   ├── Header.tsx       # Top bar with dark mode toggle and user email
+│   │   │   └── MainLayout.tsx   # Sidebar + Header + Outlet content area
+│   │   └── ProtectedRoute.tsx   # Auth gate: loading spinner → redirect to /login or render children
+│   ├── pages/
+│   │   ├── Landing.tsx          # Public hero, service status cards via TanStack Query
+│   │   ├── Login.tsx            # Email/password form, OAuth buttons, error display
+│   │   ├── Register.tsx         # Registration form with password strength indicator
+│   │   ├── OAuthCallback.tsx    # Reads access_token from query params, completes auth
+│   │   └── Dashboard.tsx        # Protected dashboard with service health cards
+│   ├── App.tsx                  # BrowserRouter + QueryClientProvider + route definitions
+│   ├── main.tsx                 # ReactDOM.createRoot entry
+│   └── test/
+│       ├── setup.ts             # @testing-library/jest-dom matchers
+│       ├── test-utils.tsx       # Custom render() wrapping QueryClientProvider + BrowserRouter
+│       └── mocks/handlers.ts    # Mock User, TokenResponse, HealthStatus fixtures
+├── Dockerfile                   # Multi-stage: node:20-alpine → nginx:alpine
+├── nginx.conf                   # /api/ proxy to orca-web:8003, /ws/ WebSocket proxy, SPA fallback
+├── index.html                   # SPA entry with <div id="root">
+└── package.json                 # All deps and scripts (dev, build, test, lint, typecheck)
+```
+
+### API Client Pattern
+
+The Axios client (`api/client.ts`) centralises all BFF communication:
+
+1. **Request interceptor** — attaches `Authorization: Bearer {token}` from the Zustand store on every request.
+2. **Response interceptor** — on 401, queues concurrent requests, attempts `POST /api/v1/auth/refresh` (cookie-based), retries queued requests with the new token. On refresh failure, clears the Zustand store and redirects to `/login`.
+3. **Auth API functions** (`api/auth.ts`) — thin wrappers that call `apiClient.post`/`apiClient.get` and return typed responses.
+
+### Auth Store
+
+Zustand store (`store/auth.ts`) with `user: User | null`, `accessToken: string | null`, `isAuthenticated: boolean`. The `useAuth` hook (`hooks/useAuth.ts`) wraps the store with `login()`, `register()`, `logout()` actions and a `useEffect` that calls `GET /auth/me` on mount to restore sessions. Provides `isLoading` to gate UI rendering during the auth check.
+
+### Routing
+
+React Router 6 with public routes (`/`, `/login`, `/register`, `/oauth/callback`) and protected routes nested under `MainLayout` (`/dashboard`, `/tasks`, `/experiments`, `/sweeps`, `/transfers`, `/history`, `/bookmarks`, `/settings`). `ProtectedRoute` checks `isAuthenticated` and shows a spinner during the initial auth check.
+
+### Layout
+
+`MainLayout` composes `Sidebar` (collapsible, 240px expanded / 64px collapsed) + `Header` (dark mode toggle, user menu) + `<Outlet />` for page content. The sidebar uses React Router `NavLink` for active-state highlighting.
+
+### Dockerfile
+
+Multi-stage build: `node:20-alpine` builder runs `npm ci && npm run build`, producing `dist/`. `nginx:alpine` runtime copies `dist/` to `/usr/share/nginx/html` and the custom `nginx.conf`. The nginx config serves static assets with 1-year cache headers, proxies `/api/` to `orca-web:8003`, proxies `/ws/` with WebSocket upgrade headers, and falls back to `index.html` for all other paths.
+
+### Test Suite
+
+46 tests across 11 test files using Vitest and Testing Library. All BFF calls are mocked — no network access required. Custom `render()` wrapper provides `QueryClientProvider` (retry disabled) and `MemoryRouter`. Tests cover:
+
+- **Store:** `setAuth`, `clearAuth`, `isAuthenticated` derivation (4 tests)
+- **API client:** interceptor token attachment, refresh failure handling (3 tests)
+- **Auth API:** login, register, logout, getMe with 401/409 error propagation (6 tests)
+- **useAuth hook:** login flow, register flow, session restoration, loading states (5 tests)
+- **Pages:** Login form rendering/validation/submission/error (5 tests), Register strength indicator/409 error (4 tests), Landing hero/service cards/health status (4 tests)
+- **Layout:** Sidebar navigation/collapse/expand (5 tests), Header dark mode toggle (3 tests), ProtectedRoute auth gate with post-loading assertions (3 tests)
+- **App:** Route rendering for public and protected paths (4 tests)
+
+---
+
 ## `orcanet` — Cross-Domain Knowledge Transfer Agent
 
 OrcaNet is the third component of the Orca platform. It orchestrates OrcaMind and OrcaLab for cross-domain knowledge transfer: retrieving model configurations from one domain, adapting them to a target task, and validating the result through an OrcaLab experiment. All namespaces are implemented: embeddings (DANN, text, GNN-based architecture embedders), transfer (CKA feature transfer, weight transfer, architecture transfer, multi-task transfer), retrieval (FAISS vector search, metadata filtering, LLM re-ranking), reasoning (LangChain ReAct agent with retry and structured output), and the FastAPI HTTP service on port 8002.

@@ -12,7 +12,8 @@
 ├──────────────────────────────────────────────────────────────────┤
 │                                                                  │
 │   ┌─────────────────────────────────────────────────────┐        │
-│   │  Browser / SPA                                      │        │
+│   │  orca-ui (React SPA)  ─  port 5173 / nginx :80     │        │
+│   │  React 18, Vite, Tailwind CSS, Zustand, TanStack   │        │
 │   └──────────────────────┬──────────────────────────────┘        │
 │                          ↓                                       │
 │   ┌─────────────────────────────────────────────────────┐        │
@@ -42,6 +43,16 @@
 │                                                                  │
 └──────────────────────────────────────────────────────────────────┘
 ```
+
+### orca-ui — React Frontend SPA
+
+The `orca-ui` package is a React 18 + TypeScript single-page application served by Vite in development (port 5173) and nginx in production (port 80). It communicates exclusively with the Orca Web BFF (`/api/v1/*`), never directly with upstream services. Key architectural decisions:
+
+- **Auth:** JWT access token stored in Zustand; refresh token in httponly cookies managed by the BFF. An Axios response interceptor catches 401s, attempts a cookie-based refresh, and retries the original request. On refresh failure, the store is cleared and the user is redirected to `/login`.
+- **State:** Zustand for auth state (synchronous, no persistence — session restored via `GET /auth/me` on mount). TanStack React Query for server state (health, activity, experiments).
+- **Routing:** React Router 6 with a `ProtectedRoute` wrapper that gates authenticated sections behind an auth check with a loading spinner. Public routes: `/`, `/login`, `/register`, `/oauth/callback`. Protected routes nested under `MainLayout` (sidebar + header + outlet).
+- **Styling:** Tailwind CSS 3.4 with CSS custom properties for theming (light/dark). shadcn/ui-style components (Button, Card, Input) with variant support via `clsx` + `tailwind-merge`.
+- **Production serving:** Multi-stage Docker build (node:20-alpine builder → nginx:alpine runtime). nginx proxies `/api/` to `orca-web:8003`, `/ws/` for WebSocket relay, and serves all other paths from `index.html` for SPA fallback routing.
 
 ### Orca Web — Backend for Frontend (BFF)
 
@@ -154,6 +165,23 @@ orca/
 │                   ├── test_search_spaces.py # Create and list search space records
 │                   └── test_websocket.py     # Direct handler invocation — metrics stream, disconnect, terminal status
 │
+│   ├── orca-ui/                       # React Frontend SPA (dev port 5173, prod nginx :80)
+│   │   ├── src/
+│   │   │   ├── api/                   # Axios client, auth API functions, TS type definitions
+│   │   │   ├── store/                 # Zustand auth store
+│   │   │   ├── hooks/                 # useAuth hook (login, register, logout, session restore)
+│   │   │   ├── lib/                   # Utilities (cn, formatDate) and route constants
+│   │   │   ├── components/
+│   │   │   │   ├── ui/               # shadcn/ui-style components (Button, Card, Input)
+│   │   │   │   ├── layout/           # Sidebar, Header, MainLayout (Outlet wrapper)
+│   │   │   │   └── ProtectedRoute.tsx # Auth gate with loading spinner
+│   │   │   ├── pages/                # Landing, Login, Register, OAuthCallback, Dashboard
+│   │   │   └── test/                 # Vitest setup, custom render wrapper, mock fixtures
+│   │   ├── Dockerfile                # Multi-stage: node:20-alpine builder → nginx:alpine runtime
+│   │   ├── nginx.conf                # SPA fallback, /api/ proxy to orca-web, /ws/ WebSocket proxy
+│   │   ├── index.html                # SPA entry
+│   │   └── package.json              # React 18, Vite 5, Tailwind 3.4, Vitest 1
+│   │
 │   ├── orca-web/                      # Backend for Frontend gateway (port 8003)
 │   │   ├── alembic.ini               # Alembic config — asyncpg driver, orca_registry target, DATABASE_URL override
 │   │   ├── alembic/
@@ -269,6 +297,18 @@ orca/
 - **Optuna** for Bayesian (TPE), random, and grid hyperparameter search
 - **CMA-ES** (`cma`) for evolutionary search with covariance matrix adaptation
 - **Prefect 2.x** for experiment orchestration flows and work-pool scheduling
+
+### Frontend (orca-ui)
+
+- **React 18** + **TypeScript 5.3** — UI framework with strict type checking
+- **Vite 5** — build tool and dev server with HMR
+- **Tailwind CSS 3.4** — utility-first CSS framework with dark mode support
+- **Zustand 4.4** — lightweight state management for auth
+- **TanStack React Query 5** — server state management (health, activity, experiments)
+- **React Router 6** — client-side SPA routing
+- **Axios 1.6** — HTTP client with JWT token-refresh interceptors
+- **Recharts 2.10** — charting library for dashboard visualisations
+- **Vitest 1** + **Testing Library** — test runner and React component testing
 
 ### Developer Tooling
 
