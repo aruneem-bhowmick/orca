@@ -1,7 +1,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { useAuthStore } from "@/store/auth";
-import { getMe } from "@/api/auth";
+import { exchangeOAuthCode, getMe } from "@/api/auth";
 import { ROUTES } from "@/lib/constants";
 
 export function OAuthCallback() {
@@ -11,7 +11,7 @@ export function OAuthCallback() {
 
   useEffect(() => {
     async function handleCallback() {
-      const accessToken = searchParams.get("access_token");
+      const provider = searchParams.get("provider");
       const errParam = searchParams.get("error");
 
       if (errParam) {
@@ -19,15 +19,16 @@ export function OAuthCallback() {
         return;
       }
 
-      if (!accessToken) {
-        setError("No access token received.");
+      if (!provider) {
+        setError("Missing OAuth provider.");
         return;
       }
 
       try {
-        useAuthStore.getState().setAuth({ user_id: "", email: "", username: "", role: "", preferences: null }, accessToken);
+        const tokenResponse = await exchangeOAuthCode(provider, searchParams);
+        useAuthStore.getState().setToken(tokenResponse.access_token);
         const user = await getMe();
-        useAuthStore.getState().setAuth(user, accessToken);
+        useAuthStore.getState().setAuth(user, tokenResponse.access_token);
         navigate(ROUTES.DASHBOARD, { replace: true });
       } catch {
         setError("Failed to complete authentication.");

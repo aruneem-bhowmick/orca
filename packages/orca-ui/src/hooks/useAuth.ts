@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useState } from "react";
+import axios from "axios";
 import { useAuthStore } from "@/store/auth";
 import * as authApi from "@/api/auth";
 import type { LoginRequest, RegisterRequest } from "@/api/types";
@@ -19,9 +20,12 @@ export function useAuth() {
             setAuth(me, token);
           }
         }
-      } catch {
+      } catch (err) {
         if (!cancelled) {
-          clearAuth();
+          const status = axios.isAxiosError(err) ? err.response?.status : undefined;
+          if (status === 401 || status === 403) {
+            clearAuth();
+          }
         }
       } finally {
         if (!cancelled) {

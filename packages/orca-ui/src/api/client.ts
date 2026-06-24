@@ -1,8 +1,7 @@
 import axios from "axios";
 import type { AxiosError, InternalAxiosRequestConfig } from "axios";
 import { useAuthStore } from "@/store/auth";
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api/v1";
+import { API_BASE_URL, ROUTES } from "@/lib/constants";
 
 const apiClient = axios.create({
   baseURL: API_BASE_URL,
@@ -60,17 +59,23 @@ apiClient.interceptors.response.use(
         const response = await axios.post(
           `${API_BASE_URL}/auth/refresh`,
           {},
-          { withCredentials: true },
+          { withCredentials: true, timeout: 10_000 },
         );
         const { access_token } = response.data;
-        useAuthStore.getState().setAuth(useAuthStore.getState().user!, access_token);
+        const store = useAuthStore.getState();
+        const user = store.user;
+        if (user) {
+          store.setAuth(user, access_token);
+        } else {
+          store.setToken(access_token);
+        }
         originalRequest.headers.Authorization = `Bearer ${access_token}`;
         processQueue(null, access_token);
         return apiClient(originalRequest);
       } catch (refreshError) {
         processQueue(refreshError, null);
         useAuthStore.getState().clearAuth();
-        window.location.href = "/login";
+        window.location.href = ROUTES.LOGIN;
         return Promise.reject(refreshError);
       } finally {
         isRefreshing = false;
