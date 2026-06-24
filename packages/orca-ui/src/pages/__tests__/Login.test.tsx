@@ -59,6 +59,7 @@ describe("Login page", () => {
 
   it("displays error on 401 response", async () => {
     vi.mocked(authApi.login).mockRejectedValueOnce({
+      isAxiosError: true,
       response: { status: 401, data: { detail: "Invalid credentials" } },
     });
 

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen } from "@testing-library/react";
+import { screen, waitFor } from "@testing-library/react";
 import { render } from "@/test/test-utils";
 import { Landing } from "@/pages/Landing";
 import apiClient from "@/api/client";
@@ -42,5 +42,15 @@ describe("Landing page", () => {
     render(<Landing />);
     expect(screen.getAllByText("Sign in").length).toBeGreaterThanOrEqual(1);
     expect(screen.getAllByText("Get started").length).toBeGreaterThanOrEqual(1);
+  });
+
+  it("renders health status indicators when data is available", async () => {
+    render(<Landing />);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("status-orcamind")).toBeInTheDocument();
+      expect(screen.getByTestId("status-orcalab")).toBeInTheDocument();
+      expect(screen.getByTestId("status-orcanet")).toBeInTheDocument();
+    });
   });
 });

@@ -60,6 +60,7 @@ describe("Register page", () => {
 
   it("displays 409 error on duplicate email", async () => {
     vi.mocked(authApi.register).mockRejectedValueOnce({
+      isAxiosError: true,
       response: { status: 409, data: { detail: "Email already registered" } },
     });
 

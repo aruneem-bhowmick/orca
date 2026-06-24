@@ -5,6 +5,11 @@ import { useAuthStore } from "@/store/auth";
 import { mockUser } from "@/test/mocks/handlers";
 import type { InternalAxiosRequestConfig } from "axios";
 
+interface InterceptorHandler<T> {
+  fulfilled: (value: T) => T | Promise<T>;
+  rejected?: (error: unknown) => unknown;
+}
+
 vi.mock("axios", async () => {
   const actual = await vi.importActual<typeof import("axios")>("axios");
   return {
@@ -29,6 +34,14 @@ describe("API client interceptors", () => {
     vi.restoreAllMocks();
   });
 
+  function getRequestHandlers() {
+    return (apiClient.interceptors.request as unknown as { handlers: InterceptorHandler<InternalAxiosRequestConfig>[] }).handlers;
+  }
+
+  function getResponseHandlers() {
+    return (apiClient.interceptors.response as unknown as { handlers: InterceptorHandler<unknown>[] }).handlers;
+  }
+
   it("attaches Authorization header when token is present", async () => {
     useAuthStore.getState().setAuth(mockUser, "my-jwt-token");
 
@@ -41,14 +54,13 @@ describe("API client interceptors", () => {
       },
     };
 
-    // Simulate the request interceptor
-    const interceptor = apiClient.interceptors.request.handlers?.[0];
-    if (interceptor?.fulfilled) {
-      const result = (await interceptor.fulfilled(
-        config as unknown as InternalAxiosRequestConfig,
-      )) as InternalAxiosRequestConfig;
-      expect(result.headers.Authorization).toBe("Bearer my-jwt-token");
-    }
+    const handlers = getRequestHandlers();
+    expect(handlers.length).toBeGreaterThan(0);
+
+    const result = (await handlers[0].fulfilled(
+      config as unknown as InternalAxiosRequestConfig,
+    )) as InternalAxiosRequestConfig;
+    expect(result.headers.Authorization).toBe("Bearer my-jwt-token");
   });
 
   it("does not attach Authorization header when no token", async () => {
@@ -58,13 +70,11 @@ describe("API client interceptors", () => {
       },
     };
 
-    const interceptor = apiClient.interceptors.request.handlers?.[0];
-    if (interceptor?.fulfilled) {
-      const result = (await interceptor.fulfilled(
-        config as unknown as InternalAxiosRequestConfig,
-      )) as InternalAxiosRequestConfig;
-      expect(result.headers.Authorization).toBeUndefined();
-    }
+    const handlers = getRequestHandlers();
+    const result = (await handlers[0].fulfilled(
+      config as unknown as InternalAxiosRequestConfig,
+    )) as InternalAxiosRequestConfig;
+    expect(result.headers.Authorization).toBeUndefined();
   });
 
   it("clears auth and redirects on refresh failure", async () => {
@@ -73,25 +83,22 @@ describe("API client interceptors", () => {
     const mockPost = vi.mocked(axios.post);
     mockPost.mockRejectedValueOnce(new Error("refresh failed"));
 
-    const originalLocation = window.location.href;
+    const handlers = getResponseHandlers();
+    expect(handlers.length).toBeGreaterThan(0);
+    expect(handlers[0].rejected).toBeInstanceOf(Function);
 
-    // Simulate 401 response interceptor error path
-    const responseInterceptor = apiClient.interceptors.response.handlers?.[0];
-    if (responseInterceptor?.rejected) {
-      const error = {
-        response: { status: 401 },
-        config: { headers: { Authorization: "" }, _retry: false },
-      };
+    const error = {
+      response: { status: 401 },
+      config: { headers: { Authorization: "" }, _retry: false },
+    };
 
-      try {
-        await responseInterceptor.rejected(error);
-      } catch {
-        // Expected to reject
-      }
+    try {
+      await handlers[0].rejected!(error);
+    } catch {
+      // Expected to reject
     }
 
-    // Auth state check - if refresh was attempted and failed, auth should be cleared
-    // This is a structural test verifying the interceptor chain exists
-    expect(originalLocation).toBeDefined();
+    expect(useAuthStore.getState().isAuthenticated).toBe(false);
+    expect(useAuthStore.getState().accessToken).toBeNull();
   });
 });

@@ -1,13 +1,11 @@
 import { type FormEvent, useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
-import { ROUTES } from "@/lib/constants";
+import { API_BASE_URL, ROUTES } from "@/lib/constants";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/Card";
-import type { AxiosError } from "axios";
-
-const API_BASE_URL = import.meta.env.VITE_API_BASE_URL || "/api/v1";
+import axios from "axios";
 
 export function Login() {
   const navigate = useNavigate();
@@ -31,8 +29,11 @@ export function Login() {
       await login({ email, password });
       navigate(ROUTES.DASHBOARD);
     } catch (err) {
-      const axiosError = err as AxiosError<{ detail: string }>;
-      setError(axiosError.response?.data?.detail || "Invalid credentials.");
+      if (axios.isAxiosError<{ detail: string }>(err)) {
+        setError(err.response?.data?.detail || "Invalid credentials.");
+      } else {
+        setError("Invalid credentials.");
+      }
     } finally {
       setLoading(false);
     }

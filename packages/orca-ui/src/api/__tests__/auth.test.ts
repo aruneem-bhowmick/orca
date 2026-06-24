@@ -39,13 +39,16 @@ describe("auth API functions", () => {
     });
 
     it("propagates 401 errors from the BFF", async () => {
-      vi.mocked(apiClient.post).mockRejectedValueOnce({
+      const error = {
         response: { status: 401, data: { detail: "Invalid credentials" } },
-      });
+      };
+      vi.mocked(apiClient.post).mockRejectedValueOnce(error);
 
       await expect(
         login({ email: "wrong@example.com", password: "wrong" }),
-      ).rejects.toBeDefined();
+      ).rejects.toMatchObject({
+        response: { status: 401, data: { detail: "Invalid credentials" } },
+      });
     });
   });
 
@@ -68,9 +71,10 @@ describe("auth API functions", () => {
     });
 
     it("propagates 409 errors on duplicate email", async () => {
-      vi.mocked(apiClient.post).mockRejectedValueOnce({
+      const error = {
         response: { status: 409, data: { detail: "Email already registered" } },
-      });
+      };
+      vi.mocked(apiClient.post).mockRejectedValueOnce(error);
 
       await expect(
         register({
@@ -78,7 +82,9 @@ describe("auth API functions", () => {
           username: "existing",
           password: "password123",
         }),
-      ).rejects.toBeDefined();
+      ).rejects.toMatchObject({
+        response: { status: 409, data: { detail: "Email already registered" } },
+      });
     });
   });
 
