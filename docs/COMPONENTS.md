@@ -1505,14 +1505,14 @@ Multi-stage build: `node:20-alpine` builder runs `npm ci && npm run build`, prod
 
 ### Test Suite
 
-33 tests across 8 test files using Vitest and Testing Library. All BFF calls are mocked — no network access required. Custom `render()` wrapper provides `QueryClientProvider` (retry disabled) and `BrowserRouter`. Tests cover:
+46 tests across 11 test files using Vitest and Testing Library. All BFF calls are mocked — no network access required. Custom `render()` wrapper provides `QueryClientProvider` (retry disabled) and `MemoryRouter`. Tests cover:
 
 - **Store:** `setAuth`, `clearAuth`, `isAuthenticated` derivation (4 tests)
 - **API client:** interceptor token attachment, refresh failure handling (3 tests)
-- **Auth API:** login, register, logout, getMe with 401/409 error propagation (7 tests)
+- **Auth API:** login, register, logout, getMe with 401/409 error propagation (6 tests)
 - **useAuth hook:** login flow, register flow, session restoration, loading states (5 tests)
-- **Pages:** Login form rendering/validation/submission/error, Register strength indicator/409 error, Landing hero/service cards (12 tests)
-- **Layout:** Sidebar navigation/collapse/expand, Header dark mode toggle, ProtectedRoute auth gate (11 tests)
+- **Pages:** Login form rendering/validation/submission/error (5 tests), Register strength indicator/409 error (4 tests), Landing hero/service cards/health status (4 tests)
+- **Layout:** Sidebar navigation/collapse/expand (5 tests), Header dark mode toggle (3 tests), ProtectedRoute auth gate with post-loading assertions (3 tests)
 - **App:** Route rendering for public and protected paths (4 tests)
 
 ---
