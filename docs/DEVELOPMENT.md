@@ -252,7 +252,7 @@ cd packages/orca-ui && npm test
 # orca-ui — layout tests only (Sidebar, Header, MainLayout, Breadcrumbs)
 cd packages/orca-ui && npx vitest run src/components/layout/__tests__/
 
-# orca-ui — route map tests only (all 13 protected routes)
+# orca-ui — route map tests only (12 authenticated route renders + 1 redirect)
 cd packages/orca-ui && npx vitest run src/__tests__/Routes.test.tsx
 
 # orca-ui — constants and navigation structure tests only
@@ -272,7 +272,7 @@ make ui-test
 make ui-lint
 ```
 
-The Python test suite spans 80+ test files across unit, integration, performance, deployment-validation, proxy, and scripts categories. The orca-ui frontend adds 16 test files with 114 tests using Vitest and Testing Library.
+The Python test suite spans 80+ test files across unit, integration, performance, deployment-validation, proxy, and scripts categories. The orca-ui frontend adds 16 test files with 116 tests using Vitest and Testing Library.
 
 The OrcaLab API integration tests run without a live database, Prefect server, or MLflow instance. An `ASGITransport` client fixture pre-populates `app.state` manually (bypassing the ASGI lifespan) and overrides all dependency providers via `dependency_overrides`, so tests exercise the full request/response cycle including middleware, routing, and validation while every external call goes to an `AsyncMock`.
 

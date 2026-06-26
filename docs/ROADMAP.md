@@ -80,7 +80,7 @@
 - React Router 6 routing with service-scoped hierarchy: public routes (/, /login, /register, /oauth/callback), protected routes under MainLayout (/dashboard, /dashboard/orcamind/tasks, /dashboard/orcamind/tasks/:id, /dashboard/orcalab/experiments, /dashboard/orcalab/experiments/:id, /dashboard/orcalab/sweeps, /dashboard/orcanet/transfer, /dashboard/orcanet/retrieve, /history, /history/tasks, /history/experiments, /bookmarks, /profile), ProtectedRoute auth gate with loading spinner
 - Multi-stage Dockerfile (node:20-alpine builder → nginx:alpine runtime) with nginx config for static serving, /api/ proxy to orca-web:8003, /ws/ WebSocket proxy, SPA fallback
 - Makefile targets: ui-install, ui-dev, ui-build, ui-test, ui-lint
-- Test suite: 114 tests across 16 files — auth store (6), API client interceptors (3), auth API functions (8), useAuth hook (7), Login/Register/OAuthCallback pages (23), Landing (7), ProtectedRoute (3), Sidebar (8), Header (5), MainLayout (4), Breadcrumbs (9), ProtectedRoute (3), App routing (4), Route map (13), Constants (14)
+- Test suite: 116 tests across 16 files — auth store (6), API client interceptors (3), auth API functions (8), useAuth hook (7), Login/Register/OAuthCallback pages (23), Landing (7), ProtectedRoute (3), Sidebar (8), Header (5), MainLayout (4), Breadcrumbs (9), App routing (4), Route map (13), Constants (16)
 
 **Next:**
 - Rich dashboard with charts (Recharts) and TanStack Query for experiment/sweep/task data
