@@ -6,7 +6,7 @@
  *
  * @module test/mocks/handlers
  */
-import type { User, TokenResponse, HealthStatus } from "@/api/types";
+import type { User, TokenResponse, HealthStatus, DashboardStats } from "@/api/types";
 
 /** Mock authenticated user profile. */
 export const mockUser: User = {
@@ -33,4 +33,11 @@ export const mockHealthStatus: HealthStatus = {
     orcalab: true,
     orcanet: true,
   },
+};
+
+/** Mock dashboard statistics for the landing page live counters. */
+export const mockDashboardStats: DashboardStats = {
+  tasks_registered: 42,
+  experiments_run: 128,
+  transfers_scored: 56,
 };
