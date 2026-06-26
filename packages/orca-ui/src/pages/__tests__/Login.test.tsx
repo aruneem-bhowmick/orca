@@ -79,4 +79,47 @@ describe("Login page", () => {
     expect(screen.getByRole("button", { name: "Google" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "GitHub" })).toBeInTheDocument();
   });
+
+  it("shows validation error for invalid email format", async () => {
+    render(<Login />);
+
+    // "user@example" passes HTML5 email validation but fails the app's
+    // stricter regex that requires a dot in the domain part.
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "user@example" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "password123" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("login-error")).toHaveTextContent(
+        "Please enter a valid email address.",
+      );
+    });
+
+    expect(authApi.login).not.toHaveBeenCalled();
+  });
+
+  it("displays network error when BFF is unreachable", async () => {
+    const networkError = new Error("Network Error");
+    Object.assign(networkError, { isAxiosError: true, response: undefined });
+    vi.mocked(authApi.login).mockRejectedValueOnce(networkError);
+
+    render(<Login />);
+
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "test@example.com" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "password123" } });
+    fireEvent.click(screen.getByRole("button", { name: "Sign in" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("login-error")).toHaveTextContent(
+        "Network error. Please try again.",
+      );
+    });
+  });
+
+  it("renders link to registration page", () => {
+    render(<Login />);
+    const registerLink = screen.getByText("Register");
+    expect(registerLink).toBeInTheDocument();
+    expect(registerLink.closest("a")).toHaveAttribute("href", "/register");
+  });
 });

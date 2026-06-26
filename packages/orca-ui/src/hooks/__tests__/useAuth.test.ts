@@ -10,6 +10,7 @@ vi.mock("@/api/auth", () => ({
   register: vi.fn(),
   logout: vi.fn(),
   getMe: vi.fn(),
+  refreshToken: vi.fn(),
 }));
 
 describe("useAuth", () => {
@@ -100,5 +101,45 @@ describe("useAuth", () => {
 
     expect(authApi.logout).toHaveBeenCalled();
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
+  });
+
+  it("refreshToken calls API and updates stored token", async () => {
+    vi.mocked(authApi.getMe).mockRejectedValueOnce(new Error("No session"));
+    vi.mocked(authApi.refreshToken).mockResolvedValueOnce({
+      access_token: "new-refreshed-token",
+      token_type: "bearer",
+    });
+
+    useAuthStore.getState().setAuth(mockUser, "old-token");
+
+    const { result } = renderHook(() => useAuth());
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    await result.current.refreshToken();
+
+    expect(authApi.refreshToken).toHaveBeenCalled();
+    expect(useAuthStore.getState().accessToken).toBe("new-refreshed-token");
+  });
+
+  it("logout clears auth even when API call fails", async () => {
+    vi.mocked(authApi.getMe).mockRejectedValueOnce(new Error("No session"));
+    vi.mocked(authApi.logout).mockRejectedValueOnce(new Error("Network error"));
+
+    useAuthStore.getState().setAuth(mockUser, "tok");
+
+    const { result } = renderHook(() => useAuth());
+
+    await waitFor(() => {
+      expect(result.current.isLoading).toBe(false);
+    });
+
+    // The logout function re-throws after clearing auth in the finally block
+    await expect(result.current.logout()).rejects.toThrow("Network error");
+
+    expect(useAuthStore.getState().isAuthenticated).toBe(false);
+    expect(useAuthStore.getState().user).toBeNull();
   });
 });

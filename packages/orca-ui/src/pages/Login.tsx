@@ -6,7 +6,17 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/Card";
 import axios from "axios";
+import { EMAIL_REGEX } from "@/lib/utils";
 
+/**
+ * Login page component for email/password authentication.
+ *
+ * Provides a sign-in form with client-side validation (email format,
+ * password non-empty), inline error display for 401 responses, OAuth
+ * buttons for Google and GitHub, and a link to the registration page.
+ * On successful login, stores the user and access token in the auth
+ * store and redirects to the dashboard.
+ */
 export function Login() {
   const navigate = useNavigate();
   const { login } = useAuth();
@@ -24,13 +34,22 @@ export function Login() {
       return;
     }
 
+    if (!EMAIL_REGEX.test(email)) {
+      setError("Please enter a valid email address.");
+      return;
+    }
+
     setLoading(true);
     try {
       await login({ email, password });
       navigate(ROUTES.DASHBOARD);
     } catch (err) {
       if (axios.isAxiosError<{ detail: string }>(err)) {
-        setError(err.response?.data?.detail || "Invalid credentials.");
+        if (err.response) {
+          setError(err.response.data?.detail || "Invalid credentials.");
+        } else {
+          setError("Network error. Please try again.");
+        }
       } else {
         setError("Invalid credentials.");
       }

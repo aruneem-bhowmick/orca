@@ -38,4 +38,26 @@ describe("useAuthStore", () => {
     useAuthStore.getState().clearAuth();
     expect(useAuthStore.getState().isAuthenticated).toBe(false);
   });
+
+  it("setToken updates only the access token", () => {
+    useAuthStore.getState().setAuth(mockUser, "original-token");
+    useAuthStore.getState().setToken("refreshed-token");
+
+    const state = useAuthStore.getState();
+    expect(state.accessToken).toBe("refreshed-token");
+    expect(state.user).toEqual(mockUser);
+    expect(state.isAuthenticated).toBe(true);
+  });
+
+  it("setUser updates user, marks as authenticated, and preserves existing token", () => {
+    useAuthStore.getState().setAuth(mockUser, "existing-token");
+
+    const updatedUser = { ...mockUser, username: "updated-name" };
+    useAuthStore.getState().setUser(updatedUser);
+
+    const state = useAuthStore.getState();
+    expect(state.user).toEqual(updatedUser);
+    expect(state.isAuthenticated).toBe(true);
+    expect(state.accessToken).toBe("existing-token");
+  });
 });

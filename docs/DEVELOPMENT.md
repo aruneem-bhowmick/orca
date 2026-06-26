@@ -260,7 +260,7 @@ make ui-test
 make ui-lint
 ```
 
-The Python test suite spans 80+ test files across unit, integration, performance, deployment-validation, proxy, and scripts categories. The orca-ui frontend adds 11 test files with 46 tests using Vitest and Testing Library.
+The Python test suite spans 80+ test files across unit, integration, performance, deployment-validation, proxy, and scripts categories. The orca-ui frontend adds 12 test files with 66 tests using Vitest and Testing Library.
 
 The OrcaLab API integration tests run without a live database, Prefect server, or MLflow instance. An `ASGITransport` client fixture pre-populates `app.state` manually (bypassing the ASGI lifespan) and overrides all dependency providers via `dependency_overrides`, so tests exercise the full request/response cycle including middleware, routing, and validation while every external call goes to an `AsyncMock`.
 
@@ -270,11 +270,14 @@ The visualization unit tests run without a live Streamlit or Plotly install. A s
 
 **orca-ui test patterns:**
 
-- *Custom render wrapper* — `test/test-utils.tsx` exports a `render()` function that wraps the component under test with `QueryClientProvider` (retry disabled, gcTime 0 for test isolation) and `BrowserRouter`. All page and component tests import this wrapper rather than the raw `@testing-library/react` `render`.
+- *Custom render wrapper* — `test/test-utils.tsx` exports a `render()` function that wraps the component under test with `QueryClientProvider` (retry disabled, gcTime 0 for test isolation) and `MemoryRouter`. All page and component tests import this wrapper rather than the raw `@testing-library/react` `render`.
 - *Mock API module pattern* — `vi.mock("@/api/auth")` replaces the entire auth API module with vitest mocks. Each test configures `vi.mocked(authApi.login).mockResolvedValueOnce(...)` for the specific scenario, avoiding any real HTTP calls.
 - *Zustand store reset* — each test suite calls `useAuthStore.getState().clearAuth()` in `beforeEach` to prevent auth state leaking between tests. Tests that need an authenticated user call `setAuth(mockUser, "test-token")` explicitly.
 - *Form interaction via Testing Library* — tests use `fireEvent.change()` and `fireEvent.click()` on elements found by `screen.getByLabelText()` and `screen.getByRole()` respectively, following Testing Library's accessible query priority. `waitFor()` handles async state updates from API calls.
-- *data-testid escape hatches* — components use `data-testid` attributes (`auth-loading`, `login-error`, `sidebar-toggle`, `dark-mode-toggle`, `service-cards`) only where accessible queries are not practical (e.g. distinguishing between multiple error messages or finding structural containers).
+- *data-testid escape hatches* — components use `data-testid` attributes (`auth-loading`, `login-error`, `register-error`, `oauth-error`, `sidebar-toggle`, `dark-mode-toggle`, `service-cards`, `strength-label`, `strength-bar`) only where accessible queries are not practical (e.g. distinguishing between multiple error messages or finding structural containers).
+- *HTML5 validation awareness* — Login email format tests use `"user@example"` (passes HTML5 `type="email"` validation but fails the app's stricter regex requiring a dot in the domain) rather than `"not-an-email"` which would be blocked by jsdom's native form validation before the `onSubmit` handler fires.
+- *OAuthCallback route testing* — OAuthCallback tests render within a full `MemoryRouter` with explicit routes for `/oauth/callback`, `/dashboard`, and `/login`, allowing navigation assertions without relying on `window.location` which jsdom does not fully implement.
+- *JSDoc coverage* — all auth-related modules (API functions, store, hook, pages, components, utilities, test infrastructure) have comprehensive JSDoc docstrings documenting parameters, return types, error conditions, and architectural context.
 
 OrcaMind integration tests auto-skip when their target service port is unreachable — run `make docker-up` first to exercise them.
 
