@@ -4,6 +4,7 @@ import { render } from "@/test/test-utils";
 import { Register } from "@/pages/Register";
 import * as authApi from "@/api/auth";
 import { useAuthStore } from "@/store/auth";
+import { mockTokenResponse, mockUser } from "@/test/mocks/handlers";
 
 vi.mock("@/api/auth", () => ({
   login: vi.fn(),
@@ -76,5 +77,63 @@ describe("Register page", () => {
     await waitFor(() => {
       expect(screen.getByTestId("register-error")).toHaveTextContent("Email already registered");
     });
+  });
+
+  it("displays 409 error on duplicate username", async () => {
+    vi.mocked(authApi.register).mockRejectedValueOnce({
+      isAxiosError: true,
+      response: { status: 409, data: { detail: "Username taken" } },
+    });
+
+    render(<Register />);
+
+    fireEvent.change(screen.getByLabelText("Email"), {
+      target: { value: "unique@example.com" },
+    });
+    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "taken_user" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "password123" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("register-error")).toHaveTextContent("Username taken");
+    });
+  });
+
+  it("calls register API and stores auth on successful registration", async () => {
+    vi.mocked(authApi.register).mockResolvedValueOnce(mockTokenResponse);
+    vi.mocked(authApi.getMe).mockResolvedValueOnce(mockUser);
+
+    render(<Register />);
+
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "new@example.com" } });
+    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "newuser" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "SecurePass1!" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+
+    await waitFor(() => {
+      expect(authApi.register).toHaveBeenCalledWith({
+        email: "new@example.com",
+        username: "newuser",
+        password: "SecurePass1!",
+      });
+    });
+  });
+
+  it("shows validation error when all fields are empty", async () => {
+    render(<Register />);
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("register-error")).toHaveTextContent(
+        "All fields are required.",
+      );
+    });
+  });
+
+  it("renders link to login page", () => {
+    render(<Register />);
+    const loginLink = screen.getByText("Sign in");
+    expect(loginLink).toBeInTheDocument();
+    expect(loginLink.closest("a")).toHaveAttribute("href", "/login");
   });
 });
