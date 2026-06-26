@@ -101,6 +101,9 @@ describe("Register page", () => {
 
   it("calls register API and stores auth on successful registration", async () => {
     vi.mocked(authApi.register).mockResolvedValueOnce(mockTokenResponse);
+    // Two getMe mocks: first consumed by mount-time restoreSession (rejected),
+    // second used by the register flow after successful registration.
+    vi.mocked(authApi.getMe).mockRejectedValueOnce(new Error("No session"));
     vi.mocked(authApi.getMe).mockResolvedValueOnce(mockUser);
 
     render(<Register />);
