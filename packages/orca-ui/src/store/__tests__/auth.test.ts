@@ -49,12 +49,15 @@ describe("useAuthStore", () => {
     expect(state.isAuthenticated).toBe(true);
   });
 
-  it("setUser updates user and marks as authenticated", () => {
-    useAuthStore.getState().setUser(mockUser);
+  it("setUser updates user, marks as authenticated, and preserves existing token", () => {
+    useAuthStore.getState().setAuth(mockUser, "existing-token");
+
+    const updatedUser = { ...mockUser, username: "updated-name" };
+    useAuthStore.getState().setUser(updatedUser);
 
     const state = useAuthStore.getState();
-    expect(state.user).toEqual(mockUser);
+    expect(state.user).toEqual(updatedUser);
     expect(state.isAuthenticated).toBe(true);
-    expect(state.accessToken).toBeNull();
+    expect(state.accessToken).toBe("existing-token");
   });
 });
