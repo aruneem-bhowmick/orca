@@ -2,6 +2,13 @@ import { Outlet } from "react-router-dom";
 import { Sidebar } from "./Sidebar";
 import { Header } from "./Header";
 
+/**
+ * Main application layout wrapping all protected routes.
+ *
+ * Composes the collapsible sidebar, top header bar, and a scrollable
+ * content area that renders the matched child route via React Router's
+ * `<Outlet />`. The layout fills the full viewport height.
+ */
 export function MainLayout() {
   return (
     <div className="flex h-screen overflow-hidden">
