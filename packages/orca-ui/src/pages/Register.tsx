@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/Card";
 import axios from "axios";
+import { EMAIL_REGEX } from "@/lib/utils";
 
 /**
  * Compute a password strength score (0–5) based on length,
@@ -56,6 +57,11 @@ export function Register() {
 
     if (!email || !username || !password) {
       setError("All fields are required.");
+      return;
+    }
+
+    if (!EMAIL_REGEX.test(email)) {
+      setError("Please enter a valid email address.");
       return;
     }
 

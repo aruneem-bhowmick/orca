@@ -6,9 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/Card";
 import axios from "axios";
-
-/** Regex pattern for basic email format validation. */
-const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+import { EMAIL_REGEX } from "@/lib/utils";
 
 /**
  * Login page component for email/password authentication.

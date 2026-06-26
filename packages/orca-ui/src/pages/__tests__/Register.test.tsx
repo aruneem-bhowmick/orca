@@ -44,6 +44,22 @@ describe("Register page", () => {
     expect(strengthBars.length).toBe(5);
   });
 
+  it("shows validation error for invalid email format", async () => {
+    render(<Register />);
+
+    fireEvent.change(screen.getByLabelText("Email"), { target: { value: "user@example" } });
+    fireEvent.change(screen.getByLabelText("Username"), { target: { value: "newuser" } });
+    fireEvent.change(screen.getByLabelText("Password"), { target: { value: "ValidPass1!" } });
+    fireEvent.click(screen.getByRole("button", { name: "Create account" }));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("register-error")).toHaveTextContent(
+        "Please enter a valid email address.",
+      );
+    });
+    expect(authApi.register).not.toHaveBeenCalled();
+  });
+
   it("shows validation error when password is too short", async () => {
     render(<Register />);
 

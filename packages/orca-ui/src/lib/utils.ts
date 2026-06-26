@@ -20,6 +20,9 @@ export function cn(...inputs: ClassValue[]) {
   return twMerge(clsx(inputs));
 }
 
+/** Regex pattern for basic email format validation (user@domain.tld). */
+export const EMAIL_REGEX = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
 /**
  * Format an ISO 8601 date string into a human-readable form.
  *
