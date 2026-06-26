@@ -1446,11 +1446,11 @@ orca-ui/
 │   ├── api/                     # BFF communication layer
 │   │   ├── types.ts             # TS interfaces mirroring BFF Pydantic schemas (User, TokenResponse, etc.)
 │   │   ├── client.ts            # Axios instance with JWT interceptor and 401 refresh retry
-│   │   └── auth.ts              # login(), register(), refreshToken(), logout(), getMe()
+│   │   └── auth.ts              # login(), register(), refreshToken(), logout(), getMe(), exchangeOAuthCode()
 │   ├── store/
-│   │   └── auth.ts              # Zustand store: user, accessToken, isAuthenticated, setAuth, clearAuth
+│   │   └── auth.ts              # Zustand store: user, accessToken, isAuthenticated, setAuth, setToken, setUser, clearAuth
 │   ├── hooks/
-│   │   └── useAuth.ts           # Wraps Zustand store with login/register/logout + session restore on mount
+│   │   └── useAuth.ts           # Wraps Zustand store with login/register/logout/refreshToken + session restore on mount
 │   ├── lib/
 │   │   ├── utils.ts             # cn() (clsx + tailwind-merge), formatDate()
 │   │   └── constants.ts         # API_BASE_URL, ROUTES object
@@ -1463,9 +1463,9 @@ orca-ui/
 │   │   └── ProtectedRoute.tsx   # Auth gate: loading spinner → redirect to /login or render children
 │   ├── pages/
 │   │   ├── Landing.tsx          # Public hero, service status cards via TanStack Query
-│   │   ├── Login.tsx            # Email/password form, OAuth buttons, error display
-│   │   ├── Register.tsx         # Registration form with password strength indicator
-│   │   ├── OAuthCallback.tsx    # Reads access_token from query params, completes auth
+│   │   ├── Login.tsx            # Email/password form with format validation, OAuth buttons, error display
+│   │   ├── Register.tsx         # Registration form with password strength indicator (length/case/digits/special)
+│   │   ├── OAuthCallback.tsx    # Reads provider and code from query params, exchanges for token via BFF
 │   │   └── Dashboard.tsx        # Protected dashboard with service health cards
 │   ├── App.tsx                  # BrowserRouter + QueryClientProvider + route definitions
 │   ├── main.tsx                 # ReactDOM.createRoot entry
@@ -1489,7 +1489,13 @@ The Axios client (`api/client.ts`) centralises all BFF communication:
 
 ### Auth Store
 
-Zustand store (`store/auth.ts`) with `user: User | null`, `accessToken: string | null`, `isAuthenticated: boolean`. The `useAuth` hook (`hooks/useAuth.ts`) wraps the store with `login()`, `register()`, `logout()` actions and a `useEffect` that calls `GET /auth/me` on mount to restore sessions. Provides `isLoading` to gate UI rendering during the auth check.
+Zustand store (`store/auth.ts`) with `user: User | null`, `accessToken: string | null`, `isAuthenticated: boolean`. Actions: `setAuth(user, token)` sets both fields and marks authenticated; `setToken(token)` updates only the access token (used after a refresh); `setUser(user)` updates the user profile; `clearAuth()` resets to the logged-out state. The `useAuth` hook (`hooks/useAuth.ts`) wraps the store with `login()`, `register()`, `logout()`, and `refreshToken()` actions and a `useEffect` that calls `GET /auth/me` on mount to restore sessions. Provides `isLoading` to gate UI rendering during the auth check.
+
+### Auth Pages
+
+- **Login** (`pages/Login.tsx`) — Email/password form with client-side email format validation (regex: `^[^\s@]+@[^\s@]+\.[^\s@]+$`), non-empty password check, inline error display for 401 ("Invalid credentials") and network errors ("Network error. Please try again."), OAuth buttons for Google and GitHub that redirect to `/api/v1/auth/oauth/{provider}`, and a link to registration.
+- **Register** (`pages/Register.tsx`) — Email, username, and password form. A real-time password strength indicator scores on five criteria (length ≥ 8, length ≥ 12, mixed case, digits, special characters) and displays a five-bar colour-coded gauge. Inline 409 error display for "Email already registered" or "Username taken".
+- **OAuthCallback** (`pages/OAuthCallback.tsx`) — Rendered at `/oauth/callback` after an OAuth provider redirect. Reads `provider` and optional `error` from query params. On success, exchanges the authorization code via `GET /auth/oauth/{provider}/callback`, stores the token and user profile, and redirects to `/dashboard`. On failure, displays the error with a "Back to login" link.
 
 ### Routing
 
@@ -1505,13 +1511,13 @@ Multi-stage build: `node:20-alpine` builder runs `npm ci && npm run build`, prod
 
 ### Test Suite
 
-46 tests across 11 test files using Vitest and Testing Library. All BFF calls are mocked — no network access required. Custom `render()` wrapper provides `QueryClientProvider` (retry disabled) and `MemoryRouter`. Tests cover:
+64 tests across 12 test files using Vitest and Testing Library. All BFF calls are mocked — no network access required. Custom `render()` wrapper provides `QueryClientProvider` (retry disabled) and `MemoryRouter`. Tests cover:
 
-- **Store:** `setAuth`, `clearAuth`, `isAuthenticated` derivation (4 tests)
+- **Store:** `setAuth`, `setToken`, `setUser`, `clearAuth`, `isAuthenticated` derivation (6 tests)
 - **API client:** interceptor token attachment, refresh failure handling (3 tests)
-- **Auth API:** login, register, logout, getMe with 401/409 error propagation (6 tests)
-- **useAuth hook:** login flow, register flow, session restoration, loading states (5 tests)
-- **Pages:** Login form rendering/validation/submission/error (5 tests), Register strength indicator/409 error (4 tests), Landing hero/service cards/health status (4 tests)
+- **Auth API:** login, register, logout, getMe, refreshToken, exchangeOAuthCode with 401/409 error propagation (8 tests)
+- **useAuth hook:** login flow, register flow, session restoration, loading states, refreshToken, logout with API failure (7 tests)
+- **Pages:** Login form rendering/validation/submission/error/email-format/network-error (8 tests), Register strength indicator/409-email/409-username/success/empty-fields (8 tests), OAuthCallback success/error-param/missing-provider/api-failure/spinner (5 tests), Landing hero/service cards/health status (4 tests)
 - **Layout:** Sidebar navigation/collapse/expand (5 tests), Header dark mode toggle (3 tests), ProtectedRoute auth gate with post-loading assertions (3 tests)
 - **App:** Route rendering for public and protected paths (4 tests)
 
