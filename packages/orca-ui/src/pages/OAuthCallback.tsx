@@ -4,6 +4,17 @@ import { useAuthStore } from "@/store/auth";
 import { exchangeOAuthCode, getMe } from "@/api/auth";
 import { ROUTES } from "@/lib/constants";
 
+/**
+ * OAuth callback handler page.
+ *
+ * Rendered at `/oauth/callback` after an OAuth provider (Google or
+ * GitHub) redirects back with authorization parameters. Reads the
+ * `provider` and optional `error` from the URL query string, then
+ * exchanges the authorization code for an access token via the BFF.
+ * On success, stores the token and user profile in the auth store
+ * and redirects to the dashboard. On failure, displays an error
+ * message with a link back to the login page.
+ */
 export function OAuthCallback() {
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
