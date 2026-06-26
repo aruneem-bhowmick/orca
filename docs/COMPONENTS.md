@@ -1511,13 +1511,13 @@ Multi-stage build: `node:20-alpine` builder runs `npm ci && npm run build`, prod
 
 ### Test Suite
 
-64 tests across 12 test files using Vitest and Testing Library. All BFF calls are mocked — no network access required. Custom `render()` wrapper provides `QueryClientProvider` (retry disabled) and `MemoryRouter`. Tests cover:
+66 tests across 12 test files using Vitest and Testing Library. All BFF calls are mocked — no network access required. Custom `render()` wrapper provides `QueryClientProvider` (retry disabled, refetchOnWindowFocus disabled) and `MemoryRouter`. Tests cover:
 
 - **Store:** `setAuth`, `setToken`, `setUser`, `clearAuth`, `isAuthenticated` derivation (6 tests)
 - **API client:** interceptor token attachment, refresh failure handling (3 tests)
 - **Auth API:** login, register, logout, getMe, refreshToken, exchangeOAuthCode with 401/409 error propagation (8 tests)
 - **useAuth hook:** login flow, register flow, session restoration, loading states, refreshToken, logout with API failure (7 tests)
-- **Pages:** Login form rendering/validation/submission/error/email-format/network-error (8 tests), Register strength indicator/409-email/409-username/success/empty-fields (8 tests), OAuthCallback success/error-param/missing-provider/api-failure/spinner (5 tests), Landing hero/service cards/health status (4 tests)
+- **Pages:** Login form rendering/validation/submission/error/email-format/network-error (8 tests), Register strength indicator/409-email/409-username/email-format/success/empty-fields (9 tests), OAuthCallback success/error-param/missing-provider/missing-code/api-failure/spinner (6 tests), Landing hero/service cards/health status (4 tests)
 - **Layout:** Sidebar navigation/collapse/expand (5 tests), Header dark mode toggle (3 tests), ProtectedRoute auth gate with post-loading assertions (3 tests)
 - **App:** Route rendering for public and protected paths (4 tests)
 

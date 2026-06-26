@@ -260,7 +260,7 @@ make ui-test
 make ui-lint
 ```
 
-The Python test suite spans 80+ test files across unit, integration, performance, deployment-validation, proxy, and scripts categories. The orca-ui frontend adds 12 test files with 64 tests using Vitest and Testing Library.
+The Python test suite spans 80+ test files across unit, integration, performance, deployment-validation, proxy, and scripts categories. The orca-ui frontend adds 12 test files with 66 tests using Vitest and Testing Library.
 
 The OrcaLab API integration tests run without a live database, Prefect server, or MLflow instance. An `ASGITransport` client fixture pre-populates `app.state` manually (bypassing the ASGI lifespan) and overrides all dependency providers via `dependency_overrides`, so tests exercise the full request/response cycle including middleware, routing, and validation while every external call goes to an `AsyncMock`.
 
