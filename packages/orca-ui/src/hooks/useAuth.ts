@@ -4,6 +4,20 @@ import { useAuthStore } from "@/store/auth";
 import * as authApi from "@/api/auth";
 import type { LoginRequest, RegisterRequest } from "@/api/types";
 
+/**
+ * Authentication hook that wraps the Zustand auth store with
+ * convenience methods for login, registration, logout, and token
+ * refresh.
+ *
+ * On mount, attempts to restore the current session by calling
+ * `GET /auth/me`. If the call succeeds and a stored token exists,
+ * the auth state is updated. If the call returns 401 or 403, the
+ * auth state is cleared. The `isLoading` flag is `true` during
+ * this initial check so the UI can show a loading indicator.
+ *
+ * @returns Auth state (`user`, `isAuthenticated`, `isLoading`) and
+ *   action methods (`login`, `register`, `logout`, `refreshToken`).
+ */
 export function useAuth() {
   const { user, isAuthenticated, setAuth, clearAuth } = useAuthStore();
   const [isLoading, setIsLoading] = useState(true);
@@ -41,6 +55,10 @@ export function useAuth() {
     };
   }, [setAuth, clearAuth]);
 
+  /**
+   * Authenticate with email and password. On success, fetches the
+   * user profile and stores the access token in the auth store.
+   */
   const login = useCallback(
     async (data: LoginRequest) => {
       const tokenResponse = await authApi.login(data);
@@ -50,6 +68,10 @@ export function useAuth() {
     [setAuth],
   );
 
+  /**
+   * Register a new account. On success, fetches the user profile
+   * and stores the access token in the auth store.
+   */
   const register = useCallback(
     async (data: RegisterRequest) => {
       const tokenResponse = await authApi.register(data);
@@ -59,6 +81,11 @@ export function useAuth() {
     [setAuth],
   );
 
+  /**
+   * Log out the current user. Calls the logout API endpoint and
+   * clears the auth store regardless of whether the API call
+   * succeeds (the store is always cleared in the `finally` block).
+   */
   const logout = useCallback(async () => {
     try {
       await authApi.logout();
@@ -67,6 +94,15 @@ export function useAuth() {
     }
   }, [clearAuth]);
 
+  /**
+   * Manually refresh the access token using the httponly refresh
+   * cookie. Updates the token in the auth store on success.
+   */
+  const refreshToken = useCallback(async () => {
+    const tokenResponse = await authApi.refreshToken();
+    useAuthStore.getState().setToken(tokenResponse.access_token);
+  }, []);
+
   return {
     user,
     isAuthenticated,
@@ -74,5 +110,6 @@ export function useAuth() {
     login,
     register,
     logout,
+    refreshToken,
   };
 }

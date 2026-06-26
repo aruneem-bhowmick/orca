@@ -7,6 +7,13 @@ import { Input } from "@/components/ui/Input";
 import { Card, CardContent, CardFooter, CardHeader, CardTitle } from "@/components/ui/Card";
 import axios from "axios";
 
+/**
+ * Compute a password strength score (0–5) based on length,
+ * mixed case, digits, and special characters.
+ *
+ * @param password - The password string to evaluate.
+ * @returns An object with `score` (0–5) and a human-readable `label`.
+ */
 function getPasswordStrength(password: string): { score: number; label: string } {
   let score = 0;
   if (password.length >= 8) score++;
@@ -21,6 +28,17 @@ function getPasswordStrength(password: string): { score: number; label: string }
 
 const strengthColors = ["bg-red-500", "bg-orange-500", "bg-yellow-500", "bg-blue-500", "bg-green-500"];
 
+/**
+ * Registration page component for creating new user accounts.
+ *
+ * Provides a form with email, username, and password fields. The
+ * password field includes a real-time strength indicator that scores
+ * the password on length (>=8, >=12), mixed case, digits, and special
+ * characters. On successful registration, stores the user and access
+ * token in the auth store and redirects to the dashboard. Displays
+ * inline errors for validation failures and 409 conflict responses
+ * (duplicate email or username).
+ */
 export function Register() {
   const navigate = useNavigate();
   const { register } = useAuth();
