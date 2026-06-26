@@ -36,7 +36,7 @@ vi.mock("@/api/client", () => ({
           },
         });
       }
-      return Promise.resolve({ data: {} });
+      return Promise.reject(new Error(`Unexpected API call: GET ${url}`));
     }),
     interceptors: {
       request: { use: vi.fn(), handlers: [] },
@@ -77,11 +77,14 @@ describe("Protected route map", () => {
     vi.clearAllMocks();
   });
 
-  it("redirects unauthenticated users from /dashboard to /login", () => {
+  it("redirects unauthenticated users from /dashboard to /login", async () => {
     vi.mocked(authApi.getMe).mockRejectedValue(new Error("No session"));
     window.history.pushState({}, "", "/dashboard");
     render(<App />);
     expect(screen.getByTestId("auth-loading")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("Sign in to Orca")).toBeInTheDocument();
+    });
   });
 
   it("renders the OrcaMind Tasks page at /dashboard/orcamind/tasks", async () => {
