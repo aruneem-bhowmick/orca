@@ -1471,7 +1471,7 @@ orca-ui/
 │   ├── main.tsx                 # ReactDOM.createRoot entry
 │   └── test/
 │       ├── setup.ts             # @testing-library/jest-dom matchers
-│       ├── test-utils.tsx       # Custom render() wrapping QueryClientProvider + BrowserRouter
+│       ├── test-utils.tsx       # Custom render() wrapping QueryClientProvider + MemoryRouter
 │       └── mocks/handlers.ts    # Mock User, TokenResponse, HealthStatus fixtures
 ├── Dockerfile                   # Multi-stage: node:20-alpine → nginx:alpine
 ├── nginx.conf                   # /api/ proxy to orca-web:8003, /ws/ WebSocket proxy, SPA fallback
