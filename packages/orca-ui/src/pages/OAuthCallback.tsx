@@ -35,6 +35,12 @@ export function OAuthCallback() {
         return;
       }
 
+      const code = searchParams.get("code");
+      if (!code) {
+        setError("Missing authorization code.");
+        return;
+      }
+
       try {
         const tokenResponse = await exchangeOAuthCode(provider, searchParams);
         useAuthStore.getState().setToken(tokenResponse.access_token);

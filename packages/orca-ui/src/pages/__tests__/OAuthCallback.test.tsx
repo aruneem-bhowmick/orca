@@ -85,6 +85,16 @@ describe("OAuthCallback", () => {
     expect(authApi.exchangeOAuthCode).not.toHaveBeenCalled();
   });
 
+  it("displays error when code parameter is missing", async () => {
+    renderWithParams("?provider=google");
+
+    await waitFor(() => {
+      expect(screen.getByTestId("oauth-error")).toHaveTextContent("Missing authorization code.");
+    });
+
+    expect(authApi.exchangeOAuthCode).not.toHaveBeenCalled();
+  });
+
   it("displays error and clears auth on API failure", async () => {
     vi.mocked(authApi.exchangeOAuthCode).mockRejectedValue(
       new Error("Network error"),
