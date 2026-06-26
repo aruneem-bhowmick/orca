@@ -21,6 +21,7 @@ function createTestQueryClient() {
       queries: {
         retry: false,
         gcTime: 0,
+        refetchOnWindowFocus: false,
       },
       mutations: {
         retry: false,
