@@ -48,7 +48,7 @@ export async function refreshToken(): Promise<TokenResponse> {
   const response = await axios.post<TokenResponse>(
     `${API_BASE_URL}/auth/refresh`,
     {},
-    { withCredentials: true },
+    { withCredentials: true, timeout: 10_000 },
   );
   return response.data;
 }

@@ -120,7 +120,7 @@ describe("auth API functions", () => {
       expect(axios.default.post).toHaveBeenCalledWith(
         expect.stringContaining("/auth/refresh"),
         {},
-        { withCredentials: true },
+        expect.objectContaining({ withCredentials: true }),
       );
       expect(result).toEqual(mockTokenResponse);
     });

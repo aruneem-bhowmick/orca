@@ -14,6 +14,7 @@ import axios from "axios";
 import type { AxiosError, InternalAxiosRequestConfig } from "axios";
 import { useAuthStore } from "@/store/auth";
 import { API_BASE_URL, ROUTES } from "@/lib/constants";
+import { refreshToken as refreshTokenApi } from "./auth";
 
 /** Axios instance preconfigured with the BFF base URL and JSON content type. */
 const apiClient = axios.create({
@@ -78,12 +79,7 @@ apiClient.interceptors.response.use(
       isRefreshing = true;
 
       try {
-        const response = await axios.post(
-          `${API_BASE_URL}/auth/refresh`,
-          {},
-          { withCredentials: true, timeout: 10_000 },
-        );
-        const { access_token } = response.data;
+        const { access_token } = await refreshTokenApi();
         const store = useAuthStore.getState();
         const user = store.user;
         if (user) {
