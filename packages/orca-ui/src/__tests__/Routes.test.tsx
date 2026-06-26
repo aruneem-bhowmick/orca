@@ -147,10 +147,10 @@ describe("Protected route map", () => {
     });
   });
 
-  it("renders the Settings page at /profile", async () => {
+  it("renders the Profile page at /profile", async () => {
     renderAuthenticatedAt("/profile");
     await waitFor(() => {
-      expect(findPageHeading("Settings")).toBeInTheDocument();
+      expect(findPageHeading("Profile")).toBeInTheDocument();
     });
   });
 

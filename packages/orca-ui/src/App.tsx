@@ -122,10 +122,10 @@ export function App() {
               element={<PlaceholderPage title="Bookmarks" />}
             />
 
-            {/* Profile / Settings */}
+            {/* Profile */}
             <Route
               path={ROUTES.PROFILE}
-              element={<PlaceholderPage title="Settings" />}
+              element={<PlaceholderPage title="Profile" />}
             />
           </Route>
         </Routes>
