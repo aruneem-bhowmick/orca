@@ -33,17 +33,21 @@ describe("Landing page", () => {
     });
   });
 
-  it("renders the hero section with updated headline", () => {
+  it("renders the hero section with updated headline", async () => {
     render(<Landing />);
-    expect(
-      screen.getByText("Orca: Meta-Learning Platform"),
-    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.getByText("Orca: Meta-Learning Platform"),
+      ).toBeInTheDocument();
+    });
     expect(screen.getAllByText("Get Started").length).toBeGreaterThanOrEqual(1);
   });
 
-  it("renders three service cards with icons", () => {
+  it("renders three service cards with icons", async () => {
     render(<Landing />);
-    expect(screen.getByText("OrcaMind")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("OrcaMind")).toBeInTheDocument();
+    });
     expect(screen.getByText("OrcaLab")).toBeInTheDocument();
     expect(screen.getByText("OrcaNet")).toBeInTheDocument();
     expect(screen.getByTestId("icon-orcamind")).toBeInTheDocument();
@@ -51,9 +55,11 @@ describe("Landing page", () => {
     expect(screen.getByTestId("icon-orcanet")).toBeInTheDocument();
   });
 
-  it("renders navigation links", () => {
+  it("renders navigation links", async () => {
     render(<Landing />);
-    expect(screen.getAllByText("Sign In").length).toBeGreaterThanOrEqual(1);
+    await waitFor(() => {
+      expect(screen.getAllByText("Sign In").length).toBeGreaterThanOrEqual(1);
+    });
     expect(screen.getAllByText("Get Started").length).toBeGreaterThanOrEqual(1);
   });
 
@@ -77,14 +83,18 @@ describe("Landing page", () => {
     });
   });
 
-  it("renders the live stats section heading", () => {
+  it("renders the live stats section heading", async () => {
     render(<Landing />);
-    expect(screen.getByText("Platform at a Glance")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("Platform at a Glance")).toBeInTheDocument();
+    });
   });
 
-  it("renders the footer with documentation and GitHub links", () => {
+  it("renders the footer with documentation and GitHub links", async () => {
     render(<Landing />);
-    expect(screen.getByTestId("landing-footer")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByTestId("landing-footer")).toBeInTheDocument();
+    });
     expect(screen.getByText("Documentation")).toBeInTheDocument();
     expect(screen.getByTestId("github-link")).toBeInTheDocument();
   });

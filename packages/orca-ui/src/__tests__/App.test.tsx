@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { App } from "@/App";
 import { useAuthStore } from "@/store/auth";
 
@@ -48,11 +48,13 @@ describe("App", () => {
     window.history.pushState({}, "", "/");
   });
 
-  it("renders the landing page at /", () => {
+  it("renders the landing page at /", async () => {
     render(<App />);
-    expect(
-      screen.getByText("Orca: Meta-Learning Platform"),
-    ).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.getByText("Orca: Meta-Learning Platform"),
+      ).toBeInTheDocument();
+    });
   });
 
   it("renders the login page at /login", () => {

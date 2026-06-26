@@ -56,6 +56,8 @@ const serviceCards = [
 export function Landing() {
   const { isAuthenticated, isLoading } = useAuth();
 
+  const shouldFetchPublicData = !isLoading && !isAuthenticated;
+
   const { data: health } = useQuery({
     queryKey: ["health"],
     queryFn: async () => {
@@ -63,6 +65,7 @@ export function Landing() {
       return response.data;
     },
     refetchInterval: 30_000,
+    enabled: shouldFetchPublicData,
   });
 
   const { data: stats } = useQuery({
@@ -72,9 +75,14 @@ export function Landing() {
       return response.data;
     },
     refetchInterval: 60_000,
+    enabled: shouldFetchPublicData,
   });
 
-  if (!isLoading && isAuthenticated) {
+  if (isLoading) {
+    return null;
+  }
+
+  if (isAuthenticated) {
     return <Navigate to={ROUTES.DASHBOARD} replace />;
   }
 
@@ -218,12 +226,15 @@ export function Landing() {
             Orca Meta-Learning Platform
           </p>
           <div className="flex gap-6">
-            <Link
-              to="/docs"
+            <a
+              href="https://github.com/aruneem-bhowmick/orca/tree/main/docs"
+              target="_blank"
+              rel="noopener noreferrer"
               className="text-sm text-muted-foreground hover:text-foreground"
+              data-testid="docs-link"
             >
               Documentation
-            </Link>
+            </a>
             <a
               href="https://github.com/aruneem-bhowmick/orca"
               target="_blank"
