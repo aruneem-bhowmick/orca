@@ -49,8 +49,9 @@
 The `orca-ui` package is a React 18 + TypeScript single-page application served by Vite in development (port 5173) and nginx in production (port 80). It communicates exclusively with the Orca Web BFF (`/api/v1/*`), never directly with upstream services. Key architectural decisions:
 
 - **Auth:** JWT access token stored in Zustand; refresh token in httponly cookies managed by the BFF. An Axios response interceptor catches 401s, queues concurrent failed requests, attempts a cookie-based `POST /auth/refresh`, and retries all queued requests with the new token. On refresh failure, the store is cleared and the user is redirected to `/login`. The `useAuth` hook exposes `login()`, `register()`, `logout()`, and `refreshToken()` convenience methods and restores sessions via `GET /auth/me` on mount. Login includes client-side email format validation and distinguishes network errors from server errors. OAuth flows (Google, GitHub) redirect to `/api/v1/auth/oauth/{provider}` and are completed by the `OAuthCallback` page which exchanges the authorization code for a token.
-- **State:** Zustand for auth state (synchronous, no persistence — session restored via `GET /auth/me` on mount). The auth store provides granular setters (`setAuth`, `setToken`, `setUser`, `clearAuth`) so that token refreshes and profile updates can be applied independently. TanStack React Query for server state (health, activity, experiments).
-- **Routing:** React Router 6 with a `ProtectedRoute` wrapper that gates authenticated sections behind an auth check with a loading spinner. Public routes: `/`, `/login`, `/register`, `/oauth/callback`. Protected routes nested under `MainLayout` (sidebar + header + outlet).
+- **State:** Zustand for auth state (synchronous, no persistence — session restored via `GET /auth/me` on mount). The auth store provides granular setters (`setAuth`, `setToken`, `setUser`, `clearAuth`) so that token refreshes and profile updates can be applied independently. TanStack React Query for server state (health, activity, experiments, dashboard stats).
+- **Routing:** React Router 6 with a `ProtectedRoute` wrapper that gates authenticated sections behind an auth check with a loading spinner. Public routes: `/`, `/login`, `/register`, `/oauth/callback`. Protected routes use a service-scoped hierarchy under `/dashboard` (e.g. `/dashboard/orcamind/tasks`, `/dashboard/orcalab/experiments/:id`, `/dashboard/orcanet/transfer`) plus top-level paths for `/history`, `/bookmarks`, and `/profile`. Route constants and a `NAV_ITEMS` navigation structure are defined in `lib/constants.ts`.
+- **Layout:** `MainLayout` composes a collapsible sidebar (240px/64px) with grouped navigation (OrcaMind, OrcaLab, OrcaNet groups with expandable sub-items, plus flat Dashboard, History, Bookmarks links) and a user dropdown (Profile, Sign out). The header displays dynamic breadcrumbs generated from the current URL, a search input placeholder, a notifications bell with badge, and a dark mode toggle. The landing page includes a hero section, service cards with health indicators, live platform stats from `GET /dashboard/stats` (60s TanStack Query refetch), and a footer.
 - **Styling:** Tailwind CSS 3.4 with CSS custom properties for theming (light/dark). shadcn/ui-style components (Button, Card, Input) with variant support via `clsx` + `tailwind-merge`.
 - **Production serving:** Multi-stage Docker build (node:20-alpine builder → nginx:alpine runtime). nginx proxies `/api/` to `orca-web:8003`, `/ws/` for WebSocket relay, and serves all other paths from `index.html` for SPA fallback routing.
 
@@ -167,16 +168,16 @@ orca/
 │
 │   ├── orca-ui/                       # React Frontend SPA (dev port 5173, prod nginx :80)
 │   │   ├── src/
-│   │   │   ├── api/                   # Axios client, auth API functions, TS type definitions
+│   │   │   ├── api/                   # Axios client, auth API functions, TS type definitions (incl. DashboardStats)
 │   │   │   ├── store/                 # Zustand auth store
 │   │   │   ├── hooks/                 # useAuth hook (login, register, logout, session restore)
-│   │   │   ├── lib/                   # Utilities (cn, formatDate) and route constants
+│   │   │   ├── lib/                   # Utilities (cn, formatDate), route constants, NAV_ITEMS
 │   │   │   ├── components/
 │   │   │   │   ├── ui/               # shadcn/ui-style components (Button, Card, Input)
-│   │   │   │   ├── layout/           # Sidebar, Header, MainLayout (Outlet wrapper)
+│   │   │   │   ├── layout/           # Sidebar (grouped nav, user dropdown), Header (breadcrumbs, search, notifications), MainLayout
 │   │   │   │   └── ProtectedRoute.tsx # Auth gate with loading spinner
-│   │   │   ├── pages/                # Landing, Login, Register, OAuthCallback, Dashboard
-│   │   │   └── test/                 # Vitest setup, custom render wrapper, mock fixtures
+│   │   │   ├── pages/                # Landing (hero, service cards, live stats, footer), Login, Register, OAuthCallback, Dashboard
+│   │   │   └── test/                 # Vitest setup, custom render wrapper, mock fixtures (DashboardStats)
 │   │   ├── Dockerfile                # Multi-stage: node:20-alpine builder → nginx:alpine runtime
 │   │   ├── nginx.conf                # SPA fallback, /api/ proxy to orca-web, /ws/ WebSocket proxy
 │   │   ├── index.html                # SPA entry
