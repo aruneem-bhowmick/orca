@@ -1444,7 +1444,7 @@ React 18, TypeScript 5.3, Vite 5, Tailwind CSS 3.4, Zustand 4.4, TanStack React 
 orca-ui/
 ├── src/
 │   ├── api/                     # BFF communication layer
-│   │   ├── types.ts             # TS interfaces mirroring BFF Pydantic schemas (User, TokenResponse, etc.)
+│   │   ├── types.ts             # TS interfaces mirroring BFF Pydantic schemas (User, TokenResponse, DashboardStats, etc.)
 │   │   ├── client.ts            # Axios instance with JWT interceptor and 401 refresh retry
 │   │   └── auth.ts              # login(), register(), refreshToken(), logout(), getMe(), exchangeOAuthCode()
 │   ├── store/
@@ -1453,26 +1453,26 @@ orca-ui/
 │   │   └── useAuth.ts           # Wraps Zustand store with login/register/logout/refreshToken + session restore on mount
 │   ├── lib/
 │   │   ├── utils.ts             # cn() (clsx + tailwind-merge), formatDate()
-│   │   └── constants.ts         # API_BASE_URL, ROUTES object
+│   │   └── constants.ts         # API_BASE_URL, ROUTES object, NAV_ITEMS navigation structure
 │   ├── components/
 │   │   ├── ui/                  # shadcn/ui-style: Button (6 variants), Card (5 subcomponents), Input (with label/error)
 │   │   ├── layout/
-│   │   │   ├── Sidebar.tsx      # Collapsible nav (240px/64px), NavLink items, user avatar with sign-out
-│   │   │   ├── Header.tsx       # Top bar with dark mode toggle and user email
+│   │   │   ├── Sidebar.tsx      # Collapsible nav (240px/64px) with grouped service links and user dropdown
+│   │   │   ├── Header.tsx       # Top bar with breadcrumbs, search, notifications, dark mode toggle
 │   │   │   └── MainLayout.tsx   # Sidebar + Header + Outlet content area
 │   │   └── ProtectedRoute.tsx   # Auth gate: loading spinner → redirect to /login or render children
 │   ├── pages/
-│   │   ├── Landing.tsx          # Public hero, service status cards via TanStack Query
+│   │   ├── Landing.tsx          # Public hero, service cards, live stats (GET /dashboard/stats), footer
 │   │   ├── Login.tsx            # Email/password form with format validation, OAuth buttons, error display
 │   │   ├── Register.tsx         # Registration form with password strength indicator (length/case/digits/special)
 │   │   ├── OAuthCallback.tsx    # Reads provider and code from query params, exchanges for token via BFF
 │   │   └── Dashboard.tsx        # Protected dashboard with service health cards
-│   ├── App.tsx                  # BrowserRouter + QueryClientProvider + route definitions
+│   ├── App.tsx                  # BrowserRouter + QueryClientProvider + hierarchical route definitions
 │   ├── main.tsx                 # ReactDOM.createRoot entry
 │   └── test/
 │       ├── setup.ts             # @testing-library/jest-dom matchers
 │       ├── test-utils.tsx       # Custom render() wrapping QueryClientProvider + MemoryRouter
-│       └── mocks/handlers.ts    # Mock User, TokenResponse, HealthStatus fixtures
+│       └── mocks/handlers.ts    # Mock User, TokenResponse, HealthStatus, DashboardStats fixtures
 ├── Dockerfile                   # Multi-stage: node:20-alpine → nginx:alpine
 ├── nginx.conf                   # /api/ proxy to orca-web:8003, /ws/ WebSocket proxy, SPA fallback
 ├── index.html                   # SPA entry with <div id="root">
@@ -1499,11 +1499,29 @@ Zustand store (`store/auth.ts`) with `user: User | null`, `accessToken: string |
 
 ### Routing
 
-React Router 6 with public routes (`/`, `/login`, `/register`, `/oauth/callback`) and protected routes nested under `MainLayout` (`/dashboard`, `/tasks`, `/experiments`, `/sweeps`, `/transfers`, `/history`, `/bookmarks`, `/settings`). `ProtectedRoute` checks `isAuthenticated` and shows a spinner during the initial auth check.
+React Router 6 with public routes (`/`, `/login`, `/register`, `/oauth/callback`) and protected routes nested under `MainLayout` with a service-scoped hierarchy:
+
+- `/dashboard` — overview with service health cards
+- `/dashboard/orcamind/tasks`, `/dashboard/orcamind/tasks/:id` — OrcaMind task list and detail
+- `/dashboard/orcalab/experiments`, `/dashboard/orcalab/experiments/:id`, `/dashboard/orcalab/sweeps` — OrcaLab experiment management
+- `/dashboard/orcanet/transfer`, `/dashboard/orcanet/retrieve` — OrcaNet transfer and retrieval
+- `/history`, `/history/tasks`, `/history/experiments` — activity log with service-filtered views
+- `/bookmarks` — user bookmarks
+- `/profile` — user profile and settings
+
+`ProtectedRoute` checks `isAuthenticated` and shows a spinner during the initial auth check.
 
 ### Layout
 
-`MainLayout` composes `Sidebar` (collapsible, 240px expanded / 64px collapsed) + `Header` (dark mode toggle, user menu) + `<Outlet />` for page content. The sidebar uses React Router `NavLink` for active-state highlighting.
+`MainLayout` composes `Sidebar` + `Header` + `<Outlet />` for page content.
+
+**Sidebar** (collapsible, 240px expanded / 64px collapsed) — renders grouped navigation organised by service: OrcaMind (Tasks), OrcaLab (Experiments, Sweeps), OrcaNet (Transfer, Retrieval). Groups are expandable/collapsible with chevron indicators. Top-level items (Dashboard, History, Bookmarks) render as direct links. A user dropdown at the bottom provides Profile and Sign out actions. When collapsed, groups show a single icon linking to the primary sub-route.
+
+**Header** — renders a dynamic breadcrumb trail generated from the current URL pathname with human-readable labels for known segments (e.g. `/dashboard/orcalab/experiments` → "Dashboard / OrcaLab / Experiments"). Intermediate segments are clickable links; the last segment is plain text. Also displays a search input placeholder (read-only), a notifications bell with badge count, a dark mode toggle (persisted to localStorage), and the user's email address.
+
+### Landing Page
+
+The public landing page (`/`) displays four sections: a hero with "Orca: Meta-Learning Platform" headline and CTAs ("Get Started" → /register, "Sign In" → /login), three service cards (OrcaMind, OrcaLab, OrcaNet) with icons and health status indicators, a live stats section fetching platform counters (tasks registered, experiments run, transfers scored) from `GET /dashboard/stats` with 60-second refetch, and a footer with documentation and GitHub links. Authenticated users are redirected to `/dashboard`. The layout uses responsive 3-column grids on desktop and stacks vertically on mobile.
 
 ### Dockerfile
 
@@ -1511,15 +1529,17 @@ Multi-stage build: `node:20-alpine` builder runs `npm ci && npm run build`, prod
 
 ### Test Suite
 
-66 tests across 12 test files using Vitest and Testing Library. All BFF calls are mocked — no network access required. Custom `render()` wrapper provides `QueryClientProvider` (retry disabled, refetchOnWindowFocus disabled) and `MemoryRouter`. Tests cover:
+114 tests across 16 test files using Vitest and Testing Library. All BFF calls are mocked — no network access required. Custom `render()` wrapper provides `QueryClientProvider` (retry disabled, refetchOnWindowFocus disabled) and `MemoryRouter`. Tests cover:
 
 - **Store:** `setAuth`, `setToken`, `setUser`, `clearAuth`, `isAuthenticated` derivation (6 tests)
 - **API client:** interceptor token attachment, refresh failure handling (3 tests)
 - **Auth API:** login, register, logout, getMe, refreshToken, exchangeOAuthCode with 401/409 error propagation (8 tests)
 - **useAuth hook:** login flow, register flow, session restoration, loading states, refreshToken, logout with API failure (7 tests)
-- **Pages:** Login form rendering/validation/submission/error/email-format/network-error (8 tests), Register strength indicator/409-email/409-username/email-format/success/empty-fields (9 tests), OAuthCallback success/error-param/missing-provider/missing-code/api-failure/spinner (6 tests), Landing hero/service cards/health status (4 tests)
-- **Layout:** Sidebar navigation/collapse/expand (5 tests), Header dark mode toggle (3 tests), ProtectedRoute auth gate with post-loading assertions (3 tests)
+- **Pages:** Login form rendering/validation/submission/error/email-format/network-error (8 tests), Register strength indicator/409-email/409-username/email-format/success/empty-fields (9 tests), OAuthCallback success/error-param/missing-provider/missing-code/api-failure/spinner (6 tests), Landing hero/service-cards/icons/health-status/live-stats/stats-heading/footer (7 tests)
+- **Layout:** Sidebar navigation-groups/services/user-info/user-dropdown/collapse/expand/brand-text/group-expansion (8 tests), Header breadcrumbs/search/notifications/dark-mode-toggle/user-email (5 tests), MainLayout sidebar+header+main-content/layout-structure (4 tests), Breadcrumbs root-path/dashboard/nested-hierarchy/intermediate-links/last-segment-text/separators/known-labels/unknown-capitalisation/aria-label (9 tests), ProtectedRoute auth gate with post-loading assertions (3 tests)
+- **Constants:** ROUTES public/dashboard/orcamind/orcalab/orcanet/history/bookmarks/profile paths (7 tests), NAV_ITEMS structure/groups/children/icons (7 tests)
 - **App:** Route rendering for public and protected paths (4 tests)
+- **Routes:** Full protected route map — 13 routes verified via heading queries to distinguish page content from sidebar labels (13 tests)
 
 ---
 

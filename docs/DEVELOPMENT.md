@@ -249,6 +249,18 @@ uv run pytest scripts/tests/ -v --cov=scripts --cov-report=term-missing
 # orca-ui — React frontend (Vitest, no services required)
 cd packages/orca-ui && npm test
 
+# orca-ui — layout tests only (Sidebar, Header, MainLayout, Breadcrumbs)
+cd packages/orca-ui && npx vitest run src/components/layout/__tests__/
+
+# orca-ui — route map tests only (12 authenticated route renders + 1 redirect)
+cd packages/orca-ui && npx vitest run src/__tests__/Routes.test.tsx
+
+# orca-ui — constants and navigation structure tests only
+cd packages/orca-ui && npx vitest run src/lib/__tests__/constants.test.ts
+
+# orca-ui — landing page tests only (hero, cards, stats, footer)
+cd packages/orca-ui && npx vitest run src/pages/__tests__/Landing.test.tsx
+
 # orca-ui — ESLint
 cd packages/orca-ui && npm run lint
 
@@ -260,7 +272,7 @@ make ui-test
 make ui-lint
 ```
 
-The Python test suite spans 80+ test files across unit, integration, performance, deployment-validation, proxy, and scripts categories. The orca-ui frontend adds 12 test files with 66 tests using Vitest and Testing Library.
+The Python test suite spans 80+ test files across unit, integration, performance, deployment-validation, proxy, and scripts categories. The orca-ui frontend adds 16 test files with 116 tests using Vitest and Testing Library.
 
 The OrcaLab API integration tests run without a live database, Prefect server, or MLflow instance. An `ASGITransport` client fixture pre-populates `app.state` manually (bypassing the ASGI lifespan) and overrides all dependency providers via `dependency_overrides`, so tests exercise the full request/response cycle including middleware, routing, and validation while every external call goes to an `AsyncMock`.
 
@@ -278,6 +290,9 @@ The visualization unit tests run without a live Streamlit or Plotly install. A s
 - *HTML5 validation awareness* — Login email format tests use `"user@example"` (passes HTML5 `type="email"` validation but fails the app's stricter regex requiring a dot in the domain) rather than `"not-an-email"` which would be blocked by jsdom's native form validation before the `onSubmit` handler fires.
 - *OAuthCallback route testing* — OAuthCallback tests render within a full `MemoryRouter` with explicit routes for `/oauth/callback`, `/dashboard`, and `/login`, allowing navigation assertions without relying on `window.location` which jsdom does not fully implement.
 - *JSDoc coverage* — all auth-related modules (API functions, store, hook, pages, components, utilities, test infrastructure) have comprehensive JSDoc docstrings documenting parameters, return types, error conditions, and architectural context.
+- *Heading-role queries for route disambiguation* — `Routes.test.tsx` uses `screen.getAllByRole("heading", { level: 1 })` to find the PlaceholderPage heading in the main content area, distinguishing it from sidebar navigation labels that share the same text (e.g. "Tasks", "Experiments", "Bookmarks"). This avoids brittle `data-testid` escape hatches while remaining accessible-query-first.
+- *MemoryRouter path injection for breadcrumb testing* — `Breadcrumbs.test.tsx` renders the Header component inside a `MemoryRouter` with `initialEntries` set to specific paths (e.g. `/dashboard/orcamind/tasks`), allowing the breadcrumb generation logic to be tested independently of the full App router.
+- *Mock API dispatch by URL* — Landing and Routes tests use `vi.mocked(apiClient.get).mockImplementation((url) => ...)` with URL-based dispatch to return different responses for `/health` and `/dashboard/stats`, enabling tests that verify multiple data-dependent sections in a single page.
 
 OrcaMind integration tests auto-skip when their target service port is unreachable — run `make docker-up` first to exercise them.
 

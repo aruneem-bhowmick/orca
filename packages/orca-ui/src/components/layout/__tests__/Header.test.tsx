@@ -15,10 +15,21 @@ describe("Header", () => {
     document.documentElement.classList.remove("dark");
   });
 
-  it("renders the header", () => {
+  it("renders the header with breadcrumbs", () => {
     render(<Header />);
     expect(screen.getByTestId("header")).toBeInTheDocument();
-    expect(screen.getByText("Orca Platform")).toBeInTheDocument();
+    expect(screen.getByTestId("breadcrumbs")).toBeInTheDocument();
+  });
+
+  it("renders the search input", () => {
+    render(<Header />);
+    expect(screen.getByTestId("search-input")).toBeInTheDocument();
+  });
+
+  it("renders the notifications button with badge", () => {
+    render(<Header />);
+    expect(screen.getByTestId("notifications-button")).toBeInTheDocument();
+    expect(screen.getByTestId("notification-badge")).toBeInTheDocument();
   });
 
   it("toggles dark mode when button is clicked", () => {

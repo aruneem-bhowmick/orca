@@ -18,6 +18,12 @@ const queryClient = new QueryClient({
   },
 });
 
+/**
+ * Placeholder component for routes that have not yet been implemented.
+ * Renders the page title and a "Coming soon" message.
+ *
+ * @param props.title - The page heading to display.
+ */
 function PlaceholderPage({ title }: { title: string }) {
   return (
     <div>
@@ -27,6 +33,19 @@ function PlaceholderPage({ title }: { title: string }) {
   );
 }
 
+/**
+ * Root application component.
+ *
+ * Wraps the entire app in `QueryClientProvider` and `BrowserRouter`,
+ * then defines the full route tree. Public routes (landing, login,
+ * register, OAuth callback) are accessible without authentication.
+ * Protected routes are wrapped in `ProtectedRoute` and rendered
+ * inside `MainLayout` which provides the sidebar and header.
+ *
+ * The route hierarchy follows the spec's route map with service-scoped
+ * nested paths under `/dashboard` (orcamind, orcalab, orcanet) and
+ * separate top-level paths for history, bookmarks, and profile.
+ */
 export function App() {
   return (
     <QueryClientProvider client={queryClient}>
@@ -38,7 +57,7 @@ export function App() {
           <Route path={ROUTES.REGISTER} element={<Register />} />
           <Route path={ROUTES.OAUTH_CALLBACK} element={<OAuthCallback />} />
 
-          {/* Protected routes */}
+          {/* Protected routes under MainLayout */}
           <Route
             element={
               <ProtectedRoute>
@@ -46,14 +65,68 @@ export function App() {
               </ProtectedRoute>
             }
           >
+            {/* Dashboard overview */}
             <Route path={ROUTES.DASHBOARD} element={<Dashboard />} />
-            <Route path={ROUTES.TASKS} element={<PlaceholderPage title="Tasks" />} />
-            <Route path={ROUTES.EXPERIMENTS} element={<PlaceholderPage title="Experiments" />} />
-            <Route path={ROUTES.SWEEPS} element={<PlaceholderPage title="Sweeps" />} />
-            <Route path={ROUTES.TRANSFERS} element={<PlaceholderPage title="Transfers" />} />
-            <Route path={ROUTES.HISTORY} element={<PlaceholderPage title="History" />} />
-            <Route path={ROUTES.BOOKMARKS} element={<PlaceholderPage title="Bookmarks" />} />
-            <Route path={ROUTES.SETTINGS} element={<PlaceholderPage title="Settings" />} />
+
+            {/* OrcaMind routes */}
+            <Route
+              path={ROUTES.ORCAMIND_TASKS}
+              element={<PlaceholderPage title="Tasks" />}
+            />
+            <Route
+              path={ROUTES.ORCAMIND_TASK_DETAIL}
+              element={<PlaceholderPage title="Task Detail" />}
+            />
+
+            {/* OrcaLab routes */}
+            <Route
+              path={ROUTES.ORCALAB_EXPERIMENTS}
+              element={<PlaceholderPage title="Experiments" />}
+            />
+            <Route
+              path={ROUTES.ORCALAB_EXPERIMENT_DETAIL}
+              element={<PlaceholderPage title="Experiment Detail" />}
+            />
+            <Route
+              path={ROUTES.ORCALAB_SWEEPS}
+              element={<PlaceholderPage title="Sweeps" />}
+            />
+
+            {/* OrcaNet routes */}
+            <Route
+              path={ROUTES.ORCANET_TRANSFER}
+              element={<PlaceholderPage title="Transfer Explorer" />}
+            />
+            <Route
+              path={ROUTES.ORCANET_RETRIEVE}
+              element={<PlaceholderPage title="Retrieval" />}
+            />
+
+            {/* History routes */}
+            <Route
+              path={ROUTES.HISTORY}
+              element={<PlaceholderPage title="Activity Log" />}
+            />
+            <Route
+              path={ROUTES.HISTORY_TASKS}
+              element={<PlaceholderPage title="My Tasks" />}
+            />
+            <Route
+              path={ROUTES.HISTORY_EXPERIMENTS}
+              element={<PlaceholderPage title="My Experiments" />}
+            />
+
+            {/* Bookmarks */}
+            <Route
+              path={ROUTES.BOOKMARKS}
+              element={<PlaceholderPage title="Bookmarks" />}
+            />
+
+            {/* Profile */}
+            <Route
+              path={ROUTES.PROFILE}
+              element={<PlaceholderPage title="Profile" />}
+            />
           </Route>
         </Routes>
       </BrowserRouter>

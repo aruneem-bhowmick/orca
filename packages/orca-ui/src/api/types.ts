@@ -94,3 +94,13 @@ export interface HealthStatus {
     orcanet: boolean;
   };
 }
+
+/**
+ * Public platform statistics returned by `GET /dashboard/stats`.
+ * Used on the landing page to display live counters.
+ */
+export interface DashboardStats {
+  tasks_registered: number;
+  experiments_run: number;
+  transfers_scored: number;
+}

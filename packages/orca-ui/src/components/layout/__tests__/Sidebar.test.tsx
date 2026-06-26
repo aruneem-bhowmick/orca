@@ -15,33 +15,45 @@ describe("Sidebar", () => {
     useAuthStore.getState().setAuth(mockUser, "test-token");
   });
 
-  it("renders navigation links", () => {
+  it("renders top-level navigation links", () => {
     render(<Sidebar />);
     expect(screen.getByText("Dashboard")).toBeInTheDocument();
-    expect(screen.getByText("Tasks")).toBeInTheDocument();
-    expect(screen.getByText("Experiments")).toBeInTheDocument();
-    expect(screen.getByText("Sweeps")).toBeInTheDocument();
-    expect(screen.getByText("Transfers")).toBeInTheDocument();
     expect(screen.getByText("History")).toBeInTheDocument();
     expect(screen.getByText("Bookmarks")).toBeInTheDocument();
   });
 
-  it("renders user info", () => {
+  it("renders navigation groups for services", () => {
+    render(<Sidebar />);
+    expect(screen.getByText("OrcaMind")).toBeInTheDocument();
+    expect(screen.getByText("OrcaLab")).toBeInTheDocument();
+    expect(screen.getByText("OrcaNet")).toBeInTheDocument();
+  });
+
+  it("renders user info in the user menu trigger", () => {
     render(<Sidebar />);
     expect(screen.getByText("testuser")).toBeInTheDocument();
+    expect(screen.getByText("test@example.com")).toBeInTheDocument();
+  });
+
+  it("shows user dropdown with Profile and Sign out when user menu is clicked", () => {
+    render(<Sidebar />);
+
+    const trigger = screen.getByTestId("user-menu-trigger");
+    fireEvent.click(trigger);
+
+    expect(screen.getByTestId("user-dropdown")).toBeInTheDocument();
+    expect(screen.getByText("Profile")).toBeInTheDocument();
     expect(screen.getByText("Sign out")).toBeInTheDocument();
   });
 
   it("collapses when toggle is clicked", () => {
     render(<Sidebar />);
 
-    // Before collapse, nav labels should be visible
     expect(screen.getByText("Dashboard")).toBeInTheDocument();
 
     const toggle = screen.getByTestId("sidebar-toggle");
     fireEvent.click(toggle);
 
-    // After collapse, text labels should be hidden
     expect(screen.queryByText("Dashboard")).not.toBeInTheDocument();
   });
 
@@ -58,5 +70,17 @@ describe("Sidebar", () => {
   it("renders Orca brand text when expanded", () => {
     render(<Sidebar />);
     expect(screen.getByText("Orca")).toBeInTheDocument();
+  });
+
+  it("expands a nav group to show sub-items", () => {
+    render(<Sidebar />);
+
+    const orcaLabGroup = screen.getByTestId("nav-group-orcalab");
+    fireEvent.click(orcaLabGroup);
+
+    const children = screen.getByTestId("nav-children-orcalab");
+    expect(children).toBeInTheDocument();
+    expect(screen.getByText("Experiments")).toBeInTheDocument();
+    expect(screen.getByText("Sweeps")).toBeInTheDocument();
   });
 });

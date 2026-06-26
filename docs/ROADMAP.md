@@ -71,16 +71,16 @@
 
 **Done:**
 - Package scaffold: Vite 5, React 18, TypeScript 5.3, Tailwind CSS 3.4, ESLint, Prettier, Vitest, Testing Library
-- TypeScript API types mirroring BFF Pydantic schemas (User, TokenResponse, RegisterRequest, LoginRequest, ProfileUpdate, PaginatedResponse, ActivityLogEntry, Bookmark, HealthStatus)
+- TypeScript API types mirroring BFF Pydantic schemas (User, TokenResponse, RegisterRequest, LoginRequest, ProfileUpdate, PaginatedResponse, ActivityLogEntry, Bookmark, HealthStatus, DashboardStats)
 - Axios client with JWT token-attachment interceptor, 401 refresh retry (cookie-based), and request queuing during refresh
 - Zustand auth store (user, accessToken, isAuthenticated, setAuth, clearAuth) and useAuth hook (login, register, logout, session restoration via GET /auth/me, isLoading state)
 - shadcn/ui-style base components: Button (6 variants, 4 sizes), Card (5 subcomponents), Input (with label and error support)
-- Layout components: collapsible Sidebar (240px/64px, NavLink items, user avatar with sign-out), Header (dark mode toggle, user email), MainLayout (Sidebar + Header + Outlet)
-- Page components: Landing (hero, service status cards via TanStack Query), Login (email/password form, Google/GitHub OAuth buttons, validation, error display), Register (password strength indicator, 8-char minimum), OAuthCallback (token extraction, session completion), Dashboard (service health cards)
-- React Router 6 routing: public routes (/, /login, /register, /oauth/callback), protected routes under MainLayout (/dashboard, /tasks, /experiments, /sweeps, /transfers, /history, /bookmarks, /settings), ProtectedRoute auth gate with loading spinner
+- Layout components: collapsible Sidebar (240px/64px) with grouped navigation organised by service (OrcaMind, OrcaLab, OrcaNet groups with expandable sub-items, plus flat Dashboard/History/Bookmarks links) and user dropdown menu (Profile, Sign out); Header with dynamic breadcrumb trail generated from the URL pathname, search input placeholder, notifications bell with badge count, dark mode toggle (persisted to localStorage), and user email display; MainLayout composing Sidebar + Header + Outlet
+- Page components: Landing (hero with "Orca: Meta-Learning Platform" headline, service cards with icons and health status indicators, live stats section fetching from GET /dashboard/stats with 60s refetch, footer with documentation and GitHub links, responsive 3-column grid), Login (email/password form, Google/GitHub OAuth buttons, validation, error display), Register (password strength indicator, 8-char minimum), OAuthCallback (token extraction, session completion), Dashboard (service health cards)
+- React Router 6 routing with service-scoped hierarchy: public routes (/, /login, /register, /oauth/callback), protected routes under MainLayout (/dashboard, /dashboard/orcamind/tasks, /dashboard/orcamind/tasks/:id, /dashboard/orcalab/experiments, /dashboard/orcalab/experiments/:id, /dashboard/orcalab/sweeps, /dashboard/orcanet/transfer, /dashboard/orcanet/retrieve, /history, /history/tasks, /history/experiments, /bookmarks, /profile), ProtectedRoute auth gate with loading spinner
 - Multi-stage Dockerfile (node:20-alpine builder → nginx:alpine runtime) with nginx config for static serving, /api/ proxy to orca-web:8003, /ws/ WebSocket proxy, SPA fallback
 - Makefile targets: ui-install, ui-dev, ui-build, ui-test, ui-lint
-- Test suite: 33 tests across 8 files — auth store (4), API client interceptors (3), auth API functions (7), useAuth hook (5), Login/Register/Landing pages (12), ProtectedRoute (3), Sidebar/Header (8), App routing (4)
+- Test suite: 116 tests across 16 files — auth store (6), API client interceptors (3), auth API functions (8), useAuth hook (7), Login/Register/OAuthCallback pages (23), Landing (7), ProtectedRoute (3), Sidebar (8), Header (5), MainLayout (4), Breadcrumbs (9), App routing (4), Route map (13), Constants (16)
 
 **Next:**
 - Rich dashboard with charts (Recharts) and TanStack Query for experiment/sweep/task data

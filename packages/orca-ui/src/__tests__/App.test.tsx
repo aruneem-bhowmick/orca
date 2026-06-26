@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { render, screen } from "@testing-library/react";
+import { render, screen, waitFor } from "@testing-library/react";
 import { App } from "@/App";
 import { useAuthStore } from "@/store/auth";
 
@@ -9,17 +9,31 @@ vi.mock("@/api/auth", () => ({
 
 vi.mock("@/api/client", () => ({
   default: {
-    get: vi.fn().mockResolvedValue({
-      data: {
-        status: "healthy",
-        services: {
-          postgres: true,
-          redis: true,
-          orcamind: true,
-          orcalab: true,
-          orcanet: true,
-        },
-      },
+    get: vi.fn().mockImplementation((url: string) => {
+      if (url === "/health") {
+        return Promise.resolve({
+          data: {
+            status: "healthy",
+            services: {
+              postgres: true,
+              redis: true,
+              orcamind: true,
+              orcalab: true,
+              orcanet: true,
+            },
+          },
+        });
+      }
+      if (url === "/dashboard/stats") {
+        return Promise.resolve({
+          data: {
+            tasks_registered: 42,
+            experiments_run: 128,
+            transfers_scored: 56,
+          },
+        });
+      }
+      return Promise.resolve({ data: {} });
     }),
     interceptors: {
       request: { use: vi.fn(), handlers: [] },
@@ -34,9 +48,13 @@ describe("App", () => {
     window.history.pushState({}, "", "/");
   });
 
-  it("renders the landing page at /", () => {
+  it("renders the landing page at /", async () => {
     render(<App />);
-    expect(screen.getByText("Meta-Learning Platform")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(
+        screen.getByText("Orca: Meta-Learning Platform"),
+      ).toBeInTheDocument();
+    });
   });
 
   it("renders the login page at /login", () => {
@@ -54,7 +72,6 @@ describe("App", () => {
   it("shows loading spinner for protected routes when unauthenticated", () => {
     window.history.pushState({}, "", "/dashboard");
     render(<App />);
-    // Should show the auth loading spinner (useAuth starts with isLoading=true)
     expect(screen.getByTestId("auth-loading")).toBeInTheDocument();
   });
 });
