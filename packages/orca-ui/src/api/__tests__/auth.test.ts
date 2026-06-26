@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import apiClient from "@/api/client";
-import { login, register, logout, getMe } from "@/api/auth";
+import { login, register, logout, getMe, refreshToken, exchangeOAuthCode } from "@/api/auth";
 import { mockUser, mockTokenResponse } from "@/test/mocks/handlers";
 
 vi.mock("@/api/client", () => ({
@@ -17,6 +17,7 @@ vi.mock("@/api/client", () => ({
 vi.mock("axios", () => ({
   default: {
     post: vi.fn(),
+    get: vi.fn(),
   },
 }));
 
@@ -106,6 +107,38 @@ describe("auth API functions", () => {
 
       expect(apiClient.get).toHaveBeenCalledWith("/auth/me");
       expect(result).toEqual(mockUser);
+    });
+  });
+
+  describe("refreshToken", () => {
+    it("sends POST /auth/refresh with credentials and returns token", async () => {
+      const axios = await import("axios");
+      vi.mocked(axios.default.post).mockResolvedValueOnce({ data: mockTokenResponse });
+
+      const result = await refreshToken();
+
+      expect(axios.default.post).toHaveBeenCalledWith(
+        expect.stringContaining("/auth/refresh"),
+        {},
+        { withCredentials: true },
+      );
+      expect(result).toEqual(mockTokenResponse);
+    });
+  });
+
+  describe("exchangeOAuthCode", () => {
+    it("sends GET to OAuth callback endpoint with provider and params", async () => {
+      const axios = await import("axios");
+      vi.mocked(axios.default.get).mockResolvedValueOnce({ data: mockTokenResponse });
+
+      const params = new URLSearchParams({ code: "auth-code-123", state: "xyz" });
+      const result = await exchangeOAuthCode("google", params);
+
+      expect(axios.default.get).toHaveBeenCalledWith(
+        expect.stringContaining("/auth/oauth/google/callback"),
+        expect.objectContaining({ withCredentials: true }),
+      );
+      expect(result).toEqual(mockTokenResponse);
     });
   });
 });
