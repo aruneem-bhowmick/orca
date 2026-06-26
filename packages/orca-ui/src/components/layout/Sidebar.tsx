@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { NavLink, useLocation } from "react-router-dom";
 import { cn } from "@/lib/utils";
 import { ROUTES, NAV_ITEMS } from "@/lib/constants";
@@ -107,6 +107,13 @@ function SidebarGroup({
     location.pathname.startsWith(child.path),
   );
   const [expanded, setExpanded] = useState(isChildActive ?? false);
+
+  // Keep the group expanded when navigating to one of its children.
+  useEffect(() => {
+    if (isChildActive) {
+      setExpanded(true);
+    }
+  }, [isChildActive]);
 
   if (collapsed) {
     return (
