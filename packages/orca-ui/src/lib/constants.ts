@@ -41,6 +41,29 @@ export const ROUTES = {
   PROFILE: "/profile",
 } as const;
 
+/** Union of all route path literals defined in `ROUTES`. */
+export type RoutePath = (typeof ROUTES)[keyof typeof ROUTES];
+
+/**
+ * Human-readable labels for URL path segments, used by the
+ * breadcrumb builder to convert slugs like "orcamind" into
+ * display names like "OrcaMind".
+ */
+export const ROUTE_LABELS: Record<string, string> = {
+  dashboard: "Dashboard",
+  orcamind: "OrcaMind",
+  orcalab: "OrcaLab",
+  orcanet: "OrcaNet",
+  tasks: "Tasks",
+  experiments: "Experiments",
+  sweeps: "Sweeps",
+  transfer: "Transfer",
+  retrieve: "Retrieval",
+  history: "History",
+  bookmarks: "Bookmarks",
+  profile: "Profile",
+};
+
 /**
  * Navigation items for the sidebar, organised by service group.
  *
@@ -50,8 +73,8 @@ export const ROUTES = {
 export interface NavItem {
   /** Display label in the sidebar. */
   label: string;
-  /** Route path — must match a key in `ROUTES`. */
-  path: string;
+  /** Route path — must match a value in `ROUTES`. */
+  path: RoutePath;
   /** SVG icon identifier used by the sidebar icon map. */
   icon: string;
   /** Optional nested sub-items shown when the group is expanded. */

@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
+import { ROUTE_LABELS } from "@/lib/constants";
 
 /**
  * Build breadcrumb segments from the current URL pathname.
@@ -17,26 +18,11 @@ function buildBreadcrumbs(pathname: string) {
   const segments = pathname.split("/").filter(Boolean);
   const crumbs: { label: string; path: string }[] = [];
 
-  const labelMap: Record<string, string> = {
-    dashboard: "Dashboard",
-    orcamind: "OrcaMind",
-    orcalab: "OrcaLab",
-    orcanet: "OrcaNet",
-    tasks: "Tasks",
-    experiments: "Experiments",
-    sweeps: "Sweeps",
-    transfer: "Transfer",
-    retrieve: "Retrieval",
-    history: "History",
-    bookmarks: "Bookmarks",
-    profile: "Profile",
-  };
-
   let accumulated = "";
   for (const segment of segments) {
     accumulated += `/${segment}`;
     const label =
-      labelMap[segment] ||
+      ROUTE_LABELS[segment] ||
       segment.charAt(0).toUpperCase() + segment.slice(1);
     crumbs.push({ label, path: accumulated });
   }

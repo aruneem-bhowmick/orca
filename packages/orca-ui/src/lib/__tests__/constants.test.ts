@@ -1,5 +1,5 @@
 import { describe, it, expect } from "vitest";
-import { ROUTES, NAV_ITEMS } from "@/lib/constants";
+import { ROUTES, NAV_ITEMS, ROUTE_LABELS } from "@/lib/constants";
 import type { NavItem } from "@/lib/constants";
 
 describe("ROUTES", () => {
@@ -96,5 +96,38 @@ describe("NAV_ITEMS", () => {
       item.children?.forEach(checkIcon);
     }
     NAV_ITEMS.forEach(checkIcon);
+  });
+});
+
+describe("ROUTE_LABELS", () => {
+  it("maps URL segments to human-readable labels for all navigable path segments", () => {
+    expect(ROUTE_LABELS.dashboard).toBe("Dashboard");
+    expect(ROUTE_LABELS.orcamind).toBe("OrcaMind");
+    expect(ROUTE_LABELS.orcalab).toBe("OrcaLab");
+    expect(ROUTE_LABELS.orcanet).toBe("OrcaNet");
+    expect(ROUTE_LABELS.tasks).toBe("Tasks");
+    expect(ROUTE_LABELS.experiments).toBe("Experiments");
+    expect(ROUTE_LABELS.sweeps).toBe("Sweeps");
+    expect(ROUTE_LABELS.transfer).toBe("Transfer");
+    expect(ROUTE_LABELS.retrieve).toBe("Retrieval");
+    expect(ROUTE_LABELS.history).toBe("History");
+    expect(ROUTE_LABELS.bookmarks).toBe("Bookmarks");
+    expect(ROUTE_LABELS.profile).toBe("Profile");
+  });
+
+  it("covers every unique segment used in protected ROUTES values", () => {
+    const publicPrefixes = [ROUTES.HOME, ROUTES.LOGIN, ROUTES.REGISTER, ROUTES.OAUTH_CALLBACK];
+    const allSegments = new Set<string>();
+    for (const path of Object.values(ROUTES)) {
+      if (publicPrefixes.includes(path as typeof publicPrefixes[number])) continue;
+      for (const segment of path.split("/").filter(Boolean)) {
+        if (!segment.startsWith(":")) {
+          allSegments.add(segment);
+        }
+      }
+    }
+    for (const segment of allSegments) {
+      expect(ROUTE_LABELS).toHaveProperty(segment);
+    }
   });
 });
