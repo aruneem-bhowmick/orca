@@ -54,7 +54,7 @@ function StatCard({
 export function Dashboard() {
   const navigate = useNavigate();
 
-  const { data: overview, isLoading: overviewLoading } = useQuery({
+  const { data: overview, isLoading: overviewLoading, isError: overviewError } = useQuery({
     queryKey: ["dashboard-overview"],
     queryFn: async () => {
       const res = await apiClient.get<DashboardOverview>("/dashboard/overview");
@@ -62,7 +62,7 @@ export function Dashboard() {
     },
   });
 
-  const { data: activity, isLoading: activityLoading } = useQuery({
+  const { data: activity, isLoading: activityLoading, isError: activityError } = useQuery({
     queryKey: ["history", { per_page: 10 }],
     queryFn: async () => {
       const res = await apiClient.get<PaginatedResponse<ActivityLogEntry>>(
@@ -85,6 +85,13 @@ export function Dashboard() {
       >
         {overviewLoading ? (
           <p className="col-span-4 text-muted-foreground">Loading stats…</p>
+        ) : overviewError ? (
+          <p
+            className="col-span-4 text-destructive"
+            data-testid="overview-error"
+          >
+            Failed to load overview stats.
+          </p>
         ) : (
           <>
             <StatCard
@@ -141,6 +148,13 @@ export function Dashboard() {
         <h2 className="text-lg font-semibold">Recent Activity</h2>
         {activityLoading ? (
           <p className="mt-2 text-muted-foreground">Loading activity…</p>
+        ) : activityError ? (
+          <p
+            className="mt-2 text-destructive"
+            data-testid="activity-error"
+          >
+            Failed to load recent activity.
+          </p>
         ) : !activity?.items.length ? (
           <p
             className="mt-2 text-muted-foreground"
