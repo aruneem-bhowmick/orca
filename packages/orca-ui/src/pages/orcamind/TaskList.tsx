@@ -330,9 +330,17 @@ export function TaskList() {
                 <tr
                   key={task.task_id}
                   className="cursor-pointer border-b last:border-0 hover:bg-muted/50"
+                  tabIndex={0}
+                  role="button"
                   onClick={() =>
                     navigate(`${ROUTES.ORCAMIND_TASKS}/${task.task_id}`)
                   }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      navigate(`${ROUTES.ORCAMIND_TASKS}/${task.task_id}`);
+                    }
+                  }}
                   data-testid={`task-row-${task.task_id}`}
                 >
                   <td className="px-4 py-3 font-medium">{task.name}</td>
