@@ -19,12 +19,12 @@ const INITIAL_BACKOFF_MS = 1_000;
  * @param token - The JWT access token appended as a query parameter.
  * @returns Fully-qualified `ws://` or `wss://` URL.
  */
-function buildWsUrl(experimentId: string, token: string): string {
+function buildWsUrl(experimentId: string): string {
   const base =
     import.meta.env.VITE_WS_BASE_URL ||
     (window.location.protocol === "https:" ? "wss:" : "ws:") +
       `//${window.location.host}`;
-  return `${base}/api/v1/orcalab/ws/experiments/${experimentId}/live?token=${encodeURIComponent(token)}`;
+  return `${base}/api/v1/orcalab/ws/experiments/${experimentId}/live`;
 }
 
 /**
@@ -87,8 +87,8 @@ export function useWebSocket(experimentId: string): UseWebSocketResult {
     const token = useAuthStore.getState().accessToken;
     if (!token) return;
 
-    const url = buildWsUrl(experimentId, token);
-    const ws = new WebSocket(url);
+    const url = buildWsUrl(experimentId);
+    const ws = new WebSocket(url, token);
     wsRef.current = ws;
 
     ws.onopen = () => {

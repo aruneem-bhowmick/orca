@@ -15,6 +15,7 @@ class MockWebSocket {
 
   readyState = MockWebSocket.OPEN;
   url: string;
+  protocols?: string | string[];
 
   onopen: ((event: Event) => void) | null = null;
   onmessage: ((event: MessageEvent) => void) | null = null;
@@ -23,8 +24,9 @@ class MockWebSocket {
 
   sentMessages: string[] = [];
 
-  constructor(url: string) {
+  constructor(url: string, protocols?: string | string[]) {
     this.url = url;
+    this.protocols = protocols;
     MockWebSocket.instances.push(this);
   }
 
@@ -115,7 +117,8 @@ describe("useWebSocket", () => {
     renderHook(() => useWebSocket("exp-123"));
     expect(MockWebSocket.instances).toHaveLength(1);
     expect(MockWebSocket.latest().url).toContain("/api/v1/orcalab/ws/experiments/exp-123/live");
-    expect(MockWebSocket.latest().url).toContain("token=test-token");
+    expect(MockWebSocket.latest().url).not.toContain("token=");
+    expect(MockWebSocket.latest().protocols).toBe("test-token");
   });
 
   it("starts with isConnected false", () => {
