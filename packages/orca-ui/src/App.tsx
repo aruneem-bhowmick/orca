@@ -11,6 +11,9 @@ import { Dashboard } from "@/pages/Dashboard";
 import { TaskList } from "@/pages/orcamind/TaskList";
 import { TaskDetail } from "@/pages/orcamind/TaskDetail";
 import { Recommendations } from "@/pages/orcamind/Recommendations";
+import { ExperimentList } from "@/pages/orcalab/ExperimentList";
+import { ExperimentDetail } from "@/pages/orcalab/ExperimentDetail";
+import { SweepManager } from "@/pages/orcalab/SweepManager";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -85,15 +88,15 @@ export function App() {
             {/* OrcaLab routes */}
             <Route
               path={ROUTES.ORCALAB_EXPERIMENTS}
-              element={<PlaceholderPage title="Experiments" />}
+              element={<ExperimentList />}
             />
             <Route
               path={ROUTES.ORCALAB_EXPERIMENT_DETAIL}
-              element={<PlaceholderPage title="Experiment Detail" />}
+              element={<ExperimentDetail />}
             />
             <Route
               path={ROUTES.ORCALAB_SWEEPS}
-              element={<PlaceholderPage title="Sweeps" />}
+              element={<SweepManager />}
             />
 
             {/* OrcaNet routes */}

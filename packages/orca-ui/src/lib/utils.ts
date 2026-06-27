@@ -44,3 +44,33 @@ export function formatDate(dateString: string): string {
     minute: "2-digit",
   }).format(date);
 }
+
+/**
+ * Calculate the elapsed duration between a start time and an optional
+ * end time (defaults to now if `endDateString` is `null`).
+ *
+ * Returns a human-readable string such as `"2h 15m"`, `"45m 3s"`, or
+ * `"8s"`. Returns `"—"` if `startDateString` is falsy.
+ *
+ * @param startDateString - ISO 8601 start timestamp.
+ * @param endDateString - ISO 8601 end timestamp, or `null` to use now.
+ * @returns Human-readable elapsed time string.
+ */
+export function formatElapsed(
+  startDateString: string,
+  endDateString: string | null = null,
+): string {
+  const start = new Date(startDateString);
+  if (isNaN(start.getTime())) return "—";
+
+  const end = endDateString ? new Date(endDateString) : new Date();
+  const totalSeconds = Math.max(0, Math.floor((end.getTime() - start.getTime()) / 1_000));
+
+  const hours = Math.floor(totalSeconds / 3_600);
+  const minutes = Math.floor((totalSeconds % 3_600) / 60);
+  const seconds = totalSeconds % 60;
+
+  if (hours > 0) return `${hours}h ${minutes}m`;
+  if (minutes > 0) return `${minutes}m ${seconds}s`;
+  return `${seconds}s`;
+}
