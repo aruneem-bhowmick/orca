@@ -8,6 +8,9 @@ import { Login } from "@/pages/Login";
 import { Register } from "@/pages/Register";
 import { OAuthCallback } from "@/pages/OAuthCallback";
 import { Dashboard } from "@/pages/Dashboard";
+import { TaskList } from "@/pages/orcamind/TaskList";
+import { TaskDetail } from "@/pages/orcamind/TaskDetail";
+import { Recommendations } from "@/pages/orcamind/Recommendations";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -69,13 +72,14 @@ export function App() {
             <Route path={ROUTES.DASHBOARD} element={<Dashboard />} />
 
             {/* OrcaMind routes */}
-            <Route
-              path={ROUTES.ORCAMIND_TASKS}
-              element={<PlaceholderPage title="Tasks" />}
-            />
+            <Route path={ROUTES.ORCAMIND_TASKS} element={<TaskList />} />
             <Route
               path={ROUTES.ORCAMIND_TASK_DETAIL}
-              element={<PlaceholderPage title="Task Detail" />}
+              element={<TaskDetail />}
+            />
+            <Route
+              path={ROUTES.ORCAMIND_RECOMMENDATIONS}
+              element={<Recommendations />}
             />
 
             {/* OrcaLab routes */}
