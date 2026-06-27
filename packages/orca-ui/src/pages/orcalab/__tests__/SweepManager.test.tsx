@@ -414,6 +414,8 @@ describe("SweepManager", () => {
     });
     fireEvent.click(screen.getByTestId("sweep-submit-btn"));
 
-    expect(screen.getByText("Number of trials must be a whole number")).toBeInTheDocument();
+    await waitFor(() => {
+      expect(screen.getByText("Number of trials must be a whole number")).toBeInTheDocument();
+    });
   });
 });
