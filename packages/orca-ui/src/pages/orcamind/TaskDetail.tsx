@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useRef } from "react";
 import { useParams, useNavigate } from "react-router-dom";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import apiClient from "@/api/client";
@@ -88,9 +88,17 @@ function SimilarTasksSection({ taskId }: { taskId: string }) {
                 <tr
                   key={t.task_id}
                   className="cursor-pointer border-b last:border-0 hover:bg-muted/50"
+                  tabIndex={0}
+                  role="button"
                   onClick={() =>
                     navigate(`${ROUTES.ORCAMIND_TASKS}/${t.task_id}`)
                   }
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" || e.key === " ") {
+                      e.preventDefault();
+                      navigate(`${ROUTES.ORCAMIND_TASKS}/${t.task_id}`);
+                    }
+                  }}
                   data-testid={`similar-row-${t.task_id}`}
                 >
                   <td className="px-4 py-2 font-medium">{t.name}</td>
@@ -217,6 +225,7 @@ export function TaskDetail() {
   const { id: taskId } = useParams<{ id: string }>();
   const [bookmarked, setBookmarked] = useState(false);
   const [bookmarkId, setBookmarkId] = useState<string | null>(null);
+  const isBookmarkPending = useRef(false);
 
   const {
     data: task,
@@ -248,25 +257,25 @@ export function TaskDetail() {
   });
 
   async function handleBookmarkToggle() {
-    if (bookmarked && bookmarkId) {
-      try {
+    if (isBookmarkPending.current) return;
+    isBookmarkPending.current = true;
+    try {
+      if (bookmarked && bookmarkId) {
         await apiClient.delete(`/bookmarks/${bookmarkId}`);
         setBookmarked(false);
         setBookmarkId(null);
-      } catch {
-        /* ignore – bookmark may already be gone */
-      }
-    } else {
-      try {
+      } else {
         const res = await apiClient.post<Bookmark>("/bookmarks", {
           resource_type: "task",
           resource_id: taskId,
         });
         setBookmarked(true);
         setBookmarkId(res.data.id);
-      } catch {
-        /* ignore – may already be bookmarked */
       }
+    } catch {
+      /* ignore – bookmark may already be gone or already bookmarked */
+    } finally {
+      isBookmarkPending.current = false;
     }
   }
 
@@ -367,7 +376,11 @@ export function TaskDetail() {
         {recommendations && (
           <RecommendationCards
             recommendations={recommendations}
-            onStartExperiment={() => {}}
+            onStartExperiment={(rec) =>
+              navigate(
+                `${ROUTES.ORCALAB_EXPERIMENTS}?model_id=${rec.model_id}&task_id=${taskId}`,
+              )
+            }
           />
         )}
       </div>
