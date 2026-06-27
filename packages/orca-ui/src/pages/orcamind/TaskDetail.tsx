@@ -327,13 +327,13 @@ export function TaskDetail() {
               {task.n_features !== null && (
                 <div>
                   <dt className="text-muted-foreground">Features</dt>
-                  <dd>{task.n_features}</dd>
+                  <dd>{task.n_features.toLocaleString()}</dd>
                 </div>
               )}
               {task.n_classes !== null && (
                 <div>
                   <dt className="text-muted-foreground">Classes</dt>
-                  <dd>{task.n_classes}</dd>
+                  <dd>{task.n_classes.toLocaleString()}</dd>
                 </div>
               )}
               <div>
