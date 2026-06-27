@@ -89,7 +89,6 @@ function SimilarTasksSection({ taskId }: { taskId: string }) {
                   key={t.task_id}
                   className="cursor-pointer border-b last:border-0 hover:bg-muted/50"
                   tabIndex={0}
-                  role="button"
                   onClick={() =>
                     navigate(`${ROUTES.ORCAMIND_TASKS}/${t.task_id}`)
                   }

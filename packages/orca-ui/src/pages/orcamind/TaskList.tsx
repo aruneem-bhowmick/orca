@@ -331,7 +331,6 @@ export function TaskList() {
                   key={task.task_id}
                   className="cursor-pointer border-b last:border-0 hover:bg-muted/50"
                   tabIndex={0}
-                  role="button"
                   onClick={() =>
                     navigate(`${ROUTES.ORCAMIND_TASKS}/${task.task_id}`)
                   }
