@@ -169,6 +169,33 @@ describe("ExperimentDetail", () => {
     expect(screen.getByTestId("bookmark-btn")).toBeInTheDocument();
   });
 
+  it("hydrates bookmarked state from existing bookmarks on load", async () => {
+    vi.mocked(apiClient.get).mockImplementation((url: string) => {
+      if (url.includes("/bookmarks")) {
+        return Promise.resolve({
+          data: {
+            items: [
+              { id: "bm-001", resource_type: "experiment", resource_id: "exp-001" }
+            ]
+          }
+        });
+      }
+      return Promise.resolve({ data: runningExperiment });
+    });
+
+    render(<ExperimentDetail />);
+    
+    await waitFor(() => {
+      expect(screen.getByTestId("bookmark-btn")).toHaveTextContent("Bookmarked");
+    });
+
+    vi.mocked(apiClient.delete).mockResolvedValue({});
+    fireEvent.click(screen.getByTestId("bookmark-btn"));
+    await waitFor(() => {
+      expect(apiClient.delete).toHaveBeenCalledWith("/bookmarks/bm-001");
+    });
+  });
+
   it("toggles bookmark on when clicked (not bookmarked -> bookmarked)", async () => {
     vi.mocked(apiClient.post).mockResolvedValue({
       data: { id: "bm-001", resource_type: "experiment", resource_id: "exp-001" },

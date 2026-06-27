@@ -1,4 +1,4 @@
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
@@ -242,6 +242,33 @@ export function ExperimentDetail() {
   const [bookmarked, setBookmarked] = useState(false);
   const [bookmarkId, setBookmarkId] = useState<string | null>(null);
   const isBookmarkPending = useRef(false);
+
+  useEffect(() => {
+    async function checkBookmarkStatus() {
+      if (!experimentId) return;
+      try {
+        const res = await apiClient.get<any>("/bookmarks?per_page=100");
+        const items = res.data?.items;
+        if (Array.isArray(items)) {
+          const existing = items.find(
+            (b: any) =>
+              b.resource_type === "experiment" &&
+              b.resource_id === experimentId,
+          );
+          if (existing) {
+            setBookmarked(true);
+            setBookmarkId(existing.id);
+          } else {
+            setBookmarked(false);
+            setBookmarkId(null);
+          }
+        }
+      } catch {
+        // ignore
+      }
+    }
+    checkBookmarkStatus();
+  }, [experimentId]);
 
   const {
     data: experiment,
