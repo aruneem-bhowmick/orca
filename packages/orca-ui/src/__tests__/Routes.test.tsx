@@ -36,6 +36,37 @@ vi.mock("@/api/client", () => ({
           },
         });
       }
+      if (url === "/dashboard/overview") {
+        return Promise.resolve({
+          data: {
+            total_tasks: 5,
+            running_experiments: 2,
+            completed_experiments: 10,
+            recent_transfers: 3,
+          },
+        });
+      }
+      if (url === "/history") {
+        return Promise.resolve({ data: { items: [], total: 0, page: 1, per_page: 10, pages: 0 } });
+      }
+      if (url === "/orcamind/tasks") {
+        return Promise.resolve({ data: [] });
+      }
+      if (url.startsWith("/orcamind/tasks/")) {
+        return Promise.resolve({
+          data: {
+            task_id: url.split("/").pop(),
+            name: "Test Task",
+            domain: "vision",
+            task_type: "classification",
+            n_samples: 1000,
+            n_features: null,
+            n_classes: 10,
+            metadata: null,
+            created_at: "2024-01-01T00:00:00Z",
+          },
+        });
+      }
       return Promise.reject(new Error(`Unexpected API call: GET ${url}`));
     }),
     interceptors: {

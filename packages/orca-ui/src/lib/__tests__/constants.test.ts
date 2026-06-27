@@ -17,6 +17,9 @@ describe("ROUTES", () => {
   it("defines OrcaMind routes under /dashboard/orcamind", () => {
     expect(ROUTES.ORCAMIND_TASKS).toBe("/dashboard/orcamind/tasks");
     expect(ROUTES.ORCAMIND_TASK_DETAIL).toBe("/dashboard/orcamind/tasks/:id");
+    expect(ROUTES.ORCAMIND_RECOMMENDATIONS).toBe(
+      "/dashboard/orcamind/recommendations",
+    );
   });
 
   it("defines OrcaLab routes under /dashboard/orcalab", () => {
@@ -55,39 +58,40 @@ describe("NAV_ITEMS", () => {
     expect(dashboard.children).toBeUndefined();
   });
 
-  it("has OrcaMind as a group with Tasks sub-item", () => {
-    const orcaMind = NAV_ITEMS[1];
-    expect(orcaMind.label).toBe("OrcaMind");
-    expect(orcaMind.children).toBeDefined();
-    expect(orcaMind.children!.length).toBe(1);
-    expect(orcaMind.children![0].label).toBe("Tasks");
+  it("has OrcaMind as a group with a Tasks sub-item", () => {
+    const orcaMind = NAV_ITEMS.find((item) => item.label === "OrcaMind");
+    expect(orcaMind).toBeDefined();
+    expect(orcaMind!.children).toBeDefined();
+    expect(orcaMind!.children!.length).toBe(1);
+    const childLabels = orcaMind!.children!.map((c: NavItem) => c.label);
+    expect(childLabels).toEqual(["Tasks"]);
   });
 
   it("has OrcaLab as a group with Experiments and Sweeps sub-items", () => {
-    const orcaLab = NAV_ITEMS[2];
-    expect(orcaLab.label).toBe("OrcaLab");
-    expect(orcaLab.children).toBeDefined();
-    expect(orcaLab.children!.length).toBe(2);
-    const childLabels = orcaLab.children!.map((c: NavItem) => c.label);
+    const orcaLab = NAV_ITEMS.find((item) => item.label === "OrcaLab");
+    expect(orcaLab).toBeDefined();
+    expect(orcaLab!.children).toBeDefined();
+    expect(orcaLab!.children!.length).toBe(2);
+    const childLabels = orcaLab!.children!.map((c: NavItem) => c.label);
     expect(childLabels).toEqual(["Experiments", "Sweeps"]);
   });
 
   it("has OrcaNet as a group with Transfer and Retrieval sub-items", () => {
-    const orcaNet = NAV_ITEMS[3];
-    expect(orcaNet.label).toBe("OrcaNet");
-    expect(orcaNet.children).toBeDefined();
-    expect(orcaNet.children!.length).toBe(2);
-    const childLabels = orcaNet.children!.map((c: NavItem) => c.label);
+    const orcaNet = NAV_ITEMS.find((item) => item.label === "OrcaNet");
+    expect(orcaNet).toBeDefined();
+    expect(orcaNet!.children).toBeDefined();
+    expect(orcaNet!.children!.length).toBe(2);
+    const childLabels = orcaNet!.children!.map((c: NavItem) => c.label);
     expect(childLabels).toEqual(["Transfer", "Retrieval"]);
   });
 
   it("has History and Bookmarks as flat items", () => {
-    const history = NAV_ITEMS[4];
-    const bookmarks = NAV_ITEMS[5];
-    expect(history.label).toBe("History");
-    expect(history.children).toBeUndefined();
-    expect(bookmarks.label).toBe("Bookmarks");
-    expect(bookmarks.children).toBeUndefined();
+    const history = NAV_ITEMS.find((item) => item.label === "History");
+    const bookmarks = NAV_ITEMS.find((item) => item.label === "Bookmarks");
+    expect(history).toBeDefined();
+    expect(history!.children).toBeUndefined();
+    expect(bookmarks).toBeDefined();
+    expect(bookmarks!.children).toBeUndefined();
   });
 
   it("every item has an icon defined", () => {

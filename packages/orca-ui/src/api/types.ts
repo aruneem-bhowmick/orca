@@ -104,3 +104,82 @@ export interface DashboardStats {
   experiments_run: number;
   transfers_scored: number;
 }
+
+/**
+ * Aggregated platform statistics returned by `GET /dashboard/overview`.
+ * Used on the main dashboard page to populate the summary stat cards.
+ */
+export interface DashboardOverview {
+  total_tasks: number;
+  running_experiments: number;
+  completed_experiments: number;
+  recent_transfers: number;
+}
+
+/** An OrcaMind task record returned by `GET /orcamind/tasks/:id`. */
+export interface Task {
+  task_id: string;
+  name: string;
+  domain: string;
+  task_type: string;
+  n_samples: number;
+  n_features: number | null;
+  n_classes: number | null;
+  metadata: Record<string, unknown> | null;
+  created_at: string;
+}
+
+/** A model recommendation entry from `POST /orcamind/recommend`. */
+export interface ModelRecommendation {
+  model_id: string;
+  model_name: string;
+  architecture: string;
+  predicted_accuracy: number;
+  confidence: number;
+  config: Record<string, unknown> | null;
+}
+
+/** A similar-task entry from `POST /orcamind/similar-tasks`. */
+export interface SimilarTask {
+  task_id: string;
+  name: string;
+  domain: string;
+  task_type: string;
+  similarity_score: number;
+}
+
+/** A performance-prediction result from `POST /orcamind/predict-performance`. */
+export interface PerformancePrediction {
+  predicted_accuracy: number;
+  confidence: number;
+  model_id: string;
+}
+
+/** Request body for `POST /orcamind/recommend`. */
+export interface RecommendRequest {
+  task_id: string;
+  top_k?: number;
+}
+
+/** Request body for `POST /orcamind/similar-tasks`. */
+export interface SimilarTasksRequest {
+  task_id: string;
+  top_k?: number;
+}
+
+/** Request body for `POST /orcamind/predict-performance`. */
+export interface PredictPerformanceRequest {
+  task_id: string;
+  model_config: Record<string, unknown>;
+}
+
+/** Request body for `POST /orcamind/tasks` (embed a new task into OrcaMind). */
+export interface EmbedTaskRequest {
+  name: string;
+  domain: string;
+  task_type: string;
+  n_samples: number;
+  n_features?: number;
+  n_classes?: number;
+  metadata?: Record<string, unknown>;
+}
