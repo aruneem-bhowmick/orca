@@ -92,11 +92,6 @@ export const NAV_ITEMS: NavItem[] = [
     icon: "cpu",
     children: [
       { label: "Tasks", path: ROUTES.ORCAMIND_TASKS, icon: "cpu" },
-      {
-        label: "Recommendations",
-        path: ROUTES.ORCAMIND_RECOMMENDATIONS,
-        icon: "search",
-      },
     ],
   },
   {
