@@ -1,5 +1,5 @@
 import { useQuery } from "@tanstack/react-query";
-import { useSearchParams, useNavigate } from "react-router-dom";
+import { useSearchParams, useNavigate, Link } from "react-router-dom";
 import apiClient from "@/api/client";
 import { Button } from "@/components/ui/Button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
@@ -124,12 +124,12 @@ export function Recommendations() {
         {!taskId ? (
           <p className="text-muted-foreground" data-testid="no-task-selected">
             Select a task from the{" "}
-            <a
-              href={ROUTES.ORCAMIND_TASKS}
+            <Link
+              to={ROUTES.ORCAMIND_TASKS}
               className="underline hover:text-foreground"
             >
               task list
-            </a>{" "}
+            </Link>{" "}
             to view recommendations.
           </p>
         ) : isLoading ? (
