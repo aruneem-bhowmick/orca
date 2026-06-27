@@ -183,3 +183,97 @@ export interface EmbedTaskRequest {
   n_classes?: number;
   metadata?: Record<string, unknown>;
 }
+
+/**
+ * Possible lifecycle states for an OrcaLab experiment or sweep.
+ * `pending` – not yet started; `running` – actively training;
+ * `completed` – finished successfully; `failed` – terminated with an error.
+ */
+export type ExperimentStatus = "pending" | "running" | "completed" | "failed";
+
+/**
+ * An OrcaLab experiment record returned by
+ * `GET /orcalab/experiments` and `GET /orcalab/experiments/:id`.
+ */
+export interface Experiment {
+  experiment_id: string;
+  name: string;
+  task_id: string;
+  model_id: string;
+  status: ExperimentStatus;
+  started_at: string | null;
+  completed_at: string | null;
+  training_config: Record<string, unknown> | null;
+  metrics: Record<string, number> | null;
+  mlflow_run_id: string | null;
+  created_at: string;
+}
+
+/** Request body for `POST /orcalab/experiments`. */
+export interface CreateExperimentRequest {
+  task_id: string;
+  model_id: string;
+  training_config?: Record<string, unknown>;
+}
+
+/**
+ * A single trial inside a hyperparameter sweep, as returned in
+ * `Sweep.results`.
+ */
+export interface SweepTrial {
+  /** Sequential trial index (1-based). */
+  trial_id: number;
+  /** Hyperparameter values sampled for this trial. */
+  params: Record<string, number | string | boolean>;
+  /** Metric values recorded at trial completion. */
+  metrics: Record<string, number>;
+}
+
+/**
+ * An OrcaLab hyperparameter sweep record returned by
+ * `GET /orcalab/sweeps` and `GET /orcalab/sweeps/:id`.
+ */
+export interface Sweep {
+  sweep_id: string;
+  task_id: string;
+  search_strategy: string;
+  n_trials: number;
+  completed_trials: number;
+  status: ExperimentStatus;
+  best_trial: number | null;
+  results: SweepTrial[] | null;
+  created_at: string;
+}
+
+/** Request body for `POST /orcalab/sweeps`. */
+export interface CreateSweepRequest {
+  task_id: string;
+  search_strategy: string;
+  n_trials: number;
+  use_orcamind_priors?: boolean;
+}
+
+/**
+ * A real-time metric update delivered over the WebSocket connection
+ * at `WS /orcalab/ws/experiments/:id/live`.
+ */
+export interface MetricUpdate {
+  /** Current training epoch (1-based). */
+  epoch: number;
+  /** Training loss at this epoch. */
+  loss: number;
+  /** Validation accuracy at this epoch, if available. */
+  accuracy: number | null;
+  /** Effective learning rate at this epoch, if available. */
+  learning_rate: number | null;
+  /** ISO-8601 timestamp from the training process. */
+  timestamp: string;
+}
+
+/**
+ * A WebSocket control message sent from the browser to the BFF to
+ * pause, resume, or cancel an in-progress experiment.
+ */
+export interface ExperimentControl {
+  action: "pause" | "resume" | "cancel";
+}

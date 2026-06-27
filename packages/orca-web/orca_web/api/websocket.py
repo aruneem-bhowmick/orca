@@ -124,13 +124,22 @@ async def experiment_live_proxy(
     experiment_id:
         UUID of the experiment whose live metrics to stream.
     """
-    # ── Authentication via query-parameter JWT ──────────────────────────
+    # ── Authentication via query-parameter or Sec-WebSocket-Protocol JWT ──────────────────────────
     token = websocket.query_params.get("token")
+    protocol = None
+    if not token:
+        protocol_header = websocket.headers.get("sec-websocket-protocol")
+        if protocol_header:
+            token = protocol_header.split(",")[0].strip()
+            protocol = token
+
     user_id = _validate_token(token)
     if user_id is None:
-        await websocket.accept()
+        await websocket.accept(subprotocol=protocol)
         await websocket.close(code=4001, reason="Invalid or missing token")
         return
+
+    await websocket.accept(subprotocol=protocol)
 
     # ── Connect to upstream OrcaLab WebSocket ──────────────────────────
     upstream_url = _build_upstream_ws_url(experiment_id)

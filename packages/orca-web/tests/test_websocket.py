@@ -251,6 +251,23 @@ class TestAuthRejection:
 
         ws.accept.assert_awaited_once()
 
+    async def test_authenticates_via_sec_websocket_protocol(self, mock_settings):
+        """Authentication succeeds when JWT is provided in Sec-WebSocket-Protocol header."""
+        token = _valid_token(mock_settings)
+        ws = _make_browser_ws()
+        ws.headers = {"sec-websocket-protocol": token}
+
+        upstream = _MockUpstream()
+        with patch(
+            "orca_web.api.websocket.websockets.connect",
+            _fake_connect(upstream),
+        ):
+            await experiment_live_proxy(ws, "exp-1")
+
+        ws.accept.assert_awaited_with(subprotocol=token)
+        for call in ws.close.call_args_list:
+            assert call.kwargs.get("code") != 4001
+
 
 # ── Upstream connection failure ────────────────────────────────────────
 

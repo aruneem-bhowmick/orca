@@ -81,12 +81,11 @@
 - Multi-stage Dockerfile (node:20-alpine builder → nginx:alpine runtime) with nginx config for static serving, /api/ proxy to orca-web:8003, /ws/ WebSocket proxy, SPA fallback
 - Makefile targets: ui-install, ui-dev, ui-build, ui-test, ui-lint
 - Test suite: 116 tests across 16 files — auth store (6), API client interceptors (3), auth API functions (8), useAuth hook (7), Login/Register/OAuthCallback pages (23), Landing (7), ProtectedRoute (3), Sidebar (8), Header (5), MainLayout (4), Breadcrumbs (9), App routing (4), Route map (13), Constants (16)
+- OrcaLab experiment and sweep pages with live WebSocket metrics: `ExperimentList` (status-filter table, pulsing running indicator, creation dialog), `ExperimentDetail` (real-time Recharts line charts for loss and accuracy via `useWebSocket` hook, Pause/Resume/Cancel controls, final metric cards and artifact download link for completed runs, status-branched display), `SweepManager` (inline expandable detail panels with per-trial metric chart and results table, best-trial highlighting, creation dialog with OrcaMind priors toggle); `useWebSocket` hook with exponential-backoff reconnection (max 3 retries), permanent-close handle, auth-rejection suppression; `formatElapsed()` utility for human-readable elapsed durations; 8 new OrcaLab/Experiment/Sweep types in `api/types.ts`; `ResizeObserver` stub in test setup for Recharts jsdom compatibility — **249 tests total** across 24 files
 
 **Next:**
-- Rich dashboard with charts (Recharts) and TanStack Query for experiment/sweep/task data
-- WebSocket integration for live experiment metrics
-- Task, Experiment, Sweep, Transfer detail pages
-- History and Bookmarks pages with pagination
+- OrcaNet Transfer Explorer and Retrieval View pages
+- History and Bookmarks pages with pagination and infinite scroll
 - User settings page with profile editing
 
 ## Platform — Planned

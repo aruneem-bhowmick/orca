@@ -1450,9 +1450,10 @@ orca-ui/
 │   ├── store/
 │   │   └── auth.ts              # Zustand store: user, accessToken, isAuthenticated, setAuth, setToken, setUser, clearAuth
 │   ├── hooks/
-│   │   └── useAuth.ts           # Wraps Zustand store with login/register/logout/refreshToken + session restore on mount
+│   │   ├── useAuth.ts           # Wraps Zustand store with login/register/logout/refreshToken + session restore on mount
+│   │   └── useWebSocket.ts      # WebSocket manager for live experiment metrics with auto-reconnect (max 3 retries, exponential backoff)
 │   ├── lib/
-│   │   ├── utils.ts             # cn() (clsx + tailwind-merge), formatDate()
+│   │   ├── utils.ts             # cn() (clsx + tailwind-merge), formatDate(), formatElapsed()
 │   │   └── constants.ts         # API_BASE_URL, ROUTES object, NAV_ITEMS navigation structure
 │   ├── components/
 │   │   ├── ui/                  # shadcn/ui-style: Button (6 variants), Card (5 subcomponents), Input (with label/error)
@@ -1469,18 +1470,26 @@ orca-ui/
 │   │   ├── Dashboard.tsx        # Overview dashboard: stat cards (GET /dashboard/overview) + activity timeline (GET /history) + quick-action nav
 │   │   ├── __tests__/
 │   │   │   └── Dashboard.test.tsx    # 11 tests: heading, stat cards, quick-action buttons, activity timeline, navigation
-│   │   └── orcamind/
-│   │       ├── TaskList.tsx          # OrcaMind task list with search/sort/filter, row navigation, and embed-task dialog
-│   │       ├── TaskDetail.tsx        # Single task view with recommendations, similar-tasks, predict-performance, and bookmark toggle
-│   │       ├── Recommendations.tsx   # RecommendationCards component + standalone Recommendations page (task_id from query param)
+│   │   ├── orcamind/
+│   │   │   ├── TaskList.tsx          # OrcaMind task list with search/sort/filter, row navigation, and embed-task dialog
+│   │   │   ├── TaskDetail.tsx        # Single task view with recommendations, similar-tasks, predict-performance, and bookmark toggle
+│   │   │   ├── Recommendations.tsx   # RecommendationCards component + standalone Recommendations page (task_id from query param)
+│   │   │   └── __tests__/
+│   │   │       ├── TaskList.test.tsx         # 15 tests: table, search, sort, row navigation, embed dialog, validation
+│   │   │       ├── TaskDetail.test.tsx        # 17 tests: metadata, bookmark toggle, recommendations, similar tasks, predict performance
+│   │   │       └── Recommendations.test.tsx   # 12 tests: RecommendationCards (7) + Recommendations page (5)
+│   │   └── orcalab/
+│   │       ├── ExperimentList.tsx    # Experiment table with status-filter dropdown, pulsing indicator for running experiments, and creation dialog
+│   │       ├── ExperimentDetail.tsx  # Experiment metadata + live Recharts metrics via useWebSocket (running) or final metric cards (completed)
+│   │       ├── SweepManager.tsx      # Sweep list with inline expandable detail panels, per-trial chart (best trial highlighted), creation dialog
 │   │       └── __tests__/
-│   │           ├── TaskList.test.tsx         # 15 tests: table, search, sort, row navigation, embed dialog, validation
-│   │           ├── TaskDetail.test.tsx        # 17 tests: metadata, bookmark toggle, recommendations, similar tasks, predict performance
-│   │           └── Recommendations.test.tsx   # 12 tests: RecommendationCards (7) + Recommendations page (5)
+│   │           ├── ExperimentList.test.tsx   # 20 tests: table, status filter, pulsing badge, navigation, creation dialog, validation
+│   │           ├── ExperimentDetail.test.tsx # 27 tests: metadata, bookmark, live-metrics ws-status/chart/table/controls, completed metrics/artifact, failed/pending messages
+│   │           └── SweepManager.test.tsx     # 25 tests: list, expand/collapse, progress bar, trial chart, best-trial highlight, creation dialog
 │   ├── App.tsx                  # BrowserRouter + QueryClientProvider + hierarchical route definitions
 │   ├── main.tsx                 # ReactDOM.createRoot entry
 │   └── test/
-│       ├── setup.ts             # @testing-library/jest-dom matchers
+│       ├── setup.ts             # @testing-library/jest-dom matchers + ResizeObserver stub for Recharts
 │       ├── test-utils.tsx       # Custom render() wrapping QueryClientProvider + MemoryRouter
 │       └── mocks/handlers.ts    # Mock fixtures: User, TokenResponse, HealthStatus, DashboardOverview, Task, ModelRecommendation, SimilarTask, PerformancePrediction, ActivityLogEntry
 ├── Dockerfile                   # Multi-stage: node:20-alpine → nginx:alpine
@@ -1598,6 +1607,224 @@ Each card (`data-testid="rec-card-{model_id}"`) displays a rank badge (`#1`, `#2
 
 **`Recommendations`** — standalone page at `/dashboard/orcamind/recommendations`. Reads `task_id` from `useSearchParams()`. When `task_id` is absent, renders `data-testid="no-task-selected"` with a prompt to navigate here from a task detail page. When `task_id` is present, fires `POST /orcamind/recommend` (`useQuery(["orcamind-recommend", taskId])`, enabled only when `taskId` is truthy, staleTime 60 s). Shows `data-testid="rec-loading"` while pending and `data-testid="rec-error"` on failure. On success, renders `<RecommendationCards>`.
 
+---
+
+### OrcaLab Pages (`pages/orcalab/`)
+
+#### `hooks/useWebSocket.ts` — Live experiment metrics hook
+
+Manages a persistent WebSocket connection to
+`WS /api/v1/orcalab/ws/experiments/{experimentId}/live?token={accessToken}`.
+The token is taken from the Zustand auth store so the hook is self-contained and
+works without extra props.
+
+**Return type — `UseWebSocketResult`:**
+
+| Field | Type | Description |
+|---|---|---|
+| `messages` | `MetricUpdate[]` | Accumulated metric updates since connection opened, in arrival order |
+| `isConnected` | `boolean` | Whether the socket is currently in the OPEN state |
+| `send` | `(data: unknown) => void` | Sends a JSON-serialised payload; no-ops when socket is not OPEN |
+| `close` | `() => void` | Closes the socket permanently, suppressing all future reconnection |
+
+**Reconnection:** On unexpected close (any code other than 1000 normal or 4001
+auth-rejection), the hook schedules a reconnect after an exponential backoff
+starting at 1 second and doubling each attempt. After three failed attempts the
+hook stops reconnecting. Calling `close()` or unmounting the component
+permanently cancels any pending reconnect timer.
+
+**Key behaviours:**
+- No connection is opened when `experimentId` is empty.
+- Changing `experimentId` closes the old socket, clears `messages`, and opens a
+  new connection.
+- Malformed (non-JSON) frames are silently ignored.
+- Auth-rejection close code 4001 does not trigger reconnection.
+
+---
+
+#### `ExperimentList.tsx` — Experiment table with status filtering
+
+Fetches all experiments from `GET /orcalab/experiments`
+(`useQuery(["orcalab-experiments"])`, staleTime 30 s) and displays them in a
+table.
+
+**Sub-components:**
+
+- **`StatusBadge`** — Pill badge coloured by `ExperimentStatus` (`pending` muted,
+  `running` blue with pulsing dot, `completed` green, `failed` red). Test ID:
+  `status-badge-{status}`.
+- **`NewExperimentDialog`** — Modal creation form requiring `task_id` and
+  `model_id`. Pre-fills `task_id` from the `?task_id` query parameter (written
+  by the OrcaMind recommendations "Start Experiment" flow). Calls
+  `POST /orcalab/experiments` (`useMutation`, invalidates
+  `["orcalab-experiments"]`). Test ID: `new-experiment-dialog`.
+
+**Status filter** — `<select>` (`data-testid="status-filter"`) with options "all
+statuses", "Pending", "Running", "Completed", "Failed". Filters the list
+client-side; shows `data-testid="exp-list-empty"` when no experiments match.
+
+**Table columns:** Name / ID, Task, Model, Status, Started, Elapsed.
+Elapsed time is computed by `formatElapsed(started_at, completed_at)` which uses
+`completed_at` as the end time for finished runs and `Date.now()` for running
+ones. Clicking a row (or pressing Enter/Space) navigates to
+`/dashboard/orcalab/experiments/:id`.
+
+**Test IDs:**
+
+| Element | `data-testid` |
+|---|---|
+| New Experiment button | `new-experiment-btn` |
+| Dialog | `new-experiment-dialog` |
+| Status filter | `status-filter` |
+| Loading | `exp-list-loading` |
+| Error | `exp-list-error` |
+| Empty | `exp-list-empty` |
+| Table | `exp-table` |
+| Row | `exp-row-{experiment_id}` |
+| Task ID field | `exp-task-id` |
+| Model ID field | `exp-model-id` |
+| Submit button | `exp-submit-btn` |
+
+---
+
+#### `ExperimentDetail.tsx` — Single experiment view with live charts
+
+Fetches one experiment from `GET /orcalab/experiments/:id`
+(`useQuery(["orcalab-experiment", id])`, staleTime 60 s). When status is
+`"running"`, `refetchInterval` is set to 15 seconds to pick up status
+transitions without a page refresh.
+
+**Bookmark toggle** — same pattern as `TaskDetail.tsx`: `POST /bookmarks` with
+`resource_type: "experiment"` on save, `DELETE /bookmarks/:id` on remove.
+
+**`LiveMetricsSection`** — rendered when status is `"running"`. Calls
+`useWebSocket(experimentId)` and renders:
+
+- A connection status pill (`data-testid="ws-status"`) showing "Live" (green
+  pulsing) or "Reconnecting…" (muted) based on `isConnected`.
+- Three control buttons (Pause / Resume / Cancel) that call `send({ action })`.
+  Cancel also calls `close()` to permanently disconnect. All three are disabled
+  when `isConnected` is false.
+- A Recharts `<LineChart>` (`data-testid="metric-chart"`) with dual Y-axes:
+  loss on the left (red) and accuracy on the right (green). Hidden until at
+  least one message arrives; `data-testid="no-metrics-yet"` shown instead.
+- A scrollable `<table>` (`data-testid="metric-table"`) listing all received
+  updates in reverse order with columns Epoch / Loss / Accuracy / LR / Timestamp.
+
+**`CompletedMetricsSection`** — rendered when status is `"completed"`. Displays:
+
+- `data-testid="final-metrics-grid"` — one card per key in
+  `experiment.metrics`, showing key name and value formatted to 4 decimal places.
+- `data-testid="artifact-section"` (only when `mlflow_run_id` is non-null) —
+  MLflow run ID display and a download link at
+  `/api/v1/orcalab/experiments/:id/artifact` (`data-testid="artifact-download"`).
+
+When status is `"failed"` or `"pending"`, a plain text message is shown at
+`data-testid="no-metrics-msg"`.
+
+**Test IDs:**
+
+| Element | `data-testid` |
+|---|---|
+| Loading | `exp-loading` |
+| Error | `exp-error` |
+| Metadata grid | `exp-metadata` |
+| Bookmark button | `bookmark-btn` |
+| Live section | `live-metrics` |
+| WS status pill | `ws-status` |
+| No-metrics placeholder | `no-metrics-yet` |
+| Metric chart | `metric-chart` |
+| Metric table | `metric-table` |
+| Pause / Resume / Cancel | `pause-btn`, `resume-btn`, `cancel-btn` |
+| Completed section | `completed-metrics` |
+| Final metric grid | `final-metrics-grid` |
+| Artifact section | `artifact-section` |
+| Artifact download | `artifact-download` |
+| No-metrics message | `no-metrics-msg` |
+
+---
+
+#### `SweepManager.tsx` — Hyperparameter sweep list with inline detail panels
+
+Fetches all sweeps from `GET /orcalab/sweeps`
+(`useQuery(["orcalab-sweeps"])`, staleTime 30 s) and all tasks from
+`GET /orcamind/tasks` (staleTime 60 s, used to populate the creation dialog).
+
+**Sub-components:**
+
+- **`StatusBadge`** — same colour scheme as `ExperimentList.tsx`.
+- **`TrialProgress`** — a labelled progress bar showing `completed / total` trials
+  as a percentage. `data-testid="trial-progress-bar"`.
+- **`SweepResultsChart`** — Recharts `<LineChart>` with one `<Line>` per unique
+  metric key across all trials. The best trial's dots are rendered larger and in
+  amber; other dots use the default colour sequence. Renders nothing when
+  `results` is null or empty. `data-testid="sweep-chart"`.
+- **`SweepDetailPanel`** — collapsible panel rendered below the selected sweep row
+  (only one panel open at a time). Shows `TrialProgress`, `SweepResultsChart`,
+  and a `<table>` (`data-testid="sweep-trials-table"`) with one row per trial.
+  The best trial row has amber background classes and a `★` marker.
+  `data-testid="sweep-detail-{sweep_id}"`.
+- **`NewSweepDialog`** — Creation form with a task dropdown (populated from the
+  OrcaMind task list), a search-strategy dropdown (Random / Grid / Bayesian),
+  a number-of-trials input, and an OrcaMind-priors checkbox. On submit calls
+  `POST /orcalab/sweeps` (`useMutation`, invalidates `["orcalab-sweeps"]`).
+  `data-testid="new-sweep-dialog"`.
+
+**Row toggle:** clicking a row expands its detail panel (`data-testid="sweep-row-{id}"`).
+Clicking again collapses it. Only one panel can be open at a time. Enter/Space
+keyboard navigation supported.
+
+**Table columns:** ID, Task, Strategy, Trials (completed/total), Status, Created.
+
+**Test IDs:**
+
+| Element | `data-testid` |
+|---|---|
+| New Sweep button | `new-sweep-btn` |
+| Loading | `sweep-list-loading` |
+| Error | `sweep-list-error` |
+| Empty | `sweep-list-empty` |
+| Row | `sweep-row-{sweep_id}` |
+| Detail panel | `sweep-detail-{sweep_id}` |
+| Progress bar | `trial-progress-bar` |
+| No-trials placeholder | `no-trials-yet` |
+| Results chart | `sweep-chart` |
+| Trials table | `sweep-trials-table` |
+| Trial row | `trial-row-{trial_id}` |
+| Dialog | `new-sweep-dialog` |
+| Task dropdown | `sweep-task-select` |
+| Strategy dropdown | `sweep-strategy-select` |
+| N-trials input | `sweep-n-trials` |
+| OrcaMind priors checkbox | `sweep-use-priors` |
+| Submit button | `sweep-submit-btn` |
+
+---
+
+### lib/utils.ts
+
+| Function | Signature | Description |
+|---|---|---|
+| `cn(...inputs)` | `(...ClassValue[]) => string` | Merges Tailwind class names via `clsx` + `tailwind-merge` |
+| `formatDate(dateString)` | `(string) => string` | Formats an ISO 8601 string to "Month DD, YYYY HH:MM"; returns original on parse failure |
+| `formatElapsed(startDateString, endDateString?)` | `(string, string \| null) => string` | Returns a human-readable elapsed duration ("2h 15m", "45m 3s", "8s"). Uses `Date.now()` when `endDateString` is null. Returns "—" on parse failure. |
+
+---
+
+### api/types.ts — OrcaLab additions
+
+New types added alongside the existing OrcaMind and auth types:
+
+| Type | Description |
+|---|---|
+| `ExperimentStatus` | `"pending" \| "running" \| "completed" \| "failed"` |
+| `Experiment` | Full experiment record: `experiment_id`, `name`, `task_id`, `model_id`, `status`, `started_at`, `completed_at`, `training_config`, `metrics`, `mlflow_run_id`, `created_at` |
+| `CreateExperimentRequest` | `{ task_id, model_id, training_config? }` for `POST /orcalab/experiments` |
+| `SweepTrial` | Single trial: `trial_id`, `params` (hyperparameters), `metrics` |
+| `Sweep` | Full sweep record: `sweep_id`, `task_id`, `search_strategy`, `n_trials`, `completed_trials`, `status`, `best_trial`, `results`, `created_at` |
+| `CreateSweepRequest` | `{ task_id, search_strategy, n_trials, use_orcamind_priors? }` for `POST /orcalab/sweeps` |
+| `MetricUpdate` | Live metric frame: `epoch`, `loss`, `accuracy`, `learning_rate`, `timestamp` |
+| `ExperimentControl` | WebSocket control message: `{ action: "pause" \| "resume" \| "cancel" }` |
+
 ### Routing
 
 React Router 6 with public routes (`/`, `/login`, `/register`, `/oauth/callback`) and protected routes nested under `MainLayout` with a service-scoped hierarchy:
@@ -1606,7 +1833,9 @@ React Router 6 with public routes (`/`, `/login`, `/register`, `/oauth/callback`
 - `/dashboard/orcamind/tasks` — OrcaMind task list with search, sort, and embed-task dialog
 - `/dashboard/orcamind/tasks/:id` — OrcaMind task detail with recommendations, similar-task lookup, and performance prediction
 - `/dashboard/orcamind/recommendations` — standalone model recommendations page (accepts `?task_id=` query param)
-- `/dashboard/orcalab/experiments`, `/dashboard/orcalab/experiments/:id`, `/dashboard/orcalab/sweeps` — OrcaLab experiment management
+- `/dashboard/orcalab/experiments` — `ExperimentList` with status filter and creation dialog
+- `/dashboard/orcalab/experiments/:id` — `ExperimentDetail` with live WebSocket metrics (running) or final metrics (completed)
+- `/dashboard/orcalab/sweeps` — `SweepManager` with inline per-sweep detail panels
 - `/dashboard/orcanet/transfer`, `/dashboard/orcanet/retrieve` — OrcaNet transfer and retrieval
 - `/history`, `/history/tasks`, `/history/experiments` — activity log with service-filtered views
 - `/bookmarks` — user bookmarks
@@ -1632,17 +1861,21 @@ Multi-stage build: `node:20-alpine` builder runs `npm ci && npm run build`, prod
 
 ### Test Suite
 
-171 tests across 20 test files using Vitest and Testing Library. All BFF calls are mocked — no network access required. Custom `render()` wrapper provides `QueryClientProvider` (retry disabled, refetchOnWindowFocus disabled) and `MemoryRouter`. Tests cover:
+249 tests across 24 test files using Vitest and Testing Library. All BFF calls are mocked — no network access required. Custom `render()` wrapper provides `QueryClientProvider` (retry disabled, refetchOnWindowFocus disabled) and `MemoryRouter`. The global `setup.ts` includes a `ResizeObserver` no-op stub so that Recharts' `ResponsiveContainer` does not throw in the jsdom environment. Tests cover:
 
 - **Store:** `setAuth`, `setToken`, `setUser`, `clearAuth`, `isAuthenticated` derivation (6 tests)
 - **API client:** interceptor token attachment, refresh failure handling (3 tests)
 - **Auth API:** login, register, logout, getMe, refreshToken, exchangeOAuthCode with 401/409 error propagation (8 tests)
 - **useAuth hook:** login flow, register flow, session restoration, loading states, refreshToken, logout with API failure (7 tests)
+- **useWebSocket hook:** connection URL construction, open/close lifecycle, message parsing and accumulation, malformed-frame tolerance, send() no-op when disconnected, manual close() suppressing reconnection, exponential-backoff reconnection on unexpected close, auth-rejection close (code 4001) suppressing reconnection, experimentId change resetting state, unmount cleanup (15 tests)
 - **Pages:** Login form rendering/validation/submission/error/email-format/network-error (8 tests), Register strength indicator/409-email/409-username/email-format/success/empty-fields (9 tests), OAuthCallback success/error-param/missing-provider/missing-code/api-failure/spinner (6 tests), Landing hero/service-cards/icons/health-status/live-stats/stats-heading/footer (7 tests)
 - **Dashboard:** heading, summary cards container, stat values, card titles, quick-action buttons, activity timeline, service badge, empty activity, loading placeholder, navigation calls for each button (11 tests)
 - **TaskList:** heading, loading state, table render, row display, empty state, error state, search filter, search clear, row-click navigation, embed button, dialog open/cancel, form submit, validation errors, column sort (15 tests)
 - **TaskDetail:** heading, loading state, metadata display, feature/class counts, error state, bookmark button, bookmark toggle, recommendations button and display, recommendations error, similar tasks button and display, model selector, predict button, prediction result, model name forwarded in request (17 tests)
 - **RecommendationCards / Recommendations page:** card rendering, model details, rank badges, Start Experiment button, `onStartExperiment` callback, navigate fallback, empty state, page heading, no-task-selected state, fetch on task_id, loading state, error state (12 tests)
+- **ExperimentList:** heading, New Experiment button, loading/error/empty states, row rendering with status badges (including pulsing indicator for running), row click and keyboard navigation, status filter dropdown (running/completed/pending), dialog open/cancel/validation/submit (20 tests)
+- **ExperimentDetail:** heading, loading/error states, metadata display, bookmark toggle (add and remove), live-metrics section (ws-status indicator, no-metrics placeholder, chart/table appearance after first message, Pause/Resume/Cancel control messages), completed-metrics section (final metric grid, artifact download link presence/absence), failed and pending status messages (27 tests)
+- **SweepManager:** heading and New Sweep button, loading/error/empty states, row listing and data display, row click/keyboard expand-collapse, trial progress bar, no-trials placeholder, chart and trials table for sweeps with results, best-trial highlighting and star marker, dialog open/cancel/submit, task dropdown population, OrcaMind priors checkbox toggle (25 tests)
 - **Layout:** Sidebar navigation-groups/services/user-info/user-dropdown/collapse/expand/brand-text/group-expansion (8 tests), Header breadcrumbs/search/notifications/dark-mode-toggle/user-email (5 tests), MainLayout sidebar+header+main-content/layout-structure (4 tests), Breadcrumbs root-path/dashboard/nested-hierarchy/intermediate-links/last-segment-text/separators/known-labels/unknown-capitalisation/aria-label (9 tests), ProtectedRoute auth gate with post-loading assertions (3 tests)
 - **Constants:** ROUTES public/dashboard/orcamind/orcalab/orcanet/history/bookmarks/profile/recommendations paths (8 tests), NAV_ITEMS structure/groups/children/icons including OrcaMind Recommendations sub-item (8 tests)
 - **App:** Route rendering for public and protected paths (4 tests)

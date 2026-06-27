@@ -3,6 +3,7 @@ nul
 
 # Tool/editor directories
 .claude/
+.zed/
 .history/
 .specstory/
 .cursorindexingignore
@@ -30,6 +31,9 @@ dist/
 .venv/
 venv/
 ENV/
+
+# Node dependencies
+node_modules/
 
 # Testing & coverage
 .pytest_cache/
