@@ -122,6 +122,7 @@ describe("Recommendations page", () => {
   it("shows a prompt when no task_id query param is present", async () => {
     await renderPage("/dashboard/orcamind/recommendations");
     expect(screen.getByTestId("no-task-selected")).toBeInTheDocument();
+    expect(apiClient.post).not.toHaveBeenCalled();
   });
 
   it("fetches recommendations when task_id is in the query string", async () => {
