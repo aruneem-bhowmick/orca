@@ -356,6 +356,7 @@ function NewSweepDialog({
             type="number"
             value={nTrials}
             min={1}
+            step="any"
             onChange={(e) => setNTrials(Number(e.target.value))}
             error={errors.nTrials}
             data-testid="sweep-n-trials"

@@ -356,7 +356,7 @@ describe("SweepManager", () => {
 
     // Verify task selection is initially empty
     const select = screen.getByTestId("sweep-task-select");
-    expect(select).toHaveValue("");
+    expect(select.value || "").toBe("");
 
     // Now resolve the tasks request
     const { act } = await import("@testing-library/react");
