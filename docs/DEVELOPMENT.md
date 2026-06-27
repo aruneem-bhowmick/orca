@@ -252,7 +252,7 @@ cd packages/orca-ui && npm test
 # orca-ui — layout tests only (Sidebar, Header, MainLayout, Breadcrumbs)
 cd packages/orca-ui && npx vitest run src/components/layout/__tests__/
 
-# orca-ui — route map tests only (12 authenticated route renders + 1 redirect)
+# orca-ui — route map tests only (authenticated route renders + redirect)
 cd packages/orca-ui && npx vitest run src/__tests__/Routes.test.tsx
 
 # orca-ui — constants and navigation structure tests only
@@ -260,6 +260,12 @@ cd packages/orca-ui && npx vitest run src/lib/__tests__/constants.test.ts
 
 # orca-ui — landing page tests only (hero, cards, stats, footer)
 cd packages/orca-ui && npx vitest run src/pages/__tests__/Landing.test.tsx
+
+# orca-ui — useWebSocket hook tests only
+cd packages/orca-ui && npx vitest run src/hooks/__tests__/useWebSocket.test.ts
+
+# orca-ui — OrcaLab page tests only (ExperimentList, ExperimentDetail, SweepManager)
+cd packages/orca-ui && npx vitest run src/pages/orcalab/__tests__/
 
 # orca-ui — ESLint
 cd packages/orca-ui && npm run lint
@@ -272,7 +278,7 @@ make ui-test
 make ui-lint
 ```
 
-The Python test suite spans 80+ test files across unit, integration, performance, deployment-validation, proxy, and scripts categories. The orca-ui frontend adds 16 test files with 116 tests using Vitest and Testing Library.
+The Python test suite spans 80+ test files across unit, integration, performance, deployment-validation, proxy, and scripts categories. The orca-ui frontend adds 24 test files with 249 tests using Vitest and Testing Library.
 
 The OrcaLab API integration tests run without a live database, Prefect server, or MLflow instance. An `ASGITransport` client fixture pre-populates `app.state` manually (bypassing the ASGI lifespan) and overrides all dependency providers via `dependency_overrides`, so tests exercise the full request/response cycle including middleware, routing, and validation while every external call goes to an `AsyncMock`.
 
@@ -289,6 +295,9 @@ The visualization unit tests run without a live Streamlit or Plotly install. A s
 - *data-testid escape hatches* — components use `data-testid` attributes (`auth-loading`, `login-error`, `register-error`, `oauth-error`, `sidebar-toggle`, `dark-mode-toggle`, `service-cards`, `strength-label`, `strength-bar`) only where accessible queries are not practical (e.g. distinguishing between multiple error messages or finding structural containers).
 - *HTML5 validation awareness* — Login email format tests use `"user@example"` (passes HTML5 `type="email"` validation but fails the app's stricter regex requiring a dot in the domain) rather than `"not-an-email"` which would be blocked by jsdom's native form validation before the `onSubmit` handler fires.
 - *OAuthCallback route testing* — OAuthCallback tests render within a full `MemoryRouter` with explicit routes for `/oauth/callback`, `/dashboard`, and `/login`, allowing navigation assertions without relying on `window.location` which jsdom does not fully implement.
+- *WebSocket testing via stubbed global* — `useWebSocket.test.ts` replaces the global `WebSocket` constructor with a `MockWebSocket` class that exposes `triggerOpen()`, `triggerMessage(data)`, and `triggerClose(code)` helpers. The mock accumulates `sent` messages and tracks `readyState`, letting tests verify reconnection backoff schedules (with `vi.useFakeTimers()`) and permanent-close behaviour without running a real server. The auth store is seeded with a token in `beforeEach` so the hook can build a valid connection URL.
+- *Recharts in jsdom* — `test/setup.ts` registers a no-op `ResizeObserver` stub globally. This prevents `ReferenceError: ResizeObserver is not defined` from Recharts' `ResponsiveContainer` in jsdom without needing to mock the entire charting library. Pages like `SweepManager` that use the same Recharts primitives in tests where chart internals are irrelevant can additionally mock the `recharts` module for a lighter test.
+- *Module-level WebSocket controls for ExperimentDetail* — `ExperimentDetail.test.tsx` mocks `@/hooks/useWebSocket` with an implementation that captures `setIsConnected` and `pushMessage` in a module-level `wsControls` object. Tests can then drive connection state and incoming messages from outside the component using `act()`, allowing assertions on chart render, metric table content, and control button behaviour without a real WebSocket server.
 - *JSDoc coverage* — all auth-related modules (API functions, store, hook, pages, components, utilities, test infrastructure) have comprehensive JSDoc docstrings documenting parameters, return types, error conditions, and architectural context.
 - *Heading-role queries for route disambiguation* — `Routes.test.tsx` uses `screen.getAllByRole("heading", { level: 1 })` to find the PlaceholderPage heading in the main content area, distinguishing it from sidebar navigation labels that share the same text (e.g. "Tasks", "Experiments", "Bookmarks"). This avoids brittle `data-testid` escape hatches while remaining accessible-query-first.
 - *MemoryRouter path injection for breadcrumb testing* — `Breadcrumbs.test.tsx` renders the Header component inside a `MemoryRouter` with `initialEntries` set to specific paths (e.g. `/dashboard/orcamind/tasks`), allowing the breadcrumb generation logic to be tested independently of the full App router.
