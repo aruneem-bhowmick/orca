@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect, Fragment } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   LineChart,
@@ -161,6 +161,8 @@ function SweepResultsChart({
  */
 function SweepDetailPanel({ sweep }: { sweep: Sweep }) {
   const results = sweep.results ?? [];
+  const paramKeys = results[0] ? Object.keys(results[0].params) : [];
+  const metricKeys = results[0] ? Object.keys(results[0].metrics) : [];
 
   return (
     <div className="space-y-4 px-4 pb-4" data-testid={`sweep-detail-${sweep.sweep_id}`}>
@@ -178,10 +180,10 @@ function SweepDetailPanel({ sweep }: { sweep: Sweep }) {
               <thead className="border-b bg-muted/50 text-left">
                 <tr>
                   <th className="px-3 py-2 font-medium">Trial</th>
-                  {results[0] && Object.keys(results[0].params).map((k) => (
+                  {paramKeys.map((k) => (
                     <th key={k} className="px-3 py-2 font-medium">{k}</th>
                   ))}
-                  {results[0] && Object.keys(results[0].metrics).map((k) => (
+                  {metricKeys.map((k) => (
                     <th key={k} className="px-3 py-2 font-medium text-primary">{k}</th>
                   ))}
                 </tr>
@@ -205,16 +207,22 @@ function SweepDetailPanel({ sweep }: { sweep: Sweep }) {
                         </span>
                       )}
                     </td>
-                    {Object.values(trial.params).map((v, i) => (
-                      <td key={i} className="px-3 py-2 tabular-nums">
-                        {String(v)}
-                      </td>
-                    ))}
-                    {Object.values(trial.metrics).map((v, i) => (
-                      <td key={i} className="px-3 py-2 tabular-nums font-medium text-primary">
-                        {typeof v === "number" ? v.toFixed(4) : String(v)}
-                      </td>
-                    ))}
+                    {paramKeys.map((key) => {
+                      const v = trial.params[key];
+                      return (
+                        <td key={key} className="px-3 py-2 tabular-nums">
+                          {v !== undefined ? String(v) : "—"}
+                        </td>
+                      );
+                    })}
+                    {metricKeys.map((key) => {
+                      const v = trial.metrics[key];
+                      return (
+                        <td key={key} className="px-3 py-2 tabular-nums font-medium text-primary">
+                          {v !== undefined ? (typeof v === "number" ? v.toFixed(4) : String(v)) : "—"}
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>
@@ -259,10 +267,20 @@ function NewSweepDialog({
   const [useOrcaMindPriors, setUseOrcaMindPriors] = useState(false);
   const [errors, setErrors] = useState<Record<string, string>>({});
 
+  useEffect(() => {
+    if (!taskId && tasks.length > 0) {
+      setTaskId(tasks[0].task_id);
+    }
+  }, [tasks, taskId]);
+
   function validate(): boolean {
     const e: Record<string, string> = {};
     if (!taskId) e.taskId = "Task is required";
-    if (!nTrials || nTrials < 1) e.nTrials = "Number of trials must be at least 1";
+    if (!nTrials || nTrials < 1) {
+      e.nTrials = "Number of trials must be at least 1";
+    } else if (!Number.isInteger(nTrials)) {
+      e.nTrials = "Number of trials must be a whole number";
+    }
     setErrors(e);
     return Object.keys(e).length === 0;
   }
@@ -456,9 +474,8 @@ export function SweepManager() {
             </thead>
             <tbody>
               {sweeps.map((sweep) => (
-                <>
+                <Fragment key={sweep.sweep_id}>
                   <tr
-                    key={sweep.sweep_id}
                     className="cursor-pointer border-b hover:bg-muted/50"
                     tabIndex={0}
                     onClick={() => toggleRow(sweep.sweep_id)}
@@ -491,7 +508,7 @@ export function SweepManager() {
                     <tr key={`detail-${sweep.sweep_id}`} className="border-b">
                       <td colSpan={6} className="p-0">
                         <Card className="m-0 rounded-none border-0 border-t">
-                          <CardHeader className="px-4 py-3">
+                           <CardHeader className="px-4 py-3">
                             <CardTitle className="text-sm font-medium">
                               Sweep Details
                             </CardTitle>
@@ -503,7 +520,7 @@ export function SweepManager() {
                       </td>
                     </tr>
                   )}
-                </>
+                </Fragment>
               ))}
             </tbody>
           </table>

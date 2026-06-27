@@ -316,11 +316,74 @@ describe("SweepManager", () => {
     await waitFor(() => {
       expect(apiClient.post).toHaveBeenCalledWith(
         "/orcalab/sweeps",
-        expect.objectContaining({ n_trials: 10 }),
+        {
+          task_id: "task-001",
+          search_strategy: "random",
+          use_orcamind_priors: false,
+          n_trials: 10,
+        },
       );
     });
     await waitFor(() => {
       expect(screen.queryByTestId("new-sweep-dialog")).not.toBeInTheDocument();
+    });
+  });
+
+  it("handles tasks loading asynchronously after dialog is opened", async () => {
+    let resolveTasks: (value: any) => void = () => {};
+    const tasksPromise = new Promise((resolve) => {
+      resolveTasks = resolve;
+    });
+
+    vi.mocked(apiClient.get).mockImplementation((url: string) => {
+      if (url === "/orcalab/sweeps") {
+        return Promise.resolve({ data: mockSweeps });
+      }
+      if (url === "/orcamind/tasks") {
+        return tasksPromise;
+      }
+      return Promise.reject(new Error(`Unexpected: ${url}`));
+    });
+
+    render(<SweepManager />);
+    await waitFor(() => {
+      expect(screen.getByTestId("new-sweep-btn")).toBeInTheDocument();
+    });
+
+    // Open dialog immediately while tasks are still loading
+    fireEvent.click(screen.getByTestId("new-sweep-btn"));
+    expect(screen.getByTestId("new-sweep-dialog")).toBeInTheDocument();
+
+    // Verify task selection is initially empty
+    const select = screen.getByTestId("sweep-task-select");
+    expect(select).toHaveValue("");
+
+    // Now resolve the tasks request
+    const { act } = await import("@testing-library/react");
+    await act(async () => {
+      resolveTasks({ data: [mockTask] });
+    });
+
+    // Verify dropdown is populated and taskId is updated
+    await waitFor(() => {
+      expect(select).toHaveValue(mockTask.task_id);
+    });
+    expect(select.textContent).toContain("Image Classification");
+
+    // Submit and check it does not submit an empty taskId
+    vi.mocked(apiClient.post).mockResolvedValue({ data: mockSweepRunning });
+    fireEvent.click(screen.getByTestId("sweep-submit-btn"));
+
+    await waitFor(() => {
+      expect(apiClient.post).toHaveBeenCalledWith(
+        "/orcalab/sweeps",
+        {
+          task_id: "task-001",
+          search_strategy: "random",
+          use_orcamind_priors: false,
+          n_trials: 20,
+        },
+      );
     });
   });
 
@@ -334,5 +397,23 @@ describe("SweepManager", () => {
     expect(checkbox.checked).toBe(false);
     fireEvent.click(checkbox);
     expect(checkbox.checked).toBe(true);
+  });
+
+  it("rejects fractional trial counts", async () => {
+    render(<SweepManager />);
+    await waitFor(() => {
+      expect(screen.getByTestId("new-sweep-btn")).toBeInTheDocument();
+    });
+    fireEvent.click(screen.getByTestId("new-sweep-btn"));
+    await waitFor(() => {
+      expect(screen.getByTestId("sweep-task-select")).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByTestId("sweep-n-trials"), {
+      target: { value: "1.5" },
+    });
+    fireEvent.click(screen.getByTestId("sweep-submit-btn"));
+
+    expect(screen.getByText("Number of trials must be a whole number")).toBeInTheDocument();
   });
 });
