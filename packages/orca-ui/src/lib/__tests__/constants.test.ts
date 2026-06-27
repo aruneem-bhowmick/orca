@@ -17,6 +17,9 @@ describe("ROUTES", () => {
   it("defines OrcaMind routes under /dashboard/orcamind", () => {
     expect(ROUTES.ORCAMIND_TASKS).toBe("/dashboard/orcamind/tasks");
     expect(ROUTES.ORCAMIND_TASK_DETAIL).toBe("/dashboard/orcamind/tasks/:id");
+    expect(ROUTES.ORCAMIND_RECOMMENDATIONS).toBe(
+      "/dashboard/orcamind/recommendations",
+    );
   });
 
   it("defines OrcaLab routes under /dashboard/orcalab", () => {
@@ -55,12 +58,13 @@ describe("NAV_ITEMS", () => {
     expect(dashboard.children).toBeUndefined();
   });
 
-  it("has OrcaMind as a group with Tasks sub-item", () => {
+  it("has OrcaMind as a group with Tasks and Recommendations sub-items", () => {
     const orcaMind = NAV_ITEMS[1];
     expect(orcaMind.label).toBe("OrcaMind");
     expect(orcaMind.children).toBeDefined();
-    expect(orcaMind.children!.length).toBe(1);
-    expect(orcaMind.children![0].label).toBe("Tasks");
+    expect(orcaMind.children!.length).toBe(2);
+    const childLabels = orcaMind.children!.map((c: NavItem) => c.label);
+    expect(childLabels).toEqual(["Tasks", "Recommendations"]);
   });
 
   it("has OrcaLab as a group with Experiments and Sweeps sub-items", () => {
