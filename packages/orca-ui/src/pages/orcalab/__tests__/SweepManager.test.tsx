@@ -412,6 +412,9 @@ describe("SweepManager", () => {
     fireEvent.change(screen.getByTestId("sweep-n-trials"), {
       target: { value: "1.5" },
     });
+    await waitFor(() => {
+      expect(screen.getByTestId("sweep-n-trials")).toHaveValue(1.5);
+    });
     fireEvent.click(screen.getByTestId("sweep-submit-btn"));
 
     await waitFor(() => {
