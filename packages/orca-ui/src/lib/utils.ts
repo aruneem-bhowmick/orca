@@ -64,6 +64,7 @@ export function formatElapsed(
   if (isNaN(start.getTime())) return "—";
 
   const end = endDateString ? new Date(endDateString) : new Date();
+  if (isNaN(end.getTime())) return "—";
   const totalSeconds = Math.max(0, Math.floor((end.getTime() - start.getTime()) / 1_000));
 
   const hours = Math.floor(totalSeconds / 3_600);
