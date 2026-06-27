@@ -1444,7 +1444,7 @@ React 18, TypeScript 5.3, Vite 5, Tailwind CSS 3.4, Zustand 4.4, TanStack React 
 orca-ui/
 ├── src/
 │   ├── api/                     # BFF communication layer
-│   │   ├── types.ts             # TS interfaces mirroring BFF Pydantic schemas (User, TokenResponse, DashboardStats, etc.)
+│   │   ├── types.ts             # TS interfaces mirroring BFF Pydantic schemas (User, TokenResponse, Task, ModelRecommendation, DashboardOverview, etc.)
 │   │   ├── client.ts            # Axios instance with JWT interceptor and 401 refresh retry
 │   │   └── auth.ts              # login(), register(), refreshToken(), logout(), getMe(), exchangeOAuthCode()
 │   ├── store/
@@ -1466,13 +1466,23 @@ orca-ui/
 │   │   ├── Login.tsx            # Email/password form with format validation, OAuth buttons, error display
 │   │   ├── Register.tsx         # Registration form with password strength indicator (length/case/digits/special)
 │   │   ├── OAuthCallback.tsx    # Reads provider and code from query params, exchanges for token via BFF
-│   │   └── Dashboard.tsx        # Protected dashboard with service health cards
+│   │   ├── Dashboard.tsx        # Overview dashboard: stat cards (GET /dashboard/overview) + activity timeline (GET /history) + quick-action nav
+│   │   ├── __tests__/
+│   │   │   └── Dashboard.test.tsx    # 11 tests: heading, stat cards, quick-action buttons, activity timeline, navigation
+│   │   └── orcamind/
+│   │       ├── TaskList.tsx          # OrcaMind task list with search/sort/filter, row navigation, and embed-task dialog
+│   │       ├── TaskDetail.tsx        # Single task view with recommendations, similar-tasks, predict-performance, and bookmark toggle
+│   │       ├── Recommendations.tsx   # RecommendationCards component + standalone Recommendations page (task_id from query param)
+│   │       └── __tests__/
+│   │           ├── TaskList.test.tsx         # 15 tests: table, search, sort, row navigation, embed dialog, validation
+│   │           ├── TaskDetail.test.tsx        # 17 tests: metadata, bookmark toggle, recommendations, similar tasks, predict performance
+│   │           └── Recommendations.test.tsx   # 12 tests: RecommendationCards (7) + Recommendations page (5)
 │   ├── App.tsx                  # BrowserRouter + QueryClientProvider + hierarchical route definitions
 │   ├── main.tsx                 # ReactDOM.createRoot entry
 │   └── test/
 │       ├── setup.ts             # @testing-library/jest-dom matchers
 │       ├── test-utils.tsx       # Custom render() wrapping QueryClientProvider + MemoryRouter
-│       └── mocks/handlers.ts    # Mock User, TokenResponse, HealthStatus, DashboardStats fixtures
+│       └── mocks/handlers.ts    # Mock fixtures: User, TokenResponse, HealthStatus, DashboardOverview, Task, ModelRecommendation, SimilarTask, PerformancePrediction, ActivityLogEntry
 ├── Dockerfile                   # Multi-stage: node:20-alpine → nginx:alpine
 ├── nginx.conf                   # /api/ proxy to orca-web:8003, /ws/ WebSocket proxy, SPA fallback
 ├── index.html                   # SPA entry with <div id="root">
@@ -1497,12 +1507,105 @@ Zustand store (`store/auth.ts`) with `user: User | null`, `accessToken: string |
 - **Register** (`pages/Register.tsx`) — Email, username, and password form. A real-time password strength indicator scores on five criteria (length ≥ 8, length ≥ 12, mixed case, digits, special characters) and displays a five-bar colour-coded gauge. Inline 409 error display for "Email already registered" or "Username taken".
 - **OAuthCallback** (`pages/OAuthCallback.tsx`) — Rendered at `/oauth/callback` after an OAuth provider redirect. Reads `provider` and optional `error` from query params. On success, exchanges the authorization code via `GET /auth/oauth/{provider}/callback`, stores the token and user profile, and redirects to `/dashboard`. On failure, displays the error with a "Back to login" link.
 
+### Dashboard Page
+
+`pages/Dashboard.tsx` is the authenticated landing page that gives a cross-service overview. It makes two parallel queries on mount:
+
+- `GET /dashboard/overview` → `DashboardOverview` — four platform counters: `total_tasks`, `running_experiments`, `completed_experiments`, `recent_transfers`.
+- `GET /history?per_page=10` → `PaginatedResponse<ActivityLogEntry>` — the ten most recent cross-service actions for the current user.
+
+**`StatCard`** — internal sub-component that renders a labelled stat card with a title, a numeric value formatted via `toLocaleString()`, and a `data-testid` attribute for test targeting.
+
+The page is divided into three sections:
+
+| Section | `data-testid` | Description |
+|---|---|---|
+| Summary cards | `summary-cards` | Four `StatCard` instances: `stat-total-tasks`, `stat-running-experiments`, `stat-completed-experiments`, `stat-recent-transfers`. Shows "Loading stats…" while the overview query is pending. |
+| Quick actions | `quick-actions` | Three navigation buttons: "New Task" → `ROUTES.ORCAMIND_TASKS`, "Start Experiment" → `ROUTES.ORCALAB_EXPERIMENTS`, "Score Transfer" → `ROUTES.ORCANET_TRANSFER`. |
+| Activity timeline | `activity-timeline` | Chronological list of recent activity entries. Each entry shows the action type, a service badge (`activity-service-{id}`) when the service field is populated, and a formatted timestamp. When the history list is empty, shows `data-testid="no-activity"`. |
+
+### OrcaMind Pages (`pages/orcamind/`)
+
+#### `TaskList.tsx` — Task list with sort, search, and embed
+
+Fetches all registered tasks from `GET /orcamind/tasks` (`useQuery(["orcamind-tasks"])`, staleTime 30 s) and renders them in a sortable, searchable table.
+
+**Sub-components:**
+
+- **`SortHeader`** — A clickable `<th>` element. Props: `label`, `sortKey`, `current` (active sort key), `direction` (`"asc" | "desc"`), `onSort`. Renders a directional chevron when active; a neutral icon when inactive. `data-testid="sort-{sortKey}"`.
+- **`EmbedTaskDialog`** — Modal form for creating a new task via `POST /orcamind/tasks` (`useMutation`, invalidates `["orcamind-tasks"]` on success). Validates that `name`, `domain`, `task_type`, and `n_samples` are non-empty/positive before submitting. Inline validation messages appear below each field. Closes on success or on "Cancel".
+
+**Sort keys** (`SortKey`): `name`, `domain`, `task_type`, `n_samples`, `created_at`. String columns use `String.localeCompare` with `{ numeric: true }`; direction toggles on repeated click of the same column.
+
+**Search** — controlled input (`data-testid="task-search"`) that filters the derived list client-side: a task matches if any of `name`, `domain`, or `task_type` contains the query (case-insensitive).
+
+**Test IDs:**
+
+| Element | `data-testid` |
+|---|---|
+| Embed button | `embed-task-btn` |
+| Dialog | `embed-dialog` |
+| Search input | `task-search` |
+| Loading | `task-list-loading` |
+| Error | `task-list-error` |
+| Empty state | `task-list-empty` |
+| Table | `task-table` |
+| Row | `task-row-{task_id}` |
+| Sort header | `sort-{key}` |
+| Name field | `embed-name` |
+| Domain field | `embed-domain` |
+| Task type field | `embed-task-type` |
+| Sample count field | `embed-n-samples` |
+
+---
+
+#### `TaskDetail.tsx` — Single task view with analysis tools
+
+Fetches one task from `GET /orcamind/tasks/:id` (`useQuery(["orcamind-task", taskId])`, staleTime 60 s). Displays its metadata and provides three on-demand analysis sections triggered by the user.
+
+**Metadata display** (`data-testid="task-metadata"`) — definition list with Name, Domain, Type, Samples, Features (when non-null), Classes (when non-null), and Created. Numeric fields (`n_samples`, `n_features`, `n_classes`) are formatted with `.toLocaleString()` for locale-aware comma separators.
+
+**Bookmark toggle** (`data-testid="bookmark-btn"`) — optimistic local state (`bookmarked: boolean`, `bookmarkId: string | null`). On click: if unbookmarked, calls `POST /bookmarks` and stores the returned `id`; if bookmarked, calls `DELETE /bookmarks/{id}` and clears state. Errors are silently swallowed. The button label changes from "Bookmark" to "Bookmarked ✓" on save.
+
+**Three analysis sections** (each triggered by a button; uses `useMutation` so no network call on render):
+
+| Section | Button `data-testid` | API call | Output `data-testid` |
+|---|---|---|---|
+| Model Recommendations | `get-recommendations-btn` | `POST /orcamind/recommend { task_id }` | `recommendation-cards` (via `RecommendationCards`) |
+| Similar Tasks | `find-similar-btn` | `POST /orcamind/similar-tasks { task_id }` | `similar-table`, `similar-row-{task_id}` |
+| Predict Performance | `predict-btn` | `POST /orcamind/predict-performance { task_id, model_config }` | `prediction-result` |
+
+**`SimilarTasksSection`** — sub-component (`taskId` prop) that renders the Similar Tasks section. Each row in `similar-table` is clickable and navigates to the detail page for that task.
+
+**`PredictPerformanceSection`** — sub-component (`taskId` prop) that renders the Predict Performance section. The user selects a model from `MODEL_OPTIONS = ["ResNet", "DistilBERT", "XGBoost", "SVM", "MLP"] as const` via a `<select>` (`data-testid="model-select"`). The selected model name is sent as `model_config: { model_name }` in the POST body. The result card (`prediction-result`) shows predicted accuracy and confidence as percentages.
+
+The recommendations section renders `<RecommendationCards>` (from `Recommendations.tsx`) with an empty `onStartExperiment` callback so the card's Start Experiment button navigates to OrcaLab experiments.
+
+---
+
+#### `Recommendations.tsx` — Model recommendation cards and standalone page
+
+Exports two components:
+
+**`RecommendationCards`** — reusable display component (no network calls). Props:
+
+| Prop | Type | Description |
+|---|---|---|
+| `recommendations` | `ModelRecommendation[]` | Ordered list of recommendations to render |
+| `onStartExperiment` | `(rec: ModelRecommendation) => void` (optional) | If provided, called when "Start Experiment" is clicked; otherwise navigates to `ROUTES.ORCALAB_EXPERIMENTS` |
+
+Each card (`data-testid="rec-card-{model_id}"`) displays a rank badge (`#1`, `#2`, …), model name, architecture, predicted accuracy (`predicted_accuracy × 100` formatted to one decimal), and confidence percentage. The "Start Experiment" button has `data-testid="start-experiment-{model_id}"`. When `recommendations` is empty, renders `data-testid="no-recommendations"`. The full cards container has `data-testid="recommendation-cards"`.
+
+**`Recommendations`** — standalone page at `/dashboard/orcamind/recommendations`. Reads `task_id` from `useSearchParams()`. When `task_id` is absent, renders `data-testid="no-task-selected"` with a prompt to navigate here from a task detail page. When `task_id` is present, fires `POST /orcamind/recommend` (`useQuery(["orcamind-recommend", taskId])`, enabled only when `taskId` is truthy, staleTime 60 s). Shows `data-testid="rec-loading"` while pending and `data-testid="rec-error"` on failure. On success, renders `<RecommendationCards>`.
+
 ### Routing
 
 React Router 6 with public routes (`/`, `/login`, `/register`, `/oauth/callback`) and protected routes nested under `MainLayout` with a service-scoped hierarchy:
 
-- `/dashboard` — overview with service health cards
-- `/dashboard/orcamind/tasks`, `/dashboard/orcamind/tasks/:id` — OrcaMind task list and detail
+- `/dashboard` — aggregated overview: stat cards from `GET /dashboard/overview`, recent activity from `GET /history`, and quick-action navigation buttons
+- `/dashboard/orcamind/tasks` — OrcaMind task list with search, sort, and embed-task dialog
+- `/dashboard/orcamind/tasks/:id` — OrcaMind task detail with recommendations, similar-task lookup, and performance prediction
+- `/dashboard/orcamind/recommendations` — standalone model recommendations page (accepts `?task_id=` query param)
 - `/dashboard/orcalab/experiments`, `/dashboard/orcalab/experiments/:id`, `/dashboard/orcalab/sweeps` — OrcaLab experiment management
 - `/dashboard/orcanet/transfer`, `/dashboard/orcanet/retrieve` — OrcaNet transfer and retrieval
 - `/history`, `/history/tasks`, `/history/experiments` — activity log with service-filtered views
@@ -1515,7 +1618,7 @@ React Router 6 with public routes (`/`, `/login`, `/register`, `/oauth/callback`
 
 `MainLayout` composes `Sidebar` + `Header` + `<Outlet />` for page content.
 
-**Sidebar** (collapsible, 240px expanded / 64px collapsed) — renders grouped navigation organised by service: OrcaMind (Tasks), OrcaLab (Experiments, Sweeps), OrcaNet (Transfer, Retrieval). Groups are expandable/collapsible with chevron indicators. Top-level items (Dashboard, History, Bookmarks) render as direct links. A user dropdown at the bottom provides Profile and Sign out actions. When collapsed, groups show a single icon linking to the primary sub-route.
+**Sidebar** (collapsible, 240px expanded / 64px collapsed) — renders grouped navigation organised by service: OrcaMind (Tasks, Recommendations), OrcaLab (Experiments, Sweeps), OrcaNet (Transfer, Retrieval). Groups are expandable/collapsible with chevron indicators. Top-level items (Dashboard, History, Bookmarks) render as direct links. A user dropdown at the bottom provides Profile and Sign out actions. When collapsed, groups show a single icon linking to the primary sub-route.
 
 **Header** — renders a dynamic breadcrumb trail generated from the current URL pathname with human-readable labels for known segments (e.g. `/dashboard/orcalab/experiments` → "Dashboard / OrcaLab / Experiments"). Intermediate segments are clickable links; the last segment is plain text. Also displays a search input placeholder (read-only), a notifications bell with badge count, a dark mode toggle (persisted to localStorage), and the user's email address.
 
@@ -1529,15 +1632,19 @@ Multi-stage build: `node:20-alpine` builder runs `npm ci && npm run build`, prod
 
 ### Test Suite
 
-114 tests across 16 test files using Vitest and Testing Library. All BFF calls are mocked — no network access required. Custom `render()` wrapper provides `QueryClientProvider` (retry disabled, refetchOnWindowFocus disabled) and `MemoryRouter`. Tests cover:
+171 tests across 20 test files using Vitest and Testing Library. All BFF calls are mocked — no network access required. Custom `render()` wrapper provides `QueryClientProvider` (retry disabled, refetchOnWindowFocus disabled) and `MemoryRouter`. Tests cover:
 
 - **Store:** `setAuth`, `setToken`, `setUser`, `clearAuth`, `isAuthenticated` derivation (6 tests)
 - **API client:** interceptor token attachment, refresh failure handling (3 tests)
 - **Auth API:** login, register, logout, getMe, refreshToken, exchangeOAuthCode with 401/409 error propagation (8 tests)
 - **useAuth hook:** login flow, register flow, session restoration, loading states, refreshToken, logout with API failure (7 tests)
 - **Pages:** Login form rendering/validation/submission/error/email-format/network-error (8 tests), Register strength indicator/409-email/409-username/email-format/success/empty-fields (9 tests), OAuthCallback success/error-param/missing-provider/missing-code/api-failure/spinner (6 tests), Landing hero/service-cards/icons/health-status/live-stats/stats-heading/footer (7 tests)
+- **Dashboard:** heading, summary cards container, stat values, card titles, quick-action buttons, activity timeline, service badge, empty activity, loading placeholder, navigation calls for each button (11 tests)
+- **TaskList:** heading, loading state, table render, row display, empty state, error state, search filter, search clear, row-click navigation, embed button, dialog open/cancel, form submit, validation errors, column sort (15 tests)
+- **TaskDetail:** heading, loading state, metadata display, feature/class counts, error state, bookmark button, bookmark toggle, recommendations button and display, recommendations error, similar tasks button and display, model selector, predict button, prediction result, model name forwarded in request (17 tests)
+- **RecommendationCards / Recommendations page:** card rendering, model details, rank badges, Start Experiment button, `onStartExperiment` callback, navigate fallback, empty state, page heading, no-task-selected state, fetch on task_id, loading state, error state (12 tests)
 - **Layout:** Sidebar navigation-groups/services/user-info/user-dropdown/collapse/expand/brand-text/group-expansion (8 tests), Header breadcrumbs/search/notifications/dark-mode-toggle/user-email (5 tests), MainLayout sidebar+header+main-content/layout-structure (4 tests), Breadcrumbs root-path/dashboard/nested-hierarchy/intermediate-links/last-segment-text/separators/known-labels/unknown-capitalisation/aria-label (9 tests), ProtectedRoute auth gate with post-loading assertions (3 tests)
-- **Constants:** ROUTES public/dashboard/orcamind/orcalab/orcanet/history/bookmarks/profile paths (7 tests), NAV_ITEMS structure/groups/children/icons (7 tests)
+- **Constants:** ROUTES public/dashboard/orcamind/orcalab/orcanet/history/bookmarks/profile/recommendations paths (8 tests), NAV_ITEMS structure/groups/children/icons including OrcaMind Recommendations sub-item (8 tests)
 - **App:** Route rendering for public and protected paths (4 tests)
 - **Routes:** Full protected route map — 13 routes verified via heading queries to distinguish page content from sidebar labels (13 tests)
 
