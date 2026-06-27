@@ -273,4 +273,28 @@ describe("ExperimentList", () => {
       expect(screen.queryByTestId("new-experiment-dialog")).not.toBeInTheDocument();
     });
   });
+
+  it("pre-fills task_id and model_id from query params in the new experiment dialog", async () => {
+    const { MemoryRouter } = await import("react-router-dom");
+    const { QueryClient, QueryClientProvider } = await import("@tanstack/react-query");
+    const { render: tlRender } = await import("@testing-library/react");
+
+    const queryClient = new QueryClient({
+      defaultOptions: { queries: { retry: false, gcTime: 0 } }
+    });
+
+    tlRender(
+      <QueryClientProvider client={queryClient}>
+        <MemoryRouter initialEntries={["/orcalab/experiments?task_id=task-abc&model_id=model-xyz"]}>
+          <ExperimentList />
+        </MemoryRouter>
+      </QueryClientProvider>
+    );
+
+    fireEvent.click(screen.getByTestId("new-experiment-btn"));
+
+    expect(screen.getByTestId("new-experiment-dialog")).toBeInTheDocument();
+    expect(screen.getByTestId("exp-task-id")).toHaveValue("task-abc");
+    expect(screen.getByTestId("exp-model-id")).toHaveValue("model-xyz");
+  });
 });

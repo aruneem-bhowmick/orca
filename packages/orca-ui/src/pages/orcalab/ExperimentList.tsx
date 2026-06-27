@@ -61,18 +61,20 @@ function StatusBadge({ status }: { status: ExperimentStatus }) {
  */
 function NewExperimentDialog({
   defaultTaskId,
+  defaultModelId,
   onClose,
   onSubmit,
   isSubmitting,
 }: {
   defaultTaskId?: string;
+  defaultModelId?: string;
   onClose: () => void;
   onSubmit: (data: CreateExperimentRequest) => void;
   isSubmitting: boolean;
 }) {
   const [form, setForm] = useState<CreateExperimentRequest>({
     task_id: defaultTaskId ?? "",
-    model_id: "",
+    model_id: defaultModelId ?? "",
   });
   const [errors, setErrors] = useState<Partial<Record<keyof CreateExperimentRequest, string>>>({});
 
@@ -147,6 +149,7 @@ export function ExperimentList() {
   const [dialogOpen, setDialogOpen] = useState(false);
 
   const prefillTaskId = searchParams.get("task_id") ?? undefined;
+  const prefillModelId = searchParams.get("model_id") ?? undefined;
 
   const {
     data: experiments = [],
@@ -287,6 +290,7 @@ export function ExperimentList() {
       {dialogOpen && (
         <NewExperimentDialog
           defaultTaskId={prefillTaskId}
+          defaultModelId={prefillModelId}
           onClose={() => setDialogOpen(false)}
           onSubmit={createExperiment}
           isSubmitting={isCreating}
