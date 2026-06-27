@@ -173,6 +173,21 @@ describe("useWebSocket", () => {
     });
   });
 
+  it("ignores valid JSON messages with invalid MetricUpdate fields or types", async () => {
+    const { result } = renderHook(() => useWebSocket("exp-1"));
+    act(() => {
+      MockWebSocket.latest().triggerOpen();
+      // Missing epoch
+      MockWebSocket.latest().triggerMessage({ loss: 0.5, timestamp: "2024-01-01T00:00:00Z" });
+      // Wrong type for epoch (string instead of number)
+      MockWebSocket.latest().triggerMessage({ epoch: "1", loss: 0.5, timestamp: "2024-01-01T00:00:00Z" });
+      // Wrong type for accuracy
+      MockWebSocket.latest().triggerMessage({ epoch: 1, loss: 0.5, accuracy: "high", timestamp: "2024-01-01T00:00:00Z" });
+    });
+    await new Promise((r) => setTimeout(r, 50));
+    expect(result.current.messages).toHaveLength(0);
+  });
+
   it("sets isConnected false on socket close", async () => {
     const { result } = renderHook(() => useWebSocket("exp-1"));
     act(() => {

@@ -99,7 +99,17 @@ export function useWebSocket(experimentId: string): UseWebSocketResult {
     ws.onmessage = (event: MessageEvent) => {
       try {
         const update = JSON.parse(event.data as string) as MetricUpdate;
-        setMessages((prev) => [...prev, update]);
+        if (
+          update &&
+          typeof update === "object" &&
+          typeof update.epoch === "number" &&
+          typeof update.loss === "number" &&
+          (update.accuracy === null || typeof update.accuracy === "number") &&
+          (update.learning_rate === null || typeof update.learning_rate === "number") &&
+          typeof update.timestamp === "string"
+        ) {
+          setMessages((prev) => [...prev, update]);
+        }
       } catch {
         // Ignore malformed frames
       }
