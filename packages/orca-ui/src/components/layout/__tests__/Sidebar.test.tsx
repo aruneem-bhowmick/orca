@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, fireEvent } from "@testing-library/react";
+import { screen, fireEvent, within } from "@testing-library/react";
 import { render } from "@/test/test-utils";
 import { Sidebar } from "@/components/layout/Sidebar";
 import { useAuthStore } from "@/store/auth";
@@ -107,6 +107,34 @@ describe("Sidebar", () => {
     const onMobileClose = vi.fn();
     render(<Sidebar mobileOpen={true} onMobileClose={onMobileClose} />);
     fireEvent.click(screen.getByTestId("sidebar-backdrop"));
+    expect(onMobileClose).toHaveBeenCalledOnce();
+  });
+
+  it("calls onMobileClose when a top-level link inside sidebar-mobile is clicked", () => {
+    const onMobileClose = vi.fn();
+    render(<Sidebar mobileOpen={true} onMobileClose={onMobileClose} />);
+
+    const mobileDrawer = screen.getByTestId("sidebar-mobile");
+    const dashboardLink = within(mobileDrawer).getByText("Dashboard");
+    fireEvent.click(dashboardLink);
+
+    expect(onMobileClose).toHaveBeenCalledOnce();
+  });
+
+  it("calls onMobileClose when a grouped-child link under sidebar-mobile is clicked", () => {
+    const onMobileClose = vi.fn();
+    render(<Sidebar mobileOpen={true} onMobileClose={onMobileClose} />);
+
+    const mobileDrawer = screen.getByTestId("sidebar-mobile");
+
+    // First expand the group
+    const orcaLabGroup = within(mobileDrawer).getByTestId("nav-group-orcalab");
+    fireEvent.click(orcaLabGroup);
+
+    // Then click the child link
+    const experimentsLink = within(mobileDrawer).getByText("Experiments");
+    fireEvent.click(experimentsLink);
+
     expect(onMobileClose).toHaveBeenCalledOnce();
   });
 });
