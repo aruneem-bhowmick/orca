@@ -265,6 +265,7 @@ services:
 
   # ── Orca UI (React SPA — dev mode, Vite HMR) ────────────────────────────────
   orca-ui:
+    <<: [*restart-policy, *default-logging]
     build:
       context: packages/orca-ui
       target: builder
