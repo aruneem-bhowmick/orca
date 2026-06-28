@@ -263,6 +263,23 @@ services:
       start_period: 30s
       retries: 3
 
+  # ── Orca UI (React SPA — dev mode, Vite HMR) ────────────────────────────────
+  orca-ui:
+    build:
+      context: packages/orca-ui
+      target: builder
+    ports:
+      - "5173:5173"
+    environment:
+      VITE_API_BASE_URL: http://localhost:8003/api/v1
+      VITE_WS_BASE_URL: ws://localhost:8003
+    volumes:
+      - ./packages/orca-ui/src:/app/src
+    command: ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
+    depends_on:
+      orca-web:
+        condition: service_healthy
+
 volumes:
   postgres-data:
   redis-data:
