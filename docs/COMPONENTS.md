@@ -1501,21 +1501,21 @@ orca-ui/
 │   │   │   ├── TransferExplorer.tsx  # Source/target dropdowns, score gauge, ranked recommendation cards, Explain/Apply
 │   │   │   ├── RetrievalView.tsx     # Natural-language query input, POST /orcanet/retrieve, similarity-scored result cards
 │   │   │   └── __tests__/
-│   │   │       ├── TransferExplorer.test.tsx  # 13 tests
-│   │   │       └── RetrievalView.test.tsx     # 10 tests
+│   │   │       ├── TransferExplorer.test.tsx  # 15 tests: dropdowns, score button state, gauge render, score %, error state, recommendation cards, explain panel, apply navigation, recommend button disabled without target, tasks query error state
+│   │   │       └── RetrievalView.test.tsx     # 10 tests: heading, query input, disabled state, POST call, result cards, scores, domains, empty/error states, navigation, form submit
 │   │   ├── history/
 │   │   │   ├── ActivityLog.tsx       # useInfiniteQuery timeline with IntersectionObserver infinite scroll
 │   │   │   ├── MyTasks.tsx           # GET /history/tasks list with navigation to OrcaMind task detail
 │   │   │   ├── MyExperiments.tsx     # GET /history/experiments list with status badges
 │   │   │   └── __tests__/
-│   │   │       ├── ActivityLog.test.tsx      # 14 tests
-│   │   │       ├── MyTasks.test.tsx          # 9 tests
-│   │   │       └── MyExperiments.test.tsx    # 10 tests
+│   │   │       ├── ActivityLog.test.tsx      # 16 tests: heading, filters, loading/error/empty states, timeline, service badge, service filter re-fetch, sentinel, end-of-log, date-from filter excludes early entries, date-to filter excludes late entries
+│   │   │       ├── MyTasks.test.tsx          # 9 tests: heading, loading/error/empty states, list, action text, click and Enter navigation
+│   │   │       └── MyExperiments.test.tsx    # 10 tests: heading, loading/error/empty states, list, action text, status badge, click and Enter navigation
 │   │   └── profile/
-│   │       ├── Settings.tsx          # Editable username (PATCH /auth/me), notification toggles, OAuth connections display
+│   │       ├── Settings.tsx          # Editable username (PATCH /auth/me), default dashboard view select, boolean notification preference toggles, read-only OAuth connections display
 │   │       └── __tests__/
-│   │           └── Settings.test.tsx  # 15 tests
-│   ├── App.tsx                  # ErrorBoundary + QueryClientProvider + BrowserRouter + routes + ToastContainer
+│   │           └── Settings.test.tsx  # 18 tests: heading, email display, username pre-fill, toggles, save flow, PATCH call, setUser, success/error messages, preferences in payload, default view select render, pre-fill from preferences, default_dashboard_view in payload, reset to fallback on user absent
+│   ├── App.tsx                  # ErrorBoundary + QueryClientProvider + BrowserRouter + routes + ToastContainer + RouteProgress
 │   ├── main.tsx                 # ReactDOM.createRoot entry
 │   └── test/
 │       ├── setup.ts             # jest-dom matchers; stubs: matchMedia, ResizeObserver, IntersectionObserver
@@ -1958,13 +1958,26 @@ Fetches `GET /history/experiments` (`useQuery(["history-experiments"])`, staleTi
 
 ### Profile Pages (`pages/profile/`)
 
-#### `Settings.tsx` — User profile and notification preferences
+#### `Settings.tsx` — User profile and preferences
 
 Provides two editable sections and one read-only section.
 
-**Profile section** — an `<Input>` pre-filled with `user.username` from the Zustand auth store. On save, sends `PATCH /auth/me { username, preferences }` (`useMutation`) and calls `setUser(updated)` to sync the store.
+**Profile section** — an `<Input>` pre-filled with `user.username` from the Zustand auth store. On save, sends `PATCH /auth/me { username, preferences }` (`useMutation`) and calls `setUser(updated)` to sync the store without a full page reload.
 
-**Notification preferences** — three boolean toggles implemented as `<button role="switch" aria-checked>` custom toggle switches:
+**Preferences card** — combines a default dashboard view selector and three boolean notification toggles.
+
+*Default dashboard view* — a `<select>` (`data-testid="default-view-select"`) populated by `DEFAULT_VIEW_OPTIONS`:
+
+| Value | Label |
+|---|---|
+| `dashboard` | Dashboard |
+| `orcamind_tasks` | OrcaMind Tasks |
+| `orcalab_experiments` | OrcaLab Experiments |
+| `orcanet_transfer` | OrcaNet Transfer |
+
+`getDefaultView(prefs)` reads `prefs["default_dashboard_view"]`, validates it against the option list, and falls back to `"dashboard"` when absent or unrecognised. `defaultView` state is initialised from user preferences on mount and reset to `"dashboard"` when the auth store user becomes null (e.g. after logout).
+
+*Notification toggles* — three boolean preferences implemented as `<button role="switch" aria-checked>` toggle switches:
 
 | Preference key | Label |
 |---|---|
@@ -1972,7 +1985,9 @@ Provides two editable sections and one read-only section.
 | `notify_sweep_complete` | Sweep completed |
 | `notify_transfer_scored` | Transfer scored |
 
-Default value for each preference is `true` when the key is absent from `user.preferences`.
+Default value for each notification preference is `true` when the key is absent from `user.preferences`. A visual border divides the view selector from the notification toggles within the card.
+
+The save mutation merges `default_dashboard_view` and the notification keys into `user.preferences`, preserving any other keys (e.g. `theme`) already stored in the JSONB field.
 
 **Connected accounts** — read-only display. If `user.oauth_provider` is populated (a BFF-level field), shows the provider name; otherwise shows "No OAuth providers connected".
 
@@ -1984,6 +1999,7 @@ Default value for each preference is `true` when the key is absent from `user.pr
 |---|---|
 | Email display | `email-display` |
 | Username input | `username-input` |
+| Default view select | `default-view-select` |
 | Save button | `save-btn` |
 | Preference toggle | `pref-{key}` |
 | OAuth connections | `oauth-connections` |
@@ -2049,7 +2065,7 @@ React Router 6 with public routes (`/`, `/login`, `/register`, `/oauth/callback`
 - `/history/tasks` — `MyTasks` filtered task-activity list
 - `/history/experiments` — `MyExperiments` with status badges derived from action strings
 - `/bookmarks` — user bookmarks (placeholder)
-- `/profile` — `Settings` page with username, notification preferences, and OAuth connections
+- `/profile` — `Settings` page with username, default dashboard view, notification preferences, and OAuth connections
 
 `ProtectedRoute` checks `isAuthenticated` and shows a spinner during the initial auth check.
 
@@ -2071,7 +2087,7 @@ Multi-stage build: `node:20-alpine` builder runs `npm ci && npm run build`, prod
 
 ### Test Suite
 
-386 tests across 37 test files using Vitest and Testing Library. All BFF calls are mocked. Custom `render()` wrapper provides `QueryClientProvider` and `MemoryRouter`. The global `setup.ts` includes stubs for `window.matchMedia`, `ResizeObserver`, and `IntersectionObserver`.
+400 tests across 38 test files using Vitest and Testing Library. All BFF calls are mocked — no network access required. Custom `render()` wrapper provides `QueryClientProvider` (retry disabled, refetchOnWindowFocus disabled) and `MemoryRouter`. The global `setup.ts` includes stubs for `window.matchMedia`, `ResizeObserver` (so that Recharts' `ResponsiveContainer` does not throw in the jsdom environment), and `IntersectionObserver` (to capture callbacks and test infinite scroll loading). Tests cover:
 
 - **Notifications store:** addNotification (all four levels, id uniqueness), removeNotification, clearNotifications (8 tests)
 - **Theme store:** resolveIsDark for light/dark/system modes, applyTheme class toggling, initTheme localStorage read, setMode, toggle (15 tests)
@@ -2084,23 +2100,24 @@ Multi-stage build: `node:20-alpine` builder runs `npm ci && npm run build`, prod
 - **API client:** interceptor token attachment, refresh failure handling (3 tests)
 - **Auth API:** login, register, logout, getMe, refreshToken, exchangeOAuthCode with 401/409 error propagation (8 tests)
 - **useAuth hook:** login flow, register flow, session restoration, loading states, refreshToken, logout with API failure (7 tests)
-- **useWebSocket hook:** connection URL construction, open/close lifecycle, message parsing, malformed-frame tolerance, send() no-op when disconnected, manual close(), exponential-backoff reconnection, auth-rejection (code 4001), experimentId change, unmount cleanup (18 tests)
-- **Pages:** Login (8), Register (9), OAuthCallback (6), Landing (7)
-- **Dashboard:** heading, summary cards, stat values, card titles, quick-action buttons, activity timeline, service badge, empty activity, skeleton loading state, navigation calls (12 tests)
-- **TaskList:** heading, skeleton loading, table render, row display, empty/error states, search filter, search clear, row-click navigation, embed button, dialog open/cancel/submit, validation errors, column sort (16 tests)
-- **TaskDetail:** heading, loading state, metadata display, feature/class counts, error state, bookmark button, recommendations, similar tasks, model selector, predict button, prediction result (17 tests)
-- **RecommendationCards / Recommendations page:** card rendering, model details, rank badges, Start Experiment button, onStartExperiment callback, navigate fallback, empty state, page heading, no-task-selected state, fetch on task_id, loading state, error state (12 tests)
-- **ExperimentList:** heading, New Experiment button, skeleton loading, error/empty states, row rendering with status badges (including pulsing indicator for running), row click and keyboard navigation, status filter dropdown, dialog open/cancel/validation/submit (20 tests)
-- **ExperimentDetail:** heading, loading/error states, metadata display, bookmark toggle (add and remove), live-metrics section (ws-status indicator, chart/table, Pause/Resume/Cancel), completed-metrics section, failed and pending status messages (27 tests)
-- **SweepManager:** heading and New Sweep button, loading/error/empty states, row listing and data display, row click/keyboard expand-collapse, trial progress bar, no-trials placeholder, chart and trials table, best-trial highlighting, dialog open/cancel/submit (25 tests)
-- **TransferExplorer:** page heading, source/target dropdowns, score button state gating, POST call and gauge render, score percentage, score error, recommendation cards, explanation panel, Apply Transfer navigation, recommend button disabled without target (13 tests)
-- **RetrievalView:** heading, query input and button, disabled state, POST call, result cards, similarity score percentages, domain labels, empty state, error state, View Details navigation, form-submit on Enter (10 tests)
-- **ActivityLog:** heading, service filter dropdown, date range inputs, loading/error/empty states, timeline render, service badge, service filter API re-fetch, scroll sentinel, end-of-log message (14 tests)
-- **MyTasks:** heading, loading/error/empty states, list render, action text, click and Enter-key navigation (9 tests)
-- **MyExperiments:** heading, loading/error/empty states, list render, action text, status badge from action string, click and Enter-key navigation (10 tests)
-- **Settings:** heading, email display, username pre-fill, save button, all three notification toggles, OAuth connections section, PATCH /auth/me call, setUser on success, success/error messages, preference toggle state, preferences in PATCH payload, default dashboard view preference (15 tests)
-- **Layout:** Sidebar nav-groups/services/user-info/user-dropdown/collapse/expand/brand-text/group-expansion, mobile drawer open/close, backdrop click, close button (12 tests); Header breadcrumbs/search/notifications/dark-mode-toggle via theme store/user-email/hamburger button (7 tests); MainLayout sidebar+header+main-content/layout-structure (4 tests); Breadcrumbs path rendering and aria-label (9 tests); ProtectedRoute auth gate (3 tests)
-- **Constants:** ROUTES paths (8 tests), NAV_ITEMS structure/groups/children/icons (8 tests)
+- **useWebSocket hook:** connection URL construction, open/close lifecycle, message parsing and accumulation, malformed-frame tolerance, send() no-op when disconnected, manual close() suppressing reconnection, exponential-backoff reconnection on unexpected close, auth-rejection close (code 4001) suppressing reconnection, experimentId change resetting state, unmount cleanup (18 tests)
+- **Pages:** Login form rendering/validation/submission/error/email-format/network-error (8 tests), Register strength indicator/409-email/409-username/email-format/success/empty-fields (9 tests), OAuthCallback success/error-param/missing-provider/missing-code/api-failure/spinner (6 tests), Landing hero/service-cards/icons/health-status/live-stats/stats-heading/footer (7 tests)
+- **Dashboard:** heading, summary cards container, stat values, card titles, quick-action buttons, activity timeline, service badge, empty activity, skeleton loading state, navigation calls for each button (12 tests)
+- **TaskList:** heading, skeleton loading, table render, row display, empty state, error state, search filter, search clear, row-click navigation, embed button, dialog open/cancel, form submit, validation errors, column sort (16 tests)
+- **TaskDetail:** heading, loading state, metadata display, feature/class counts, error state, bookmark button, bookmark toggle, recommendations button and display, recommendations error, similar tasks button and display, model selector, predict button, prediction result, model name forwarded in request (17 tests)
+- **RecommendationCards / Recommendations page:** card rendering, model details, rank badges, Start Experiment button, `onStartExperiment` callback, navigate fallback, empty state, page heading, no-task-selected state, fetch on task_id, loading state, error state (12 tests)
+- **ExperimentList:** heading, New Experiment button, skeleton loading, error/empty states, row rendering with status badges (including pulsing indicator for running), row click and keyboard navigation, status filter dropdown (running/completed/pending), dialog open/cancel/validation/submit (20 tests)
+- **ExperimentDetail:** heading, loading/error states, metadata display, bookmark toggle (add and remove), live-metrics section (ws-status indicator, no-metrics placeholder, chart/table appearance after first message, Pause/Resume/Cancel control messages), completed-metrics section (final metric grid, artifact download link presence/absence), failed and pending status messages (27 tests)
+- **SweepManager:** heading and New Sweep button, loading/error/empty states, row listing and data display, row click/keyboard expand-collapse, trial progress bar, no-trials placeholder, chart and trials table for sweeps with results, best-trial highlighting and star marker, dialog open/cancel/submit, task dropdown population, OrcaMind priors checkbox toggle (25 tests)
+- **TransferExplorer:** page heading, source/target dropdowns, score button state gating, POST /orcanet/transfer/score call and gauge render, score percentage, score error, recommendation cards from POST /orcanet/transfer/recommend, explanation panel from POST /orcanet/explain, Apply Transfer navigation with task_id, recommend button disabled without target, tasks query error state and retry button (15 tests)
+- **RetrievalView:** heading, query input and button, disabled state, POST /orcanet/retrieve call, result cards, similarity score percentages, domain labels, empty state, error state, View Details navigation, form-submit on Enter (10 tests)
+- **ActivityLog:** heading, service filter dropdown, date range inputs, loading/error/empty states, timeline render, service badge, service filter API re-fetch, scroll sentinel, end-of-log message, date-from client filter, date-to client filter (16 tests)
+- **MyTasks:** heading, loading/error/empty states, list render, action text, click and Enter-key navigation to OrcaMind task detail (9 tests)
+- **MyExperiments:** heading, loading/error/empty states, list render, action text, status badge from action string, click and Enter-key navigation to OrcaLab experiment detail (10 tests)
+- **Settings:** heading, email display, username pre-fill, save button, all three notification toggles, OAuth connections section, PATCH /auth/me call, setUser on success, success/error messages, preference toggle state, preferences in PATCH payload, default view select render, pre-fill from preferences, default_dashboard_view in PATCH payload, local state reset on user absent (18 tests)
+- **Layout:** Sidebar navigation-groups/services/user-info/user-dropdown/collapse/expand/brand-text/group-expansion, mobile drawer open/close, backdrop click, close button (12 tests); Header breadcrumbs/search/notifications/dark-mode-toggle via theme store/user-email/hamburger button (7 tests); MainLayout sidebar+header+main-content/layout-structure (4 tests); Breadcrumbs root-path/dashboard/nested-hierarchy/intermediate-links/last-segment-text/separators/known-labels/unknown-capitalisation/aria-label (9 tests); ProtectedRoute auth gate with post-loading assertions (3 tests)
+- **Constants:** ROUTES public/dashboard/orcamind/orcalab/orcanet/history/bookmarks/profile/recommendations paths (8 tests), NAV_ITEMS structure/groups/children/icons including OrcaMind Recommendations sub-item (8 tests)
+- **Utils:** formatting elapsed duration (5 tests)
 - **App:** Route rendering for public and protected paths (4 tests)
 - **Routes:** Full protected route map -- 13 routes verified via heading queries (13 tests)
 

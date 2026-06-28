@@ -172,7 +172,7 @@ describe("RetrievalView", () => {
     render(<RetrievalView />);
     const input = screen.getByTestId("retrieval-query-input");
     fireEvent.change(input, { target: { value: "nlp task" } });
-    fireEvent.keyDown(input, { key: "Enter", code: "Enter" });
+    fireEvent.submit(input);
 
     await waitFor(() => {
       expect(apiClient.post).toHaveBeenCalledWith(

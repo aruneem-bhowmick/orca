@@ -114,6 +114,12 @@ export function RetrievalView() {
     navigate(`${ROUTES.ORCAMIND_TASKS}/${taskId}`);
   }
 
+  /**
+   * Handles the search form submission, preventing the default page reload
+   * and firing the retrieval mutation when the query is non-empty.
+   *
+   * @param e - The React form submission event.
+   */
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (query.trim()) search();
@@ -136,12 +142,6 @@ export function RetrievalView() {
             placeholder="e.g. image classification on medical X-rays with 10 classes…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                if (query.trim()) search();
-              }
-            }}
             data-testid="retrieval-query-input"
           />
         </div>
