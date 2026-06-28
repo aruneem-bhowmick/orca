@@ -192,7 +192,7 @@ describe("Settings", () => {
 
   it("resets local state (clears username and restores prefs to default) when user becomes absent", async () => {
     const { useAuthStore } = await import("@/store/auth");
-    
+
     let currentUser: any = mockUser;
     vi.mocked(useAuthStore).mockImplementation(() => ({
       user: currentUser,
@@ -208,5 +208,45 @@ describe("Settings", () => {
     expect(screen.getByTestId("username-input")).toHaveValue("");
     const toggle = screen.getByTestId("pref-notify_experiment_complete");
     expect(toggle.getAttribute("aria-checked")).toBe("false");
+    expect(screen.getByTestId("default-view-select")).toHaveValue("dashboard");
+  });
+
+  it("renders the default dashboard view select", () => {
+    render(<Settings />);
+    expect(screen.getByTestId("default-view-select")).toBeInTheDocument();
+  });
+
+  it("pre-fills default view select from user preferences when set", async () => {
+    const userWithView = {
+      ...mockUser,
+      preferences: { default_dashboard_view: "orcanet_transfer" },
+    };
+    const { useAuthStore } = await import("@/store/auth");
+    vi.mocked(useAuthStore).mockReturnValue({
+      user: userWithView,
+      setUser: mockSetUser,
+    } as any);
+
+    render(<Settings />);
+    expect(screen.getByTestId("default-view-select")).toHaveValue("orcanet_transfer");
+  });
+
+  it("includes default_dashboard_view in the PATCH payload", async () => {
+    render(<Settings />);
+    fireEvent.change(screen.getByTestId("default-view-select"), {
+      target: { value: "orcamind_tasks" },
+    });
+    fireEvent.click(screen.getByTestId("save-btn"));
+
+    await waitFor(() => {
+      expect(apiClient.patch).toHaveBeenCalledWith(
+        "/auth/me",
+        expect.objectContaining({
+          preferences: expect.objectContaining({
+            default_dashboard_view: "orcamind_tasks",
+          }),
+        }),
+      );
+    });
   });
 });
