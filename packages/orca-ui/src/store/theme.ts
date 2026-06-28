@@ -118,3 +118,22 @@ export const useThemeStore = create<ThemeState>((set, get) => ({
     setMode(isDark ? "light" : "dark");
   },
 }));
+
+if (typeof window !== "undefined" && typeof window.matchMedia === "function") {
+  try {
+    const mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    const handleMediaChange = () => {
+      const currentMode = useThemeStore.getState().mode;
+      if (currentMode === "system") {
+        applyTheme("system");
+      }
+    };
+    if (mediaQuery.addEventListener) {
+      mediaQuery.addEventListener("change", handleMediaChange);
+    } else if ((mediaQuery as any).addListener) {
+      (mediaQuery as any).addListener(handleMediaChange);
+    }
+  } catch (e) {
+    // Handle environments with partially mocked matchMedia APIs gracefully.
+  }
+}
