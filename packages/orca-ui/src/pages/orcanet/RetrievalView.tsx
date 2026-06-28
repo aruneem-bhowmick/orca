@@ -114,6 +114,12 @@ export function RetrievalView() {
     navigate(`${ROUTES.ORCAMIND_TASKS}/${taskId}`);
   }
 
+  /**
+   * Handles the search form submission, preventing the default page reload
+   * and firing the retrieval mutation when the query is non-empty.
+   *
+   * @param e - The React form submission event.
+   */
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (query.trim()) search();
