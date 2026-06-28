@@ -4,6 +4,7 @@ import { useNavigate, useSearchParams } from "react-router-dom";
 import apiClient from "@/api/client";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { TableSkeleton } from "@/components/ui/Skeleton";
 import { formatDate, formatElapsed } from "@/lib/utils";
 import { ROUTES } from "@/lib/constants";
 import type {
@@ -213,9 +214,7 @@ export function ExperimentList() {
 
       <div className="mt-4 overflow-auto rounded-lg border">
         {isLoading ? (
-          <p className="p-4 text-muted-foreground" data-testid="exp-list-loading">
-            Loading experiments…
-          </p>
+          <TableSkeleton rows={5} />
         ) : isError ? (
           <p className="p-4 text-destructive" data-testid="exp-list-error">
             Failed to load experiments.

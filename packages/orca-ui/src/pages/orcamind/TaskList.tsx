@@ -4,6 +4,7 @@ import { useNavigate } from "react-router-dom";
 import apiClient from "@/api/client";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
+import { TableSkeleton } from "@/components/ui/Skeleton";
 import { formatDate } from "@/lib/utils";
 import { ROUTES } from "@/lib/constants";
 import type { Task, EmbedTaskRequest } from "@/api/types";
@@ -263,9 +264,7 @@ export function TaskList() {
 
       <div className="mt-4 overflow-auto rounded-lg border">
         {isLoading ? (
-          <p className="p-4 text-muted-foreground" data-testid="task-list-loading">
-            Loading tasks…
-          </p>
+          <TableSkeleton rows={6} />
         ) : isError ? (
           <p className="p-4 text-destructive" data-testid="task-list-error">
             Failed to load tasks.
