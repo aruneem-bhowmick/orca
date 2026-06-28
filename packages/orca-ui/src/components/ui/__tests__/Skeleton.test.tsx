@@ -22,17 +22,15 @@ describe("TableSkeleton", () => {
   });
 
   it("renders the correct number of body rows (default 5)", () => {
-    const { container } = render(<TableSkeleton />);
-    // +1 for the header row
-    const rows = container.querySelectorAll(".border-b");
-    // header row + 5 body rows (last:border-0 on the final body row)
-    expect(rows.length).toBeGreaterThanOrEqual(5);
+    render(<TableSkeleton />);
+    const wrapper = screen.getByTestId("table-skeleton");
+    expect(wrapper.children.length).toBe(6); // 1 header + 5 body rows
   });
 
   it("renders the requested number of body rows", () => {
     render(<TableSkeleton rows={3} />);
-    // We can't count rows exactly from DOM classes alone, but the component renders
-    expect(screen.getByTestId("table-skeleton")).toBeInTheDocument();
+    const wrapper = screen.getByTestId("table-skeleton");
+    expect(wrapper.children.length).toBe(4); // 1 header + 3 body rows
   });
 });
 
