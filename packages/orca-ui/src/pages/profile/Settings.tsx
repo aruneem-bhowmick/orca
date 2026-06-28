@@ -113,6 +113,13 @@ export function Settings() {
           ]),
         ),
       );
+    } else {
+      setUsername("");
+      setPrefs(
+        Object.fromEntries(
+          NOTIFICATION_PREFS.map(({ key }) => [key, false]),
+        ),
+      );
     }
   }, [user]);
 
@@ -120,7 +127,10 @@ export function Settings() {
     mutationFn: async () => {
       const payload: ProfileUpdate = {
         username: username.trim(),
-        preferences: prefs as Record<string, unknown>,
+        preferences: {
+          ...(user?.preferences || {}),
+          ...prefs,
+        },
       };
       const res = await apiClient.patch<User>("/auth/me", payload);
       return res.data;

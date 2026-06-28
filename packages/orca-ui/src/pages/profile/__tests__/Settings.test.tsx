@@ -157,4 +157,56 @@ describe("Settings", () => {
       );
     });
   });
+
+  it("merges notification preferences with other existing preferences in the PATCH payload", async () => {
+    const userWithExtraPrefs = {
+      ...mockUser,
+      preferences: {
+        theme: "dark",
+        notify_experiment_complete: true,
+      },
+    };
+    const { useAuthStore } = await import("@/store/auth");
+    vi.mocked(useAuthStore).mockReturnValue({
+      user: userWithExtraPrefs,
+      setUser: mockSetUser,
+    } as any);
+
+    render(<Settings />);
+
+    fireEvent.click(screen.getByTestId("pref-notify_experiment_complete"));
+    fireEvent.click(screen.getByTestId("save-btn"));
+
+    await waitFor(() => {
+      expect(apiClient.patch).toHaveBeenCalledWith(
+        "/auth/me",
+        expect.objectContaining({
+          preferences: expect.objectContaining({
+            theme: "dark",
+            notify_experiment_complete: false,
+          }),
+        }),
+      );
+    });
+  });
+
+  it("resets local state (clears username and restores prefs to default) when user becomes absent", async () => {
+    const { useAuthStore } = await import("@/store/auth");
+    
+    let currentUser: any = mockUser;
+    vi.mocked(useAuthStore).mockImplementation(() => ({
+      user: currentUser,
+      setUser: mockSetUser,
+    }));
+
+    const { rerender } = render(<Settings />);
+    expect(screen.getByTestId("username-input")).toHaveValue(mockUser.username);
+
+    currentUser = null;
+    rerender(<Settings />);
+
+    expect(screen.getByTestId("username-input")).toHaveValue("");
+    const toggle = screen.getByTestId("pref-notify_experiment_complete");
+    expect(toggle.getAttribute("aria-checked")).toBe("false");
+  });
 });
