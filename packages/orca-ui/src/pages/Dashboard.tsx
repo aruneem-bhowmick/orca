@@ -85,7 +85,9 @@ export function Dashboard() {
         data-testid="summary-cards"
       >
         {overviewLoading ? (
-          <CardRowSkeleton count={4} />
+          <div className="col-span-full">
+            <CardRowSkeleton count={4} />
+          </div>
         ) : overviewError ? (
           <p
             className="col-span-4 text-destructive"
