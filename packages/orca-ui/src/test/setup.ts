@@ -7,3 +7,16 @@ global.ResizeObserver = class ResizeObserver {
   unobserve() {}
   disconnect() {}
 };
+
+// The ActivityLog page uses IntersectionObserver to trigger infinite-scroll
+// page loads when a sentinel element enters the viewport. jsdom does not
+// implement IntersectionObserver, so provide a no-op stub here.
+global.IntersectionObserver = class IntersectionObserver {
+  observe() {}
+  unobserve() {}
+  disconnect() {}
+  readonly root = null;
+  readonly rootMargin = "";
+  readonly thresholds: readonly number[] = [];
+  takeRecords(): IntersectionObserverEntry[] { return []; }
+};
