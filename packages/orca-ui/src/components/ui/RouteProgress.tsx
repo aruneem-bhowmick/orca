@@ -35,6 +35,8 @@ function RouteProgressBar() {
   useEffect(() => {
     let rafId: number;
     let intervalId: ReturnType<typeof setInterval>;
+    let timeoutId1: ReturnType<typeof setTimeout>;
+    let timeoutId2: ReturnType<typeof setTimeout>;
 
     if (isNavigating) {
       setFading(false);
@@ -51,9 +53,9 @@ function RouteProgressBar() {
       // Navigation complete — complete the bar and fade out.
       setProgress(100);
       rafId = requestAnimationFrame(() => {
-        setTimeout(() => {
+        timeoutId1 = setTimeout(() => {
           setFading(true);
-          setTimeout(() => {
+          timeoutId2 = setTimeout(() => {
             setVisible(false);
             setFading(false);
             setProgress(0);
@@ -65,6 +67,8 @@ function RouteProgressBar() {
     return () => {
       clearInterval(intervalId);
       cancelAnimationFrame(rafId);
+      clearTimeout(timeoutId1);
+      clearTimeout(timeoutId2);
     };
   // Depend only on isNavigating to avoid stale closure traps.
   // eslint-disable-next-line react-hooks/exhaustive-deps
