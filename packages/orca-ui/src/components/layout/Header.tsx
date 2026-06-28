@@ -1,7 +1,7 @@
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { ROUTE_LABELS } from "@/lib/constants";
-import { useThemeStore } from "@/store/theme";
+import { useThemeStore, resolveIsDark } from "@/store/theme";
 
 /**
  * Build breadcrumb segments from the current URL pathname.
@@ -49,7 +49,7 @@ export function Header({ onMenuToggle }: { onMenuToggle?: () => void }) {
   const breadcrumbs = buildBreadcrumbs(location.pathname);
 
   const { mode, toggle } = useThemeStore();
-  const isDark = mode === "dark" || (mode === "system" && typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches);
+  const isDark = resolveIsDark(mode);
 
   return (
     <header
