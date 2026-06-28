@@ -154,8 +154,16 @@ export function ActivityLog() {
   /** Client-side date filter applied on top of the paginated server data. */
   const filtered = allEntries.filter((entry) => {
     const ts = new Date(entry.created_at).getTime();
-    if (dateFrom && ts < new Date(dateFrom).getTime()) return false;
-    if (dateTo && ts > new Date(dateTo + "T23:59:59Z").getTime()) return false;
+    if (dateFrom) {
+      const [year, month, day] = dateFrom.split("-").map(Number);
+      const fromLocal = new Date(year, month - 1, day);
+      if (ts < fromLocal.getTime()) return false;
+    }
+    if (dateTo) {
+      const [year, month, day] = dateTo.split("-").map(Number);
+      const toLocalNextDay = new Date(year, month - 1, day + 1);
+      if (ts >= toLocalNextDay.getTime()) return false;
+    }
     return true;
   });
 
