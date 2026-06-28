@@ -96,7 +96,8 @@ function getPref(prefs: Record<string, unknown> | null, key: string): boolean {
  * @param prefs - The user's preferences map (may be null).
  * @returns A valid `default_dashboard_view` preference string.
  */
-function getDefaultView(prefs: Record<string, unknown> | null): string {
+// eslint-disable-next-line react-refresh/only-export-components
+export function getDefaultView(prefs: Record<string, unknown> | null): string {
   if (!prefs || !("default_dashboard_view" in prefs)) return DEFAULT_VIEW_FALLBACK;
   const val = prefs["default_dashboard_view"];
   if (typeof val === "string" && DEFAULT_VIEW_OPTIONS.some((o) => o.value === val)) {

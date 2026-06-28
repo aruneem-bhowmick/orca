@@ -1,7 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import { screen, waitFor, fireEvent } from "@testing-library/react";
 import { render } from "@/test/test-utils";
-import { Settings } from "@/pages/profile/Settings";
+import { Settings, getDefaultView } from "@/pages/profile/Settings";
 import apiClient from "@/api/client";
 import { mockUser } from "@/test/mocks/handlers";
 
@@ -229,6 +229,24 @@ describe("Settings", () => {
 
     render(<Settings />);
     expect(screen.getByTestId("default-view-select")).toHaveValue("orcanet_transfer");
+  });
+
+  it("falls back to default view when preference is invalid or unknown", async () => {
+    const userWithInvalidView = {
+      ...mockUser,
+      preferences: { default_dashboard_view: "invalid_view" },
+    };
+    const { useAuthStore } = await import("@/store/auth");
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    vi.mocked(useAuthStore).mockReturnValue({
+      user: userWithInvalidView,
+      setUser: mockSetUser,
+    } as any);
+
+    expect(getDefaultView(userWithInvalidView.preferences)).toBe("dashboard");
+
+    render(<Settings />);
+    expect(screen.getByTestId("default-view-select")).toHaveValue("dashboard");
   });
 
   it("includes default_dashboard_view in the PATCH payload", async () => {
