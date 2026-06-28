@@ -33,14 +33,6 @@ const entry2: ActivityLogEntry = {
   created_at: "2024-03-16T10:00:00Z",
 };
 
-const page1: PaginatedResponse<ActivityLogEntry> = {
-  items: [mockActivityEntry],
-  total: 2,
-  page: 1,
-  per_page: 20,
-  pages: 2,
-};
-
 const page2: PaginatedResponse<ActivityLogEntry> = {
   items: [entry2],
   total: 2,
