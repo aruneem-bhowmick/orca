@@ -608,6 +608,9 @@ Runs the `OrcaNetAgent` reasoning loop and returns a structured recommendation. 
 }
 ```
 
+*Note: `top_k` is optional (default: 3).*
+
+
 **Response** — `TransferRecommendationResponse` or **502** (LLM agent error)
 
 ```json
@@ -1123,6 +1126,9 @@ Proxies to `POST {ORCANET}/api/v1/transfer/recommend`. Logs `transfer_recommende
   "top_k": 5
 }
 ```
+
+*Note: `top_k` is optional (default: 3).*
+
 
 **Response** — `TransferRecommendation[]`
 
