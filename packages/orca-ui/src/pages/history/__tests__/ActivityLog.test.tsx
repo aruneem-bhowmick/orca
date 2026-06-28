@@ -161,6 +161,40 @@ describe("ActivityLog", () => {
     });
   });
 
+  it("hides entries before the date-from filter", async () => {
+    render(<ActivityLog />);
+    await waitFor(() => {
+      expect(screen.getByTestId("activity-timeline")).toBeInTheDocument();
+    });
+    // Entry created_at is 2024-03-15; a from-date of 2024-03-17 should exclude it.
+    fireEvent.change(screen.getByTestId("date-from"), {
+      target: { value: "2024-03-17" },
+    });
+    await waitFor(() => {
+      expect(
+        screen.queryByTestId(`activity-entry-${mockActivityEntry.id}`),
+      ).not.toBeInTheDocument();
+      expect(screen.getByTestId("activity-empty")).toBeInTheDocument();
+    });
+  });
+
+  it("hides entries after the date-to filter", async () => {
+    render(<ActivityLog />);
+    await waitFor(() => {
+      expect(screen.getByTestId("activity-timeline")).toBeInTheDocument();
+    });
+    // Entry created_at is 2024-03-15; a to-date of 2024-03-13 should exclude it.
+    fireEvent.change(screen.getByTestId("date-to"), {
+      target: { value: "2024-03-13" },
+    });
+    await waitFor(() => {
+      expect(
+        screen.queryByTestId(`activity-entry-${mockActivityEntry.id}`),
+      ).not.toBeInTheDocument();
+      expect(screen.getByTestId("activity-empty")).toBeInTheDocument();
+    });
+  });
+
   it("fetches the next page when the scroll sentinel becomes visible", async () => {
     vi.mocked(apiClient.get).mockResolvedValueOnce({
       data: {
