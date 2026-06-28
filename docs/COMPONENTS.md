@@ -1,4 +1,4 @@
-﻿# Components
+# Components
 
 > Part of the [Orca](../README.md) meta-learning platform.
 
@@ -1507,7 +1507,7 @@ orca-ui/
 │   ├── App.tsx                  # BrowserRouter + QueryClientProvider + hierarchical route definitions
 │   ├── main.tsx                 # ReactDOM.createRoot entry
 │   └── test/
-│       ├── setup.ts             # @testing-library/jest-dom matchers + ResizeObserver stub for Recharts
+│       ├── setup.ts             # @testing-library/jest-dom matchers + ResizeObserver shim and IntersectionObserver stub
 │       ├── test-utils.tsx       # Custom render() wrapping QueryClientProvider + MemoryRouter
 │       └── mocks/handlers.ts    # Mock fixtures: User, TokenResponse, HealthStatus, DashboardOverview, Task, ModelRecommendation, SimilarTask, PerformancePrediction, ActivityLogEntry, TransferScoreResult, TransferRecommendation, RetrieveResult, ExplainResult, Bookmark
 ├── Dockerfile                   # Multi-stage: node:20-alpine → nginx:alpine
