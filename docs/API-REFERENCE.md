@@ -608,6 +608,9 @@ Runs the `OrcaNetAgent` reasoning loop and returns a structured recommendation. 
 }
 ```
 
+*Note: `top_k` is optional (default: 3).*
+
+
 **Response** — `TransferRecommendationResponse` or **502** (LLM agent error)
 
 ```json
@@ -1082,29 +1085,125 @@ Control frames are forwarded to OrcaLab without interpretation. The schema below
 
 ### OrcaNet Proxy (auth required)
 
-All OrcaNet proxy endpoints require JWT authentication. Same error handling and header injection as OrcaMind proxy.
+All OrcaNet proxy endpoints require JWT authentication. Same error handling and header injection as OrcaMind proxy. POST endpoints log activity to the `activity_log` table.
 
-#### `POST /orcanet/transfer/score` — Score transfer
+#### `POST /orcanet/transfer/score` — Score knowledge transfer between two tasks
 
 Proxies to `POST {ORCANET}/api/v1/transfer/score`. Logs `transfer_scored` activity.
 
+**Request body**
+
+```json
+{
+  "source_task_id": "uuid",
+  "target_task_id": "uuid"
+}
+```
+
+**Response** — `TransferScoreResult`
+
+```json
+{
+  "score": 0.82,
+  "source_task_id": "uuid",
+  "target_task_id": "uuid"
+}
+```
+
+`score` is a float in [0, 1] where higher values indicate more transferable knowledge.
+
 ---
 
-#### `POST /orcanet/transfer/recommend` — Get transfer recommendations
+#### `POST /orcanet/transfer/recommend` — Get ranked transfer recommendations
 
 Proxies to `POST {ORCANET}/api/v1/transfer/recommend`. Logs `transfer_recommended` activity.
 
+**Request body**
+
+```json
+{
+  "target_task_id": "uuid",
+  "top_k": 5
+}
+```
+
+*Note: `top_k` is optional (default: 3).*
+
+
+**Response** — `TransferRecommendation[]`
+
+```json
+[
+  {
+    "source_task_id": "uuid",
+    "source_task_name": "Image Classification",
+    "transfer_score": 0.82,
+    "strategy": "fine-tune",
+    "config": { "model_id": "model-001" }
+  }
+]
+```
+
+Results are returned in descending order of `transfer_score`. The `config` field, when non-null, may contain a `model_id` suitable for pre-filling the OrcaLab experiment creation form.
+
 ---
 
-#### `POST /orcanet/retrieve` — Retrieve similar tasks
+#### `POST /orcanet/retrieve` — Retrieve similar tasks by natural-language query
 
 Proxies to `POST {ORCANET}/api/v1/retrieve`. Logs `tasks_retrieved` activity.
 
+**Request body**
+
+```json
+{
+  "query": "image classification on medical X-rays with 10 classes",
+  "top_k": 10
+}
+```
+
+**Response** — `RetrieveResult[]`
+
+```json
+[
+  {
+    "task_id": "uuid",
+    "name": "Chest X-ray Classification",
+    "domain": "medical",
+    "task_type": "classification",
+    "similarity_score": 0.94
+  }
+]
+```
+
+Results are returned in descending order of `similarity_score`.
+
 ---
 
-#### `POST /orcanet/explain` — Explain transfer
+#### `POST /orcanet/explain` — Get LLM explanation for a transfer recommendation
 
 Proxies to `POST {ORCANET}/api/v1/explain`. Logs `transfer_explained` activity.
+
+**Request body**
+
+```json
+{
+  "source_task_id": "uuid",
+  "target_task_id": "uuid",
+  "strategy": "fine-tune"
+}
+```
+
+**Response** — `ExplainResult`
+
+```json
+{
+  "explanation": "Fine-tuning is recommended because both tasks share visual domain features...",
+  "source_task_id": "uuid",
+  "target_task_id": "uuid"
+}
+```
+
+The `explanation` field contains a free-text LLM-generated justification for why the recommended transfer strategy is suitable for the given task pair.
 
 ---
 

@@ -47,7 +47,13 @@ vi.mock("@/api/client", () => ({
         });
       }
       if (url === "/history") {
-        return Promise.resolve({ data: { items: [], total: 0, page: 1, per_page: 10, pages: 0 } });
+        return Promise.resolve({ data: { items: [], total: 0, page: 1, per_page: 20, pages: 0 } });
+      }
+      if (url === "/history/tasks") {
+        return Promise.resolve({ data: { items: [], total: 0, page: 1, per_page: 20, pages: 0 } });
+      }
+      if (url === "/history/experiments") {
+        return Promise.resolve({ data: { items: [], total: 0, page: 1, per_page: 20, pages: 0 } });
       }
       if (url === "/orcamind/tasks") {
         return Promise.resolve({ data: [] });
@@ -149,7 +155,7 @@ describe("Protected route map", () => {
   it("renders the OrcaNet Retrieval page at /dashboard/orcanet/retrieve", async () => {
     renderAuthenticatedAt("/dashboard/orcanet/retrieve");
     await waitFor(() => {
-      expect(findPageHeading("Retrieval")).toBeInTheDocument();
+      expect(findPageHeading("Task Retrieval")).toBeInTheDocument();
     });
   });
 
@@ -181,10 +187,10 @@ describe("Protected route map", () => {
     });
   });
 
-  it("renders the Profile page at /profile", async () => {
+  it("renders the Settings page at /profile", async () => {
     renderAuthenticatedAt("/profile");
     await waitFor(() => {
-      expect(findPageHeading("Profile")).toBeInTheDocument();
+      expect(findPageHeading("Settings")).toBeInTheDocument();
     });
   });
 

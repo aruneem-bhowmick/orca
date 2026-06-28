@@ -1,4 +1,4 @@
-﻿# Components
+# Components
 
 > Part of the [Orca](../README.md) meta-learning platform.
 
@@ -1478,20 +1478,38 @@ orca-ui/
 │   │   │       ├── TaskList.test.tsx         # 15 tests: table, search, sort, row navigation, embed dialog, validation
 │   │   │       ├── TaskDetail.test.tsx        # 17 tests: metadata, bookmark toggle, recommendations, similar tasks, predict performance
 │   │   │       └── Recommendations.test.tsx   # 12 tests: RecommendationCards (7) + Recommendations page (5)
-│   │   └── orcalab/
-│   │       ├── ExperimentList.tsx    # Experiment table with status-filter dropdown, pulsing indicator for running experiments, and creation dialog
-│   │       ├── ExperimentDetail.tsx  # Experiment metadata + live Recharts metrics via useWebSocket (running) or final metric cards (completed)
-│   │       ├── SweepManager.tsx      # Sweep list with inline expandable detail panels, per-trial chart (best trial highlighted), creation dialog
+│   │   ├── orcalab/
+│   │   │   ├── ExperimentList.tsx    # Experiment table with status-filter dropdown, pulsing indicator for running experiments, and creation dialog
+│   │   │   ├── ExperimentDetail.tsx  # Experiment metadata + live Recharts metrics via useWebSocket (running) or final metric cards (completed)
+│   │   │   ├── SweepManager.tsx      # Sweep list with inline expandable detail panels, per-trial chart (best trial highlighted), creation dialog
+│   │   │   └── __tests__/
+│   │   │       ├── ExperimentList.test.tsx   # 20 tests: table, status filter, pulsing badge, navigation, creation dialog, validation
+│   │   │       ├── ExperimentDetail.test.tsx # 27 tests: metadata, bookmark, live-metrics ws-status/chart/table/controls, completed metrics/artifact, failed/pending messages
+│   │   │       └── SweepManager.test.tsx     # 25 tests: list, expand/collapse, progress bar, trial chart, best-trial highlight, creation dialog
+│   │   ├── orcanet/
+│   │   │   ├── TransferExplorer.tsx  # Source/target task dropdowns, transfer scoring (radial gauge), ranked recommendation cards with per-card Explain and Apply Transfer actions
+│   │   │   ├── RetrievalView.tsx     # Natural-language query input, POST /orcanet/retrieve, similarity-scored result cards linking to OrcaMind task detail
+│   │   │   └── __tests__/
+│   │   │       ├── TransferExplorer.test.tsx  # 13 tests: dropdowns, score button state, gauge render, score %, error state, recommendation cards, explain panel, apply navigation
+│   │   │       └── RetrievalView.test.tsx     # 10 tests: heading, query input, disabled state, POST call, result cards, scores, domains, empty/error states, navigation, form submit
+│   │   ├── history/
+│   │   │   ├── ActivityLog.tsx       # useInfiniteQuery timeline with IntersectionObserver infinite scroll, service filter, date range inputs
+│   │   │   ├── MyTasks.tsx           # GET /history/tasks list with navigation to OrcaMind task detail
+│   │   │   ├── MyExperiments.tsx     # GET /history/experiments list with status badges and navigation to OrcaLab experiment detail
+│   │   │   └── __tests__/
+│   │   │       ├── ActivityLog.test.tsx      # 13 tests: heading, filters, loading/error/empty states, timeline, service badge, service filter re-fetch, sentinel, end-of-log
+│   │   │       ├── MyTasks.test.tsx          # 9 tests: heading, loading/error/empty states, list, action text, click and Enter navigation
+│   │   │       └── MyExperiments.test.tsx    # 10 tests: heading, loading/error/empty states, list, action text, status badge, click and Enter navigation
+│   │   └── profile/
+│   │       ├── Settings.tsx          # Editable username (PATCH /auth/me), boolean notification preference toggles, read-only OAuth connections display
 │   │       └── __tests__/
-│   │           ├── ExperimentList.test.tsx   # 20 tests: table, status filter, pulsing badge, navigation, creation dialog, validation
-│   │           ├── ExperimentDetail.test.tsx # 27 tests: metadata, bookmark, live-metrics ws-status/chart/table/controls, completed metrics/artifact, failed/pending messages
-│   │           └── SweepManager.test.tsx     # 25 tests: list, expand/collapse, progress bar, trial chart, best-trial highlight, creation dialog
+│   │           └── Settings.test.tsx  # 13 tests: heading, email display, username pre-fill, toggles, save flow, PATCH call, setUser, success/error messages, preferences in payload
 │   ├── App.tsx                  # BrowserRouter + QueryClientProvider + hierarchical route definitions
 │   ├── main.tsx                 # ReactDOM.createRoot entry
 │   └── test/
-│       ├── setup.ts             # @testing-library/jest-dom matchers + ResizeObserver stub for Recharts
+│       ├── setup.ts             # @testing-library/jest-dom matchers + ResizeObserver shim and IntersectionObserver stub
 │       ├── test-utils.tsx       # Custom render() wrapping QueryClientProvider + MemoryRouter
-│       └── mocks/handlers.ts    # Mock fixtures: User, TokenResponse, HealthStatus, DashboardOverview, Task, ModelRecommendation, SimilarTask, PerformancePrediction, ActivityLogEntry
+│       └── mocks/handlers.ts    # Mock fixtures: User, TokenResponse, HealthStatus, DashboardOverview, Task, ModelRecommendation, SimilarTask, PerformancePrediction, ActivityLogEntry, TransferScoreResult, TransferRecommendation, RetrieveResult, ExplainResult, Bookmark
 ├── Dockerfile                   # Multi-stage: node:20-alpine → nginx:alpine
 ├── nginx.conf                   # /api/ proxy to orca-web:8003, /ws/ WebSocket proxy, SPA fallback
 ├── index.html                   # SPA entry with <div id="root">
@@ -1800,6 +1818,180 @@ keyboard navigation supported.
 
 ---
 
+### OrcaNet Pages (`pages/orcanet/`)
+
+#### `TransferExplorer.tsx` — Transfer scoring, recommendations, and explanations
+
+Provides a three-step workflow for exploring knowledge transfer between OrcaMind tasks.
+
+**Sub-components:**
+
+- **`ScoreGauge`** — Recharts `RadialBarChart` that visualises a transfer score (0–1) as a filled arc with a numeric percentage label centred below. The fill colour is green (≥ 70%), amber (40–69%), or red (< 40%). `data-testid="score-gauge"`, numeric value at `data-testid="score-value"`.
+- **`RecommendationCard`** — Card for a single `TransferRecommendation` showing source task name, transfer score percentage, strategy pill badge, and two action buttons. The "Explain" button lazily fetches a LLM explanation via `POST /orcanet/explain` and renders it in an inline panel (`data-testid="explanation-panel"`). The "Apply Transfer" button calls `onApply`, which navigates to `ROUTES.ORCALAB_EXPERIMENTS` with `?task_id=` and optionally `?model_id=` extracted from `rec.config`.
+
+**Data flow:**
+
+| Action | API call | Result |
+|---|---|---|
+| Score Transfer | `POST /orcanet/transfer/score { source_task_id, target_task_id }` | `TransferScoreResult` → `ScoreGauge` |
+| Get Recommendations | `POST /orcanet/transfer/recommend { target_task_id }` | `TransferRecommendation[]` → `RecommendationCard` list |
+| Explain (per card) | `POST /orcanet/explain { source_task_id, target_task_id, strategy }` | `ExplainResult.explanation` → inline panel |
+| Apply Transfer | — | Navigate to OrcaLab experiments with query params |
+
+Score and Recommend buttons are gated: Score requires both tasks selected and them to differ; Recommend requires at least a target task. Tasks are fetched from `GET /orcamind/tasks` (`useQuery(["orcamind-tasks"])`, staleTime 30 s).
+
+**Test IDs:**
+
+| Element | `data-testid` |
+|---|---|
+| Source task select | `source-task-select` |
+| Target task select | `target-task-select` |
+| Score button | `score-btn` |
+| Recommend button | `recommend-btn` |
+| Score gauge | `score-gauge` |
+| Score percentage | `score-value` |
+| Score result card | `score-result-card` |
+| Score error | `score-error` |
+| Recommendations list | `recommendations-list` |
+| Recommendation card | `rec-card-{source_task_id}` |
+| Score label | `rec-score` |
+| Strategy label | `rec-strategy` |
+| Explain button | `explain-btn` |
+| Explanation panel | `explanation-panel` |
+| Explain error | `explain-error` |
+| Apply button | `apply-btn` |
+| Recommend error | `recommend-error` |
+
+---
+
+#### `RetrievalView.tsx` — Natural-language task search
+
+Accepts a free-text description and searches for semantically matching OrcaMind tasks via `POST /orcanet/retrieve`. Results are sorted by similarity score and displayed as cards.
+
+**Sub-components:**
+
+- **`RetrievalResultCard`** — card showing task name, domain, type, similarity percentage, a horizontal percentage bar, and a "View Details" button (`data-testid="view-task-btn"`) that navigates to `ROUTES.ORCAMIND_TASKS/{task_id}`.
+
+**State:** `searched` flag tracks whether a search has been attempted so the empty-state message only appears after a query, not on initial render. The Search button is disabled while the query is blank.
+
+**Test IDs:**
+
+| Element | `data-testid` |
+|---|---|
+| Query input | `retrieval-query-input` |
+| Search button | `retrieval-search-btn` |
+| Error | `retrieval-error` |
+| Empty state | `retrieval-empty` |
+| Results container | `retrieval-results` |
+| Result card | `result-card-{task_id}` |
+| Domain label | `result-domain` |
+| Score label | `result-score` |
+| View Details button | `view-task-btn` |
+
+---
+
+### History Pages (`pages/history/`)
+
+#### `ActivityLog.tsx` — Full activity timeline with infinite scroll
+
+Displays the current user's cross-service activity timeline fetched from `GET /history` using `useInfiniteQuery`. An `IntersectionObserver` watches a sentinel `<div>` at the bottom of the list and calls `fetchNextPage()` when it enters the viewport, loading additional pages automatically.
+
+**Sub-components:**
+
+- **`ServiceBadge`** — pill badge coloured by service: blue for `orcamind`, purple for `orcalab`, emerald for `orcanet`. Falls back to muted for unknown services. `data-testid="service-badge-{service}"`.
+- **`TimelineEntry`** — `<li>` with a circle marker and vertical line, showing action, service badge, resource info, and formatted timestamp. `data-testid="activity-entry-{id}"`.
+
+**Filters:**
+- *Service filter* — `<select>` (`data-testid="service-filter"`) with options all / orcamind / orcalab / orcanet. Changing the filter resets the query key `["history-log", serviceFilter]`, refetching from page 1.
+- *Date range* — `date-from` and `date-to` inputs apply a client-side filter on the already-loaded pages.
+
+**Test IDs:**
+
+| Element | `data-testid` |
+|---|---|
+| Service filter | `service-filter` |
+| Date from | `date-from` |
+| Date to | `date-to` |
+| Loading | `activity-loading` |
+| Error | `activity-error` |
+| Empty state | `activity-empty` |
+| Timeline | `activity-timeline` |
+| Entry | `activity-entry-{id}` |
+| Action text | `entry-action` |
+| Timestamp | `entry-timestamp` |
+| Scroll sentinel | `scroll-sentinel` |
+| Loading more | `loading-more` |
+| End of log | `end-of-log` |
+
+---
+
+#### `MyTasks.tsx` — Task-activity filtered history view
+
+Fetches `GET /history/tasks` (`useQuery(["history-tasks"])`, staleTime 30 s) and renders entries as clickable rows that navigate to the OrcaMind task detail page for the referenced `resource_id`.
+
+**Test IDs:** `my-tasks-loading`, `my-tasks-error`, `my-tasks-empty`, `my-tasks-list`, `task-entry-{id}`, `entry-action`, `entry-timestamp`.
+
+---
+
+#### `MyExperiments.tsx` — Experiment-activity filtered history view
+
+Fetches `GET /history/experiments` (`useQuery(["history-experiments"])`, staleTime 30 s) and renders entries with status badges derived from the action string. The `statusFromAction(action)` helper maps action suffixes (`"started"`, `"completed"`, `"failed"`, `"pending"`) to `ExperimentStatus` values. Clicking a row navigates to the OrcaLab experiment detail page.
+
+**Test IDs:** `my-exp-loading`, `my-exp-error`, `my-exp-empty`, `my-exp-list`, `exp-entry-{id}`, `entry-action`, `entry-timestamp`, `exp-status-badge-{status}`.
+
+---
+
+### Profile Pages (`pages/profile/`)
+
+#### `Settings.tsx` — User profile and notification preferences
+
+Provides two editable sections and one read-only section.
+
+**Profile section** — an `<Input>` pre-filled with `user.username` from the Zustand auth store. On save, sends `PATCH /auth/me { username, preferences }` (`useMutation`) and calls `setUser(updated)` to sync the store.
+
+**Notification preferences** — three boolean toggles implemented as `<button role="switch" aria-checked>` custom toggle switches:
+
+| Preference key | Label |
+|---|---|
+| `notify_experiment_complete` | Experiment completed |
+| `notify_sweep_complete` | Sweep completed |
+| `notify_transfer_scored` | Transfer scored |
+
+Default value for each preference is `true` when the key is absent from `user.preferences`.
+
+**Connected accounts** — read-only display. If `user.oauth_provider` is populated (a BFF-level field), shows the provider name; otherwise shows "No OAuth providers connected".
+
+**Success / error feedback** — `data-testid="settings-success"` appears for 3 seconds after a successful save; `data-testid="settings-error"` appears on API failure.
+
+**Test IDs:**
+
+| Element | `data-testid` |
+|---|---|
+| Email display | `email-display` |
+| Username input | `username-input` |
+| Save button | `save-btn` |
+| Preference toggle | `pref-{key}` |
+| OAuth connections | `oauth-connections` |
+| Success message | `settings-success` |
+| Error message | `settings-error` |
+
+---
+
+### api/types.ts — OrcaNet additions
+
+| Type | Description |
+|---|---|
+| `TransferScoreRequest` | `{ source_task_id, target_task_id }` for `POST /orcanet/transfer/score` |
+| `TransferScoreResult` | `{ score, source_task_id, target_task_id }` — `score` in [0, 1] |
+| `TransferRecommendRequest` | `{ target_task_id, top_k? }` for `POST /orcanet/transfer/recommend` |
+| `TransferRecommendation` | Ranked recommendation: `source_task_id`, `source_task_name`, `transfer_score`, `strategy`, `config` |
+| `RetrieveRequest` | `{ query, top_k? }` for `POST /orcanet/retrieve` |
+| `RetrieveResult` | Matched task: `task_id`, `name`, `domain`, `task_type`, `similarity_score` |
+| `ExplainRequest` | `{ source_task_id, target_task_id, strategy? }` for `POST /orcanet/explain` |
+| `ExplainResult` | `{ explanation, source_task_id, target_task_id }` |
+
+---
+
 ### lib/utils.ts
 
 | Function | Signature | Description |
@@ -1836,10 +2028,13 @@ React Router 6 with public routes (`/`, `/login`, `/register`, `/oauth/callback`
 - `/dashboard/orcalab/experiments` — `ExperimentList` with status filter and creation dialog
 - `/dashboard/orcalab/experiments/:id` — `ExperimentDetail` with live WebSocket metrics (running) or final metrics (completed)
 - `/dashboard/orcalab/sweeps` — `SweepManager` with inline per-sweep detail panels
-- `/dashboard/orcanet/transfer`, `/dashboard/orcanet/retrieve` — OrcaNet transfer and retrieval
-- `/history`, `/history/tasks`, `/history/experiments` — activity log with service-filtered views
-- `/bookmarks` — user bookmarks
-- `/profile` — user profile and settings
+- `/dashboard/orcanet/transfer` — `TransferExplorer` with score gauge, recommendation cards, and per-card explain/apply actions
+- `/dashboard/orcanet/retrieve` — `RetrievalView` for natural-language task search with similarity-sorted result cards
+- `/history` — `ActivityLog` with infinite scroll, service filter, and date range
+- `/history/tasks` — `MyTasks` filtered task-activity list
+- `/history/experiments` — `MyExperiments` with status badges derived from action strings
+- `/bookmarks` — user bookmarks (placeholder)
+- `/profile` — `Settings` page with username, notification preferences, and OAuth connections
 
 `ProtectedRoute` checks `isAuthenticated` and shows a spinner during the initial auth check.
 
@@ -1861,7 +2056,7 @@ Multi-stage build: `node:20-alpine` builder runs `npm ci && npm run build`, prod
 
 ### Test Suite
 
-249 tests across 24 test files using Vitest and Testing Library. All BFF calls are mocked — no network access required. Custom `render()` wrapper provides `QueryClientProvider` (retry disabled, refetchOnWindowFocus disabled) and `MemoryRouter`. The global `setup.ts` includes a `ResizeObserver` no-op stub so that Recharts' `ResponsiveContainer` does not throw in the jsdom environment. Tests cover:
+304 tests across 30 test files using Vitest and Testing Library. All BFF calls are mocked — no network access required. Custom `render()` wrapper provides `QueryClientProvider` (retry disabled, refetchOnWindowFocus disabled) and `MemoryRouter`. The global `setup.ts` includes a `ResizeObserver` no-op stub so that Recharts' `ResponsiveContainer` does not throw in the jsdom environment. Tests cover:
 
 - **Store:** `setAuth`, `setToken`, `setUser`, `clearAuth`, `isAuthenticated` derivation (6 tests)
 - **API client:** interceptor token attachment, refresh failure handling (3 tests)
@@ -1876,6 +2071,12 @@ Multi-stage build: `node:20-alpine` builder runs `npm ci && npm run build`, prod
 - **ExperimentList:** heading, New Experiment button, loading/error/empty states, row rendering with status badges (including pulsing indicator for running), row click and keyboard navigation, status filter dropdown (running/completed/pending), dialog open/cancel/validation/submit (20 tests)
 - **ExperimentDetail:** heading, loading/error states, metadata display, bookmark toggle (add and remove), live-metrics section (ws-status indicator, no-metrics placeholder, chart/table appearance after first message, Pause/Resume/Cancel control messages), completed-metrics section (final metric grid, artifact download link presence/absence), failed and pending status messages (27 tests)
 - **SweepManager:** heading and New Sweep button, loading/error/empty states, row listing and data display, row click/keyboard expand-collapse, trial progress bar, no-trials placeholder, chart and trials table for sweeps with results, best-trial highlighting and star marker, dialog open/cancel/submit, task dropdown population, OrcaMind priors checkbox toggle (25 tests)
+- **TransferExplorer:** page heading, source/target dropdowns, score button state gating, POST /orcanet/transfer/score call and gauge render, score percentage, score error, recommendation cards from POST /orcanet/transfer/recommend, explanation panel from POST /orcanet/explain, Apply Transfer navigation with task_id, recommend button disabled without target (13 tests)
+- **RetrievalView:** heading, query input and button, disabled state, POST /orcanet/retrieve call, result cards, similarity score percentages, domain labels, empty state, error state, View Details navigation, form-submit on Enter (10 tests)
+- **ActivityLog:** heading, service filter dropdown, date range inputs, loading/error/empty states, timeline render, service badge, service filter API re-fetch, scroll sentinel, end-of-log message (13 tests)
+- **MyTasks:** heading, loading/error/empty states, list render, action text, click and Enter-key navigation to OrcaMind task detail (9 tests)
+- **MyExperiments:** heading, loading/error/empty states, list render, action text, status badge from action string, click and Enter-key navigation to OrcaLab experiment detail (10 tests)
+- **Settings:** heading, email display, username pre-fill, save button, all three notification toggles, OAuth connections section, PATCH /auth/me call, setUser on success, success/error messages, preference toggle state, preferences in PATCH payload (13 tests)
 - **Layout:** Sidebar navigation-groups/services/user-info/user-dropdown/collapse/expand/brand-text/group-expansion (8 tests), Header breadcrumbs/search/notifications/dark-mode-toggle/user-email (5 tests), MainLayout sidebar+header+main-content/layout-structure (4 tests), Breadcrumbs root-path/dashboard/nested-hierarchy/intermediate-links/last-segment-text/separators/known-labels/unknown-capitalisation/aria-label (9 tests), ProtectedRoute auth gate with post-loading assertions (3 tests)
 - **Constants:** ROUTES public/dashboard/orcamind/orcalab/orcanet/history/bookmarks/profile/recommendations paths (8 tests), NAV_ITEMS structure/groups/children/icons including OrcaMind Recommendations sub-item (8 tests)
 - **App:** Route rendering for public and protected paths (4 tests)

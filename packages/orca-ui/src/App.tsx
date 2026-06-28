@@ -14,6 +14,12 @@ import { Recommendations } from "@/pages/orcamind/Recommendations";
 import { ExperimentList } from "@/pages/orcalab/ExperimentList";
 import { ExperimentDetail } from "@/pages/orcalab/ExperimentDetail";
 import { SweepManager } from "@/pages/orcalab/SweepManager";
+import { TransferExplorer } from "@/pages/orcanet/TransferExplorer";
+import { RetrievalView } from "@/pages/orcanet/RetrievalView";
+import { ActivityLog } from "@/pages/history/ActivityLog";
+import { MyTasks } from "@/pages/history/MyTasks";
+import { MyExperiments } from "@/pages/history/MyExperiments";
+import { Settings } from "@/pages/profile/Settings";
 
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -102,25 +108,25 @@ export function App() {
             {/* OrcaNet routes */}
             <Route
               path={ROUTES.ORCANET_TRANSFER}
-              element={<PlaceholderPage title="Transfer Explorer" />}
+              element={<TransferExplorer />}
             />
             <Route
               path={ROUTES.ORCANET_RETRIEVE}
-              element={<PlaceholderPage title="Retrieval" />}
+              element={<RetrievalView />}
             />
 
             {/* History routes */}
             <Route
               path={ROUTES.HISTORY}
-              element={<PlaceholderPage title="Activity Log" />}
+              element={<ActivityLog />}
             />
             <Route
               path={ROUTES.HISTORY_TASKS}
-              element={<PlaceholderPage title="My Tasks" />}
+              element={<MyTasks />}
             />
             <Route
               path={ROUTES.HISTORY_EXPERIMENTS}
-              element={<PlaceholderPage title="My Experiments" />}
+              element={<MyExperiments />}
             />
 
             {/* Bookmarks */}
@@ -132,7 +138,7 @@ export function App() {
             {/* Profile */}
             <Route
               path={ROUTES.PROFILE}
-              element={<PlaceholderPage title="Profile" />}
+              element={<Settings />}
             />
           </Route>
         </Routes>

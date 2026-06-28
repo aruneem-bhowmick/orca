@@ -18,6 +18,11 @@ import type {
   PerformancePrediction,
   ActivityLogEntry,
   PaginatedResponse,
+  Bookmark,
+  TransferScoreResult,
+  TransferRecommendation,
+  RetrieveResult,
+  ExplainResult,
 } from "@/api/types";
 
 /** Mock authenticated user profile. */
@@ -155,4 +160,95 @@ export const mockActivityPage: PaginatedResponse<ActivityLogEntry> = {
   page: 1,
   per_page: 10,
   pages: 1,
+};
+
+/** Mock experiment-related activity log entry. */
+export const mockExpActivityEntry: ActivityLogEntry = {
+  id: "log-002",
+  user_id: "550e8400-e29b-41d4-a716-446655440000",
+  action: "experiment_completed",
+  resource_type: "experiment",
+  resource_id: "exp-uuid-001",
+  service: "orcalab",
+  details: null,
+  created_at: "2024-03-15T14:00:00Z",
+};
+
+/** Mock paginated experiment activity response. */
+export const mockExpActivityPage: PaginatedResponse<ActivityLogEntry> = {
+  items: [mockExpActivityEntry],
+  total: 1,
+  page: 1,
+  per_page: 20,
+  pages: 1,
+};
+
+/** Mock paginated task activity response (alias of mockActivityPage). */
+export const mockTaskActivityPage: PaginatedResponse<ActivityLogEntry> = {
+  items: [mockActivityEntry],
+  total: 1,
+  page: 1,
+  per_page: 20,
+  pages: 1,
+};
+
+/** Mock transfer score result from POST /orcanet/transfer/score. */
+export const mockTransferScore: TransferScoreResult = {
+  score: 0.82,
+  source_task_id: "task-uuid-001",
+  target_task_id: "task-uuid-002",
+};
+
+/** Mock transfer recommendations from POST /orcanet/transfer/recommend. */
+export const mockTransferRecommendations: TransferRecommendation[] = [
+  {
+    source_task_id: "task-uuid-001",
+    source_task_name: "Image Classification",
+    transfer_score: 0.82,
+    strategy: "fine-tune",
+    config: { model_id: "model-001" },
+  },
+  {
+    source_task_id: "task-uuid-003",
+    source_task_name: "Object Detection",
+    transfer_score: 0.65,
+    strategy: "feature-extract",
+    config: null,
+  },
+];
+
+/** Mock retrieval results from POST /orcanet/retrieve. */
+export const mockRetrieveResults: RetrieveResult[] = [
+  {
+    task_id: "task-uuid-001",
+    name: "Image Classification",
+    domain: "vision",
+    task_type: "classification",
+    similarity_score: 0.95,
+  },
+  {
+    task_id: "task-uuid-003",
+    name: "Object Detection",
+    domain: "vision",
+    task_type: "detection",
+    similarity_score: 0.78,
+  },
+];
+
+/** Mock LLM explanation result from POST /orcanet/explain. */
+export const mockExplainResult: ExplainResult = {
+  explanation:
+    "Fine-tuning is recommended because both tasks share visual domain features and the source model's convolutional layers generalise well to this target distribution.",
+  source_task_id: "task-uuid-001",
+  target_task_id: "task-uuid-002",
+};
+
+/** Mock user bookmark. */
+export const mockBookmark: Bookmark = {
+  id: "bookmark-001",
+  user_id: "550e8400-e29b-41d4-a716-446655440000",
+  resource_type: "task",
+  resource_id: "task-uuid-001",
+  note: "Interesting vision task",
+  created_at: "2024-03-16T09:00:00Z",
 };
