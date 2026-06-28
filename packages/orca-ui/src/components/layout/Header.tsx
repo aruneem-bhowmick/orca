@@ -1,7 +1,7 @@
-import { useEffect, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { useAuth } from "@/hooks/useAuth";
 import { ROUTE_LABELS } from "@/lib/constants";
+import { useThemeStore } from "@/store/theme";
 
 /**
  * Build breadcrumb segments from the current URL pathname.
@@ -36,64 +36,81 @@ function buildBreadcrumbs(pathname: string) {
  * Displays a breadcrumb trail showing the current navigation context,
  * a search input placeholder for future global search, a notifications
  * bell icon with a badge count, and a dark mode toggle. The dark mode
- * preference is persisted to localStorage and applied via the `dark`
- * class on the document root element.
+ * preference is managed by the Zustand theme store, which persists the
+ * selection to localStorage and applies the `dark` class on the document
+ * root element.
+ *
+ * @param props.onMenuToggle - Callback invoked when the hamburger menu
+ *   button is pressed (used on mobile to open the sidebar drawer).
  */
-export function Header() {
+export function Header({ onMenuToggle }: { onMenuToggle?: () => void }) {
   const { user } = useAuth();
   const location = useLocation();
   const breadcrumbs = buildBreadcrumbs(location.pathname);
 
-  const [darkMode, setDarkMode] = useState(() => {
-    if (typeof window !== "undefined") {
-      const saved = localStorage.getItem("darkMode");
-      if (saved !== null) {
-        return saved === "true";
-      }
-      return document.documentElement.classList.contains("dark");
-    }
-    return false;
-  });
-
-  useEffect(() => {
-    if (darkMode) {
-      document.documentElement.classList.add("dark");
-    } else {
-      document.documentElement.classList.remove("dark");
-    }
-    localStorage.setItem("darkMode", String(darkMode));
-  }, [darkMode]);
+  const { mode, toggle } = useThemeStore();
+  const isDark = mode === "dark" || (mode === "system" && typeof window !== "undefined" && window.matchMedia("(prefers-color-scheme: dark)").matches);
 
   return (
     <header
-      className="flex h-14 items-center justify-between border-b bg-card px-6"
+      className="flex h-14 items-center justify-between border-b bg-card px-4 md:px-6"
       data-testid="header"
     >
-      {/* Breadcrumb navigation */}
-      <nav className="flex items-center gap-1 text-sm" aria-label="Breadcrumb" data-testid="breadcrumbs">
-        {breadcrumbs.map((crumb, index) => (
-          <span key={crumb.path} className="flex items-center gap-1">
-            {index > 0 && (
-              <span className="text-muted-foreground" aria-hidden="true">
-                /
-              </span>
-            )}
-            {index === breadcrumbs.length - 1 ? (
-              <span className="font-medium text-foreground">{crumb.label}</span>
-            ) : (
-              <Link
-                to={crumb.path}
-                className="text-muted-foreground hover:text-foreground"
-              >
-                {crumb.label}
-              </Link>
-            )}
-          </span>
-        ))}
-        {breadcrumbs.length === 0 && (
-          <span className="font-medium text-foreground">Home</span>
+      <div className="flex items-center gap-3">
+        {/* Hamburger menu button — visible on mobile only */}
+        {onMenuToggle && (
+          <button
+            onClick={onMenuToggle}
+            className="rounded-md p-2 hover:bg-accent md:hidden"
+            aria-label="Open navigation menu"
+            data-testid="hamburger-button"
+          >
+            <svg
+              className="h-5 w-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d="M4 6h16M4 12h16M4 18h16"
+              />
+            </svg>
+          </button>
         )}
-      </nav>
+
+        {/* Breadcrumb navigation */}
+        <nav
+          className="flex items-center gap-1 text-sm"
+          aria-label="Breadcrumb"
+          data-testid="breadcrumbs"
+        >
+          {breadcrumbs.map((crumb, index) => (
+            <span key={crumb.path} className="flex items-center gap-1">
+              {index > 0 && (
+                <span className="text-muted-foreground" aria-hidden="true">
+                  /
+                </span>
+              )}
+              {index === breadcrumbs.length - 1 ? (
+                <span className="font-medium text-foreground">{crumb.label}</span>
+              ) : (
+                <Link
+                  to={crumb.path}
+                  className="text-muted-foreground hover:text-foreground"
+                >
+                  {crumb.label}
+                </Link>
+              )}
+            </span>
+          ))}
+          {breadcrumbs.length === 0 && (
+            <span className="font-medium text-foreground">Home</span>
+          )}
+        </nav>
+      </div>
 
       <div className="flex items-center gap-4">
         {/* Search input placeholder */}
@@ -150,12 +167,12 @@ export function Header() {
 
         {/* Dark mode toggle */}
         <button
-          onClick={() => setDarkMode(!darkMode)}
+          onClick={toggle}
           className="rounded-md p-2 hover:bg-accent"
           aria-label="Toggle dark mode"
           data-testid="dark-mode-toggle"
         >
-          {darkMode ? (
+          {isDark ? (
             <svg className="h-5 w-5" viewBox="0 0 24 24" fill="currentColor">
               <path d="M12 3a9 9 0 1 0 9 9c0-.46-.04-.92-.1-1.36a5.389 5.389 0 0 1-4.4 2.26 5.403 5.403 0 0 1-3.14-9.8c-.44-.06-.9-.1-1.36-.1z" />
             </svg>
@@ -168,7 +185,7 @@ export function Header() {
 
         {/* User info */}
         {user && (
-          <div className="flex items-center gap-2" data-testid="user-menu">
+          <div className="hidden items-center gap-2 md:flex" data-testid="user-menu">
             <span className="text-sm text-muted-foreground">{user.email}</span>
           </div>
         )}
