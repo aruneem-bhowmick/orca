@@ -65,9 +65,15 @@ describe("TransferExplorer", () => {
   it("populates task dropdowns from GET /orcamind/tasks", async () => {
     render(<TransferExplorer />);
     await waitFor(() => {
-      // Both selects should have task options
-      const selects = screen.getAllByRole("combobox");
-      expect(selects.length).toBeGreaterThanOrEqual(2);
+      const sourceSelect = screen.getByTestId("source-task-select");
+      const targetSelect = screen.getByTestId("target-task-select");
+      
+      const expectedOptionCount = mockTaskList.length + 1;
+      expect(sourceSelect.querySelectorAll("option")).toHaveLength(expectedOptionCount);
+      expect(targetSelect.querySelectorAll("option")).toHaveLength(expectedOptionCount);
+      
+      const firstTaskName = mockTaskList[0].name;
+      expect(screen.getAllByText(new RegExp(firstTaskName))).toHaveLength(2);
     });
   });
 
@@ -234,5 +240,45 @@ describe("TransferExplorer", () => {
   it("disables recommend button when no target task is selected", () => {
     render(<TransferExplorer />);
     expect(screen.getByTestId("recommend-btn")).toBeDisabled();
+  });
+
+  it("shows tasks error message and allows retry when GET /orcamind/tasks fails", async () => {
+    vi.mocked(apiClient.get).mockRejectedValueOnce(new Error("fetch failed"));
+    render(<TransferExplorer />);
+    
+    await waitFor(() => {
+      expect(screen.getByTestId("tasks-error-message")).toBeInTheDocument();
+      expect(screen.getByTestId("tasks-retry-btn")).toBeInTheDocument();
+    });
+    
+    vi.mocked(apiClient.get).mockResolvedValueOnce({ data: mockTaskList });
+    fireEvent.click(screen.getByTestId("tasks-retry-btn"));
+    
+    await waitFor(() => {
+      expect(screen.getByTestId("source-task-select")).toBeInTheDocument();
+    });
+  });
+
+  it("resets derived transfer states when task selections change", async () => {
+    render(<TransferExplorer />);
+    await waitFor(() => expect(screen.getByTestId("source-task-select")).not.toBeDisabled());
+
+    fireEvent.change(screen.getByTestId("source-task-select"), {
+      target: { value: mockTaskList[0].task_id },
+    });
+    fireEvent.change(screen.getByTestId("target-task-select"), {
+      target: { value: mockTaskList[1].task_id },
+    });
+    fireEvent.click(screen.getByTestId("score-btn"));
+
+    await waitFor(() => {
+      expect(screen.getByTestId("score-result-card")).toBeInTheDocument();
+    });
+
+    fireEvent.change(screen.getByTestId("source-task-select"), {
+      target: { value: "" },
+    });
+
+    expect(screen.queryByTestId("score-result-card")).not.toBeInTheDocument();
   });
 });

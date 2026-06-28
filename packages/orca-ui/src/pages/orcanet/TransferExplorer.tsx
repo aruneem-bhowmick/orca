@@ -198,7 +198,29 @@ export function TransferExplorer() {
   const [scoreError, setScoreError] = useState(false);
   const [recommendError, setRecommendError] = useState(false);
 
-  const { data: tasks = [], isLoading: tasksLoading } = useQuery({
+  const clearState = () => {
+    setScoreResult(null);
+    setRecommendations([]);
+    setScoreError(false);
+    setRecommendError(false);
+  };
+
+  const handleSourceTaskChange = (val: string) => {
+    setSourceTaskId(val);
+    clearState();
+  };
+
+  const handleTargetTaskChange = (val: string) => {
+    setTargetTaskId(val);
+    clearState();
+  };
+
+  const {
+    data: tasks = [],
+    isLoading: tasksLoading,
+    isError: tasksError,
+    refetch: refetchTasks,
+  } = useQuery({
     queryKey: ["orcamind-tasks"],
     queryFn: async () => {
       const res = await apiClient.get<Task[]>("/orcamind/tasks");
@@ -208,6 +230,9 @@ export function TransferExplorer() {
   });
 
   const { mutate: scoreTransfer, isPending: isScoring } = useMutation({
+    onMutate: () => {
+      clearState();
+    },
     mutationFn: async () => {
       const payload: TransferScoreRequest = { source_task_id: sourceTaskId, target_task_id: targetTaskId };
       const res = await apiClient.post<TransferScoreResult>("/orcanet/transfer/score", payload);
@@ -218,11 +243,15 @@ export function TransferExplorer() {
       setScoreError(false);
     },
     onError: () => {
+      clearState();
       setScoreError(true);
     },
   });
 
   const { mutate: getRecommendations, isPending: isRecommending } = useMutation({
+    onMutate: () => {
+      clearState();
+    },
     mutationFn: async () => {
       const payload: TransferRecommendRequest = { target_task_id: targetTaskId };
       const res = await apiClient.post<TransferRecommendation[]>("/orcanet/transfer/recommend", payload);
@@ -233,6 +262,7 @@ export function TransferExplorer() {
       setRecommendError(false);
     },
     onError: () => {
+      clearState();
       setRecommendError(true);
     },
   });
@@ -262,48 +292,64 @@ export function TransferExplorer() {
         <CardHeader>
           <CardTitle className="text-base">Select Tasks</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4 sm:grid-cols-2">
-          <div className="space-y-1">
-            <label htmlFor="source-task" className="text-sm font-medium">
-              Source Task
-            </label>
-            <select
-              id="source-task"
-              value={sourceTaskId}
-              onChange={(e) => setSourceTaskId(e.target.value)}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              data-testid="source-task-select"
-              disabled={tasksLoading}
+        {tasksError ? (
+          <CardContent className="space-y-4">
+            <p className="text-sm text-destructive" data-testid="tasks-error-message">
+              Failed to load tasks.
+            </p>
+            <Button
+              variant="outline"
+              size="sm"
+              onClick={() => refetchTasks()}
+              data-testid="tasks-retry-btn"
             >
-              <option value="">— Select source task —</option>
-              {tasks.map((t) => (
-                <option key={t.task_id} value={t.task_id}>
-                  {t.name} ({t.domain})
-                </option>
-              ))}
-            </select>
-          </div>
-          <div className="space-y-1">
-            <label htmlFor="target-task" className="text-sm font-medium">
-              Target Task
-            </label>
-            <select
-              id="target-task"
-              value={targetTaskId}
-              onChange={(e) => setTargetTaskId(e.target.value)}
-              className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
-              data-testid="target-task-select"
-              disabled={tasksLoading}
-            >
-              <option value="">— Select target task —</option>
-              {tasks.map((t) => (
-                <option key={t.task_id} value={t.task_id}>
-                  {t.name} ({t.domain})
-                </option>
-              ))}
-            </select>
-          </div>
-        </CardContent>
+              Retry
+            </Button>
+          </CardContent>
+        ) : (
+          <CardContent className="grid gap-4 sm:grid-cols-2">
+            <div className="space-y-1">
+              <label htmlFor="source-task" className="text-sm font-medium">
+                Source Task
+              </label>
+              <select
+                id="source-task"
+                value={sourceTaskId}
+                onChange={(e) => handleSourceTaskChange(e.target.value)}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                data-testid="source-task-select"
+                disabled={tasksLoading}
+              >
+                <option value="">— Select source task —</option>
+                {tasks.map((t) => (
+                  <option key={t.task_id} value={t.task_id}>
+                    {t.name} ({t.domain})
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="space-y-1">
+              <label htmlFor="target-task" className="text-sm font-medium">
+                Target Task
+              </label>
+              <select
+                id="target-task"
+                value={targetTaskId}
+                onChange={(e) => handleTargetTaskChange(e.target.value)}
+                className="w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                data-testid="target-task-select"
+                disabled={tasksLoading}
+              >
+                <option value="">— Select target task —</option>
+                {tasks.map((t) => (
+                  <option key={t.task_id} value={t.task_id}>
+                    {t.name} ({t.domain})
+                  </option>
+                ))}
+              </select>
+            </div>
+          </CardContent>
+        )}
       </Card>
 
       {/* Actions */}
