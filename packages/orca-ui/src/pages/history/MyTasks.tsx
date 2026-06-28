@@ -25,20 +25,9 @@ function TaskEntryRow({
 }) {
   const isClickable = !!entry.resource_id;
 
-  return (
-    <li
-      className={`flex items-start justify-between gap-4 border-b py-3 last:border-0 ${isClickable ? "cursor-pointer hover:bg-muted/30" : ""}`}
-      onClick={() => isClickable && onNavigate(entry.resource_id!)}
-      onKeyDown={(e) => {
-        if (isClickable && (e.key === "Enter" || e.key === " ")) {
-          e.preventDefault();
-          onNavigate(entry.resource_id!);
-        }
-      }}
-      tabIndex={isClickable ? 0 : undefined}
-      data-testid={`task-entry-${entry.id}`}
-    >
-      <div className="space-y-0.5">
+  const content = (
+    <>
+      <div className="space-y-0.5 text-left">
         <p className="font-medium" data-testid="entry-action">
           {entry.action}
         </p>
@@ -49,6 +38,34 @@ function TaskEntryRow({
       <p className="shrink-0 text-xs text-muted-foreground" data-testid="entry-timestamp">
         {formatDate(entry.created_at)}
       </p>
+    </>
+  );
+
+  return (
+    <li className="border-b last:border-0">
+      {isClickable ? (
+        <button
+          type="button"
+          onClick={() => onNavigate(entry.resource_id!)}
+          onKeyDown={(e) => {
+            if (e.key === "Enter" || e.key === " ") {
+              e.preventDefault();
+              onNavigate(entry.resource_id!);
+            }
+          }}
+          className="flex w-full items-start justify-between gap-4 py-3 hover:bg-muted/30 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring text-left"
+          data-testid={`task-entry-${entry.id}`}
+        >
+          {content}
+        </button>
+      ) : (
+        <div
+          className="flex w-full items-start justify-between gap-4 py-3"
+          data-testid={`task-entry-${entry.id}`}
+        >
+          {content}
+        </div>
+      )}
     </li>
   );
 }
