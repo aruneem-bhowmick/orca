@@ -6,7 +6,6 @@ import { MainLayout } from "@/components/layout/MainLayout";
 import { ErrorBoundary } from "@/components/ErrorBoundary";
 import { NotFound } from "@/components/NotFound";
 import { ToastContainer } from "@/components/ui/Toast";
-import { RouteProgress } from "@/components/ui/RouteProgress";
 import { Landing } from "@/pages/Landing";
 import { Login } from "@/pages/Login";
 import { Register } from "@/pages/Register";
@@ -54,8 +53,7 @@ function PlaceholderPage({ title }: { title: string }) {
  *
  * Wraps the entire app in `QueryClientProvider`, `BrowserRouter`, and an
  * `ErrorBoundary` that catches uncaught rendering errors and displays a
- * recovery screen. Inside the router, `RouteProgress` renders a top-of-page
- * progress bar during navigation transitions and `ToastContainer` displays
+ * recovery screen. Inside the router, `ToastContainer` displays
  * toast notifications driven by the Zustand notifications store.
  *
  * Public routes (landing, login, register, OAuth callback) are accessible
@@ -69,7 +67,6 @@ export function App() {
     <ErrorBoundary>
       <QueryClientProvider client={queryClient}>
         <BrowserRouter>
-          <RouteProgress />
           <Routes>
             {/* Public routes */}
             <Route path={ROUTES.HOME} element={<Landing />} />
