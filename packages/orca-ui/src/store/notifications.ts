@@ -55,7 +55,9 @@ export const useNotificationsStore = create<NotificationsState>((set) => ({
   notifications: [],
 
   addNotification: (message, level = "info") => {
-    const id = `${Date.now()}-${Math.random().toString(36).slice(2)}`;
+    const id = typeof crypto !== "undefined" && crypto.randomUUID
+      ? crypto.randomUUID()
+      : `${Date.now()}-${Math.random().toString(36).slice(2)}`;
     set((state) => ({
       notifications: [...state.notifications, { id, message, level }],
     }));
