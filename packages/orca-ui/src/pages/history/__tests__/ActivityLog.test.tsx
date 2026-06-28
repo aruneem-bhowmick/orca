@@ -160,4 +160,44 @@ describe("ActivityLog", () => {
       expect(screen.getByTestId("end-of-log")).toBeInTheDocument();
     });
   });
+
+  it("fetches the next page when the scroll sentinel becomes visible", async () => {
+    vi.mocked(apiClient.get).mockResolvedValueOnce({
+      data: {
+        items: [mockActivityEntry],
+        total: 2,
+        page: 1,
+        per_page: 1,
+        pages: 2,
+      },
+    });
+
+    render(<ActivityLog />);
+    
+    await waitFor(() => {
+      expect(screen.getByTestId(`activity-entry-${mockActivityEntry.id}`)).toBeInTheDocument();
+    });
+
+    const nextPageEntry = { ...mockActivityEntry, id: 999, action: "next_page_action" };
+    vi.mocked(apiClient.get).mockResolvedValueOnce({
+      data: {
+        items: [nextPageEntry],
+        total: 2,
+        page: 2,
+        per_page: 1,
+        pages: 2,
+      },
+    });
+
+    const observers = (global.IntersectionObserver as any).observers;
+    expect(observers.length).toBeGreaterThan(0);
+    const lastObserver = observers[observers.length - 1];
+
+    const sentinel = screen.getByTestId("scroll-sentinel");
+    lastObserver.trigger(true, sentinel);
+
+    await waitFor(() => {
+      expect(screen.getByTestId("activity-entry-999")).toBeInTheDocument();
+    });
+  });
 });
