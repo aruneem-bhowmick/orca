@@ -126,10 +126,10 @@ describe("Dashboard", () => {
     });
   });
 
-  it("shows a loading placeholder while overview is pending", () => {
+  it("shows card skeleton placeholders while overview is pending", () => {
     vi.mocked(apiClient.get).mockReturnValue(new Promise(() => {}));
     render(<Dashboard />);
-    expect(screen.getByText("Loading stats…")).toBeInTheDocument();
+    expect(screen.getByTestId("card-row-skeleton")).toBeInTheDocument();
   });
 
   it("New Task button invokes navigate to the task list route", async () => {

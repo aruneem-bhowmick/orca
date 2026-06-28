@@ -3,6 +3,7 @@ import { screen, fireEvent } from "@testing-library/react";
 import { render } from "@/test/test-utils";
 import { Header } from "@/components/layout/Header";
 import { useAuthStore } from "@/store/auth";
+import { useThemeStore } from "@/store/theme";
 import { mockUser } from "@/test/mocks/handlers";
 
 vi.mock("@/api/auth", () => ({
@@ -12,6 +13,8 @@ vi.mock("@/api/auth", () => ({
 describe("Header", () => {
   beforeEach(() => {
     useAuthStore.getState().setAuth(mockUser, "test-token");
+    // Reset to light mode before each test.
+    useThemeStore.getState().setMode("light");
     document.documentElement.classList.remove("dark");
   });
 
@@ -32,7 +35,7 @@ describe("Header", () => {
     expect(screen.getByTestId("notification-badge")).toBeInTheDocument();
   });
 
-  it("toggles dark mode when button is clicked", () => {
+  it("toggles dark mode via the Zustand theme store when button is clicked", () => {
     render(<Header />);
 
     const toggle = screen.getByTestId("dark-mode-toggle");
@@ -40,13 +43,29 @@ describe("Header", () => {
 
     fireEvent.click(toggle);
     expect(document.documentElement.classList.contains("dark")).toBe(true);
+    expect(useThemeStore.getState().mode).toBe("dark");
 
     fireEvent.click(toggle);
     expect(document.documentElement.classList.contains("dark")).toBe(false);
+    expect(useThemeStore.getState().mode).toBe("light");
   });
 
   it("renders user email when authenticated", () => {
     render(<Header />);
     expect(screen.getByText("test@example.com")).toBeInTheDocument();
+  });
+
+  it("renders a hamburger button when onMenuToggle is provided", () => {
+    const onMenuToggle = vi.fn();
+    render(<Header onMenuToggle={onMenuToggle} />);
+    const hamburger = screen.getByTestId("hamburger-button");
+    expect(hamburger).toBeInTheDocument();
+    fireEvent.click(hamburger);
+    expect(onMenuToggle).toHaveBeenCalledOnce();
+  });
+
+  it("does not render a hamburger button when onMenuToggle is omitted", () => {
+    render(<Header />);
+    expect(screen.queryByTestId("hamburger-button")).not.toBeInTheDocument();
   });
 });

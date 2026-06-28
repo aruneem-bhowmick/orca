@@ -40,10 +40,10 @@ describe("TaskList", () => {
     );
   });
 
-  it("shows a loading state before tasks arrive", () => {
+  it("shows a skeleton loading state before tasks arrive", () => {
     vi.mocked(apiClient.get).mockReturnValue(new Promise(() => {}));
     render(<TaskList />);
-    expect(screen.getByTestId("task-list-loading")).toBeInTheDocument();
+    expect(screen.getByTestId("table-skeleton")).toBeInTheDocument();
   });
 
   it("renders the task table when data loads", async () => {

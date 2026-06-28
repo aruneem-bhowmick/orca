@@ -101,10 +101,10 @@ describe("ExperimentList", () => {
     expect(screen.getByTestId("new-experiment-btn")).toBeInTheDocument();
   });
 
-  it("shows a loading state before data arrives", () => {
+  it("shows a skeleton loading state before data arrives", () => {
     vi.mocked(apiClient.get).mockReturnValue(new Promise(() => {}));
     render(<ExperimentList />);
-    expect(screen.getByTestId("exp-list-loading")).toBeInTheDocument();
+    expect(screen.getByTestId("table-skeleton")).toBeInTheDocument();
   });
 
   it("renders the experiment table after data loads", async () => {
