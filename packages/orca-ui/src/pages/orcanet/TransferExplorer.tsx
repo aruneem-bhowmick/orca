@@ -198,6 +198,11 @@ export function TransferExplorer() {
   const [scoreError, setScoreError] = useState(false);
   const [recommendError, setRecommendError] = useState(false);
 
+  /**
+   * Resets all derived transfer state (score, recommendations, and error flags)
+   * back to their initial values. Called when the task selection changes so
+   * stale results from a previous pair are never displayed alongside a new one.
+   */
   const clearState = () => {
     setScoreResult(null);
     setRecommendations([]);
@@ -205,11 +210,21 @@ export function TransferExplorer() {
     setRecommendError(false);
   };
 
+  /**
+   * Updates the selected source task ID and clears any stale transfer results.
+   *
+   * @param val - The new source task ID value from the dropdown.
+   */
   const handleSourceTaskChange = (val: string) => {
     setSourceTaskId(val);
     clearState();
   };
 
+  /**
+   * Updates the selected target task ID and clears any stale transfer results.
+   *
+   * @param val - The new target task ID value from the dropdown.
+   */
   const handleTargetTaskChange = (val: string) => {
     setTargetTaskId(val);
     clearState();
