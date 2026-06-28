@@ -5,25 +5,26 @@
  * The bar slides from 0 to ~80% of the viewport width during the transition
  * and completes to 100% once the new route renders, then fades out.
  *
- * Implementation uses React Router's `useNavigation` hook (v6.4+) to detect
- * the pending navigation state.
+ * Implementation uses React Router's `useNavigation` hook (data-router API,
+ * v6.4+). The component is split so that `RouteProgressBar` only mounts when
+ * a data-router context is available; in legacy-router or test environments
+ * where that context is absent the outer `RouteProgress` renders nothing.
  *
  * @module components/ui/RouteProgress
  */
-import { useEffect, useState } from "react";
-import { useNavigation } from "react-router-dom";
+import { useContext, useEffect, useState } from "react";
+import { useNavigation, UNSAFE_DataRouterStateContext } from "react-router-dom";
 
 /** Duration of the fade-out animation in milliseconds. */
 const FADE_DURATION_MS = 300;
 
 /**
- * Route-transition progress bar.
+ * Inner implementation of the progress bar.
  *
- * Mount this inside any component that is already within a `BrowserRouter`
- * context (e.g. at the top of `App` before any routes, or inside
- * `MainLayout`). It renders `null` when no navigation is pending.
+ * Only mounted when a data-router state context is present, so `useNavigation`
+ * is always called in a valid context.
  */
-export function RouteProgress() {
+function RouteProgressBar() {
   const navigation = useNavigation();
   const isNavigating = navigation.state !== "idle";
 
@@ -89,4 +90,20 @@ export function RouteProgress() {
       />
     </div>
   );
+}
+
+/**
+ * Route-transition progress bar.
+ *
+ * Mount this inside any component that is already within a router context.
+ * When a data-router context is present (i.e. the app uses
+ * `createBrowserRouter` / `RouterProvider`), the progress bar is active.
+ * In legacy-router environments (`BrowserRouter`) the component renders
+ * nothing, avoiding the invariant thrown by `useNavigation` outside a
+ * data-router context.
+ */
+export function RouteProgress() {
+  const routerState = useContext(UNSAFE_DataRouterStateContext);
+  if (!routerState) return null;
+  return <RouteProgressBar />;
 }

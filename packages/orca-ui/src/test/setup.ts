@@ -11,6 +11,22 @@ global.ResizeObserver = class ResizeObserver {
 // The ActivityLog page uses IntersectionObserver to trigger infinite-scroll
 // page loads when a sentinel element enters the viewport. jsdom does not
 // implement IntersectionObserver, so provide a no-op stub here.
+// The theme store calls window.matchMedia at initialization to detect system
+// color scheme preference. jsdom does not implement matchMedia, so stub it.
+Object.defineProperty(window, "matchMedia", {
+  writable: true,
+  value: (query: string) => ({
+    matches: false,
+    media: query,
+    onchange: null,
+    addListener: () => {},
+    removeListener: () => {},
+    addEventListener: () => {},
+    removeEventListener: () => {},
+    dispatchEvent: () => false,
+  }),
+});
+
 global.IntersectionObserver = class IntersectionObserver {
   static observers: IntersectionObserver[] = [];
   
