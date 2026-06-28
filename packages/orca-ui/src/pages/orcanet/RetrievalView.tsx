@@ -142,12 +142,6 @@ export function RetrievalView() {
             placeholder="e.g. image classification on medical X-rays with 10 classes…"
             value={query}
             onChange={(e) => setQuery(e.target.value)}
-            onKeyDown={(e) => {
-              if (e.key === "Enter") {
-                e.preventDefault();
-                if (query.trim()) search();
-              }
-            }}
             data-testid="retrieval-query-input"
           />
         </div>
