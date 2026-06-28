@@ -277,3 +277,82 @@ export interface MetricUpdate {
 export interface ExperimentControl {
   action: "pause" | "resume" | "cancel";
 }
+
+// ---------------------------------------------------------------------------
+// OrcaNet types
+// ---------------------------------------------------------------------------
+
+/** Request body for `POST /orcanet/transfer/score`. */
+export interface TransferScoreRequest {
+  source_task_id: string;
+  target_task_id: string;
+}
+
+/**
+ * Transfer score response from `POST /orcanet/transfer/score`.
+ * The `score` field is a value in [0, 1] where higher means more
+ * transferable knowledge.
+ */
+export interface TransferScoreResult {
+  score: number;
+  source_task_id: string;
+  target_task_id: string;
+}
+
+/** Request body for `POST /orcanet/transfer/recommend`. */
+export interface TransferRecommendRequest {
+  target_task_id: string;
+  top_k?: number;
+}
+
+/**
+ * A single ranked transfer recommendation returned by
+ * `POST /orcanet/transfer/recommend`.
+ */
+export interface TransferRecommendation {
+  /** ID of the source task providing the transfer knowledge. */
+  source_task_id: string;
+  /** Human-readable name of the source task. */
+  source_task_name: string;
+  /** Predicted transferability score in [0, 1]. */
+  transfer_score: number;
+  /** Recommended transfer strategy (e.g. "fine-tune", "feature-extract"). */
+  strategy: string;
+  /** Optional hyperparameter config for the recommended strategy. */
+  config: Record<string, unknown> | null;
+}
+
+/** Request body for `POST /orcanet/retrieve`. */
+export interface RetrieveRequest {
+  query: string;
+  top_k?: number;
+}
+
+/**
+ * A single search result from `POST /orcanet/retrieve`, representing an
+ * OrcaMind task that semantically matches the natural-language query.
+ */
+export interface RetrieveResult {
+  task_id: string;
+  name: string;
+  domain: string;
+  task_type: string;
+  similarity_score: number;
+}
+
+/** Request body for `POST /orcanet/explain`. */
+export interface ExplainRequest {
+  source_task_id: string;
+  target_task_id: string;
+  strategy?: string;
+}
+
+/**
+ * LLM-generated explanation returned by `POST /orcanet/explain` describing
+ * why the recommended transfer strategy is suitable for the given task pair.
+ */
+export interface ExplainResult {
+  explanation: string;
+  source_task_id: string;
+  target_task_id: string;
+}
