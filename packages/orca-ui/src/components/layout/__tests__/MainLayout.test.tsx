@@ -34,7 +34,7 @@ describe("MainLayout", () => {
 
   it("uses a full-height flex layout", () => {
     render(<MainLayout />);
-    const container = screen.getByTestId("sidebar").parentElement;
+    const container = screen.getByTestId("main-layout");
     expect(container).toHaveClass("flex", "h-screen", "overflow-hidden");
   });
 });

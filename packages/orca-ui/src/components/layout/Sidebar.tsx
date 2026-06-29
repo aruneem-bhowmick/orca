@@ -26,6 +26,7 @@ const iconMap: Record<string, string> = {
   logout:
     "M17 7l-1.41 1.41L18.17 11H8v2h10.17l-2.58 2.59L17 17l5-5-5-5zM4 5h8V3H4c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h8v-2H4V5z",
   user: "M12 12c2.21 0 4-1.79 4-4s-1.79-4-4-4-4 1.79-4 4 1.79 4 4 4zm0 2c-2.67 0-8 1.34-8 4v2h16v-2c0-2.66-5.33-4-8-4z",
+  close: "M6 18L18 6M6 6l12 12",
 };
 
 /**
@@ -52,15 +53,19 @@ function NavIcon({ icon, collapsed }: { icon: string; collapsed: boolean }) {
  * @param props.item - Navigation item definition.
  * @param props.collapsed - Whether the sidebar is collapsed (hides labels).
  * @param props.indented - Whether this item is a child of a group (adds left padding).
+ * @param props.onNavigate - Optional callback invoked after navigation (used
+ *   on mobile to close the drawer after the user taps a link).
  */
 function SidebarLink({
   item,
   collapsed,
   indented = false,
+  onNavigate,
 }: {
   item: NavItem;
   collapsed: boolean;
   indented?: boolean;
+  onNavigate?: () => void;
 }) {
   return (
     <NavLink
@@ -68,6 +73,7 @@ function SidebarLink({
       to={item.path}
       end={item.path === ROUTES.DASHBOARD}
       aria-label={item.label}
+      onClick={onNavigate}
       className={({ isActive }) =>
         cn(
           "flex items-center gap-3 rounded-md px-3 py-2 text-sm font-medium transition-colors",
@@ -94,13 +100,16 @@ function SidebarLink({
  *
  * @param props.item - Navigation group with children.
  * @param props.collapsed - Whether the sidebar is collapsed.
+ * @param props.onNavigate - Callback forwarded to child `SidebarLink`s.
  */
 function SidebarGroup({
   item,
   collapsed,
+  onNavigate,
 }: {
   item: NavItem;
   collapsed: boolean;
+  onNavigate?: () => void;
 }) {
   const location = useLocation();
   const isChildActive = item.children?.some((child) =>
@@ -174,6 +183,7 @@ function SidebarGroup({
               item={child}
               collapsed={collapsed}
               indented
+              onNavigate={onNavigate}
             />
           ))}
         </div>
@@ -185,61 +195,95 @@ function SidebarGroup({
 /**
  * Collapsible sidebar navigation for the main application layout.
  *
- * Renders a 240px sidebar (or 64px when collapsed) with grouped
- * navigation links organised by service (OrcaMind, OrcaLab, OrcaNet)
- * and flat links for History and Bookmarks. A user section at the
- * bottom shows the avatar, username, and a dropdown with Profile,
- * Settings, and Logout actions.
+ * On desktop (md breakpoint and above) the sidebar is permanently visible and
+ * can be collapsed to icon-only mode (64px) via the collapse toggle button.
+ * On mobile the sidebar is hidden by default; it slides in as a full-height
+ * drawer when `mobileOpen` is `true`. Tapping a navigation link or the
+ * backdrop calls `onMobileClose` to close the drawer.
+ *
+ * @param props.mobileOpen - Whether the mobile drawer is visible.
+ * @param props.onMobileClose - Callback invoked to close the mobile drawer.
  */
-export function Sidebar() {
+export function Sidebar({
+  mobileOpen = false,
+  onMobileClose,
+}: {
+  mobileOpen?: boolean;
+  onMobileClose?: () => void;
+}) {
   const [collapsed, setCollapsed] = useState(false);
   const [userMenuOpen, setUserMenuOpen] = useState(false);
   const { user, logout } = useAuth();
 
-  return (
+  const sidebarContent = (isMobile: boolean) => (
     <aside
       className={cn(
         "flex h-screen flex-col border-r bg-card transition-all duration-200",
-        collapsed ? "w-16" : "w-60",
+        isMobile ? "w-72" : collapsed ? "w-16" : "w-60",
       )}
-      data-testid="sidebar"
+      data-testid={isMobile ? "sidebar-mobile" : "sidebar"}
     >
       {/* Logo and collapse toggle */}
       <div className="flex items-center justify-between border-b p-4">
-        {!collapsed && <span className="text-lg font-bold">Orca</span>}
-        <button
-          onClick={() => setCollapsed(!collapsed)}
-          className="rounded p-1 hover:bg-accent"
-          aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
-          data-testid="sidebar-toggle"
-        >
-          <svg
-            className="h-5 w-5"
-            viewBox="0 0 24 24"
-            fill="none"
-            stroke="currentColor"
+        {(!collapsed || isMobile) && (
+          <span className="text-lg font-bold">Orca</span>
+        )}
+        {isMobile ? (
+          <button
+            onClick={onMobileClose}
+            className="rounded p-1 hover:bg-accent"
+            aria-label="Close navigation menu"
+            data-testid="sidebar-mobile-close"
           >
-            <path
-              strokeLinecap="round"
-              strokeLinejoin="round"
-              strokeWidth={2}
-              d={
-                collapsed
-                  ? "M13 5l7 7-7 7M5 5l7 7-7 7"
-                  : "M11 19l-7-7 7-7M19 19l-7-7 7-7"
-              }
-            />
-          </svg>
-        </button>
+            <svg className="h-5 w-5" viewBox="0 0 24 24" fill="none" stroke="currentColor">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d={iconMap.close} />
+            </svg>
+          </button>
+        ) : (
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            className="rounded p-1 hover:bg-accent"
+            aria-label={collapsed ? "Expand sidebar" : "Collapse sidebar"}
+            data-testid="sidebar-toggle"
+          >
+            <svg
+              className="h-5 w-5"
+              viewBox="0 0 24 24"
+              fill="none"
+              stroke="currentColor"
+            >
+              <path
+                strokeLinecap="round"
+                strokeLinejoin="round"
+                strokeWidth={2}
+                d={
+                  collapsed
+                    ? "M13 5l7 7-7 7M5 5l7 7-7 7"
+                    : "M11 19l-7-7 7-7M19 19l-7-7 7-7"
+                }
+              />
+            </svg>
+          </button>
+        )}
       </div>
 
       {/* Navigation */}
       <nav className="flex-1 space-y-1 overflow-y-auto p-2">
         {NAV_ITEMS.map((item) =>
           item.children ? (
-            <SidebarGroup key={item.label} item={item} collapsed={collapsed} />
+            <SidebarGroup
+              key={item.label}
+              item={item}
+              collapsed={!isMobile && collapsed}
+              onNavigate={isMobile ? onMobileClose : undefined}
+            />
           ) : (
-            <SidebarLink key={item.path} item={item} collapsed={collapsed} />
+            <SidebarLink
+              key={item.path}
+              item={item}
+              collapsed={!isMobile && collapsed}
+              onNavigate={isMobile ? onMobileClose : undefined}
+            />
           ),
         )}
       </nav>
@@ -250,14 +294,14 @@ export function Sidebar() {
           onClick={() => setUserMenuOpen(!userMenuOpen)}
           className={cn(
             "flex w-full items-center gap-3 rounded-md p-1 hover:bg-accent",
-            collapsed && "justify-center",
+            !isMobile && collapsed && "justify-center",
           )}
           data-testid="user-menu-trigger"
         >
           <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-full bg-primary text-sm font-medium text-primary-foreground">
             {user?.username?.charAt(0).toUpperCase() || "U"}
           </div>
-          {!collapsed && (
+          {(!collapsed || isMobile) && (
             <div className="flex-1 overflow-hidden text-left">
               <p className="truncate text-sm font-medium">{user?.username}</p>
               <p className="truncate text-xs text-muted-foreground">
@@ -272,14 +316,17 @@ export function Sidebar() {
           <div
             className={cn(
               "absolute bottom-full mb-2 w-48 rounded-md border bg-card py-1 shadow-lg",
-              collapsed ? "left-16" : "left-4",
+              !isMobile && collapsed ? "left-16" : "left-4",
             )}
             data-testid="user-dropdown"
           >
             <NavLink
               to={ROUTES.PROFILE}
               className="flex items-center gap-2 px-4 py-2 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
-              onClick={() => setUserMenuOpen(false)}
+              onClick={() => {
+                setUserMenuOpen(false);
+                if (isMobile) onMobileClose?.();
+              }}
             >
               <NavIcon icon="user" collapsed={false} />
               Profile
@@ -299,5 +346,31 @@ export function Sidebar() {
         )}
       </div>
     </aside>
+  );
+
+  return (
+    <>
+      {/* Desktop sidebar — hidden on mobile */}
+      <div className="hidden md:flex">
+        {sidebarContent(false)}
+      </div>
+
+      {/* Mobile drawer overlay */}
+      {mobileOpen && (
+        <>
+          {/* Backdrop */}
+          <div
+            className="fixed inset-0 z-40 bg-black/50 md:hidden"
+            onClick={onMobileClose}
+            aria-hidden="true"
+            data-testid="sidebar-backdrop"
+          />
+          {/* Drawer */}
+          <div className="fixed inset-y-0 left-0 z-50 flex md:hidden">
+            {sidebarContent(true)}
+          </div>
+        </>
+      )}
+    </>
   );
 }

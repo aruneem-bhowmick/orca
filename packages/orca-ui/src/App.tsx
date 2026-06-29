@@ -3,6 +3,9 @@ import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
 import { ROUTES } from "@/lib/constants";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { MainLayout } from "@/components/layout/MainLayout";
+import { ErrorBoundary } from "@/components/ErrorBoundary";
+import { NotFound } from "@/components/NotFound";
+import { ToastContainer } from "@/components/ui/Toast";
 import { Landing } from "@/pages/Landing";
 import { Login } from "@/pages/Login";
 import { Register } from "@/pages/Register";
@@ -48,101 +51,109 @@ function PlaceholderPage({ title }: { title: string }) {
 /**
  * Root application component.
  *
- * Wraps the entire app in `QueryClientProvider` and `BrowserRouter`,
- * then defines the full route tree. Public routes (landing, login,
- * register, OAuth callback) are accessible without authentication.
- * Protected routes are wrapped in `ProtectedRoute` and rendered
- * inside `MainLayout` which provides the sidebar and header.
+ * Wraps the entire app in `QueryClientProvider`, `BrowserRouter`, and an
+ * `ErrorBoundary` that catches uncaught rendering errors and displays a
+ * recovery screen. Inside the router, `ToastContainer` displays
+ * toast notifications driven by the Zustand notifications store.
  *
- * The route hierarchy follows the spec's route map with service-scoped
- * nested paths under `/dashboard` (orcamind, orcalab, orcanet) and
- * separate top-level paths for history, bookmarks, and profile.
+ * Public routes (landing, login, register, OAuth callback) are accessible
+ * without authentication. Protected routes are wrapped in `ProtectedRoute`
+ * and rendered inside `MainLayout` which provides the sidebar and header.
+ * An explicit catch-all route renders the `NotFound` component for any URL
+ * that does not match the route tree.
  */
 export function App() {
   return (
-    <QueryClientProvider client={queryClient}>
-      <BrowserRouter>
-        <Routes>
-          {/* Public routes */}
-          <Route path={ROUTES.HOME} element={<Landing />} />
-          <Route path={ROUTES.LOGIN} element={<Login />} />
-          <Route path={ROUTES.REGISTER} element={<Register />} />
-          <Route path={ROUTES.OAUTH_CALLBACK} element={<OAuthCallback />} />
+    <ErrorBoundary>
+      <QueryClientProvider client={queryClient}>
+        <BrowserRouter>
+          <Routes>
+            {/* Public routes */}
+            <Route path={ROUTES.HOME} element={<Landing />} />
+            <Route path={ROUTES.LOGIN} element={<Login />} />
+            <Route path={ROUTES.REGISTER} element={<Register />} />
+            <Route path={ROUTES.OAUTH_CALLBACK} element={<OAuthCallback />} />
 
-          {/* Protected routes under MainLayout */}
-          <Route
-            element={
-              <ProtectedRoute>
-                <MainLayout />
-              </ProtectedRoute>
-            }
-          >
-            {/* Dashboard overview */}
-            <Route path={ROUTES.DASHBOARD} element={<Dashboard />} />
+            {/* Protected routes under MainLayout */}
+            <Route
+              element={
+                <ProtectedRoute>
+                  <MainLayout />
+                </ProtectedRoute>
+              }
+            >
+              {/* Dashboard overview */}
+              <Route path={ROUTES.DASHBOARD} element={<Dashboard />} />
 
-            {/* OrcaMind routes */}
-            <Route path={ROUTES.ORCAMIND_TASKS} element={<TaskList />} />
-            <Route
-              path={ROUTES.ORCAMIND_TASK_DETAIL}
-              element={<TaskDetail />}
-            />
-            <Route
-              path={ROUTES.ORCAMIND_RECOMMENDATIONS}
-              element={<Recommendations />}
-            />
+              {/* OrcaMind routes */}
+              <Route path={ROUTES.ORCAMIND_TASKS} element={<TaskList />} />
+              <Route
+                path={ROUTES.ORCAMIND_TASK_DETAIL}
+                element={<TaskDetail />}
+              />
+              <Route
+                path={ROUTES.ORCAMIND_RECOMMENDATIONS}
+                element={<Recommendations />}
+              />
 
-            {/* OrcaLab routes */}
-            <Route
-              path={ROUTES.ORCALAB_EXPERIMENTS}
-              element={<ExperimentList />}
-            />
-            <Route
-              path={ROUTES.ORCALAB_EXPERIMENT_DETAIL}
-              element={<ExperimentDetail />}
-            />
-            <Route
-              path={ROUTES.ORCALAB_SWEEPS}
-              element={<SweepManager />}
-            />
+              {/* OrcaLab routes */}
+              <Route
+                path={ROUTES.ORCALAB_EXPERIMENTS}
+                element={<ExperimentList />}
+              />
+              <Route
+                path={ROUTES.ORCALAB_EXPERIMENT_DETAIL}
+                element={<ExperimentDetail />}
+              />
+              <Route
+                path={ROUTES.ORCALAB_SWEEPS}
+                element={<SweepManager />}
+              />
 
-            {/* OrcaNet routes */}
-            <Route
-              path={ROUTES.ORCANET_TRANSFER}
-              element={<TransferExplorer />}
-            />
-            <Route
-              path={ROUTES.ORCANET_RETRIEVE}
-              element={<RetrievalView />}
-            />
+              {/* OrcaNet routes */}
+              <Route
+                path={ROUTES.ORCANET_TRANSFER}
+                element={<TransferExplorer />}
+              />
+              <Route
+                path={ROUTES.ORCANET_RETRIEVE}
+                element={<RetrievalView />}
+              />
 
-            {/* History routes */}
-            <Route
-              path={ROUTES.HISTORY}
-              element={<ActivityLog />}
-            />
-            <Route
-              path={ROUTES.HISTORY_TASKS}
-              element={<MyTasks />}
-            />
-            <Route
-              path={ROUTES.HISTORY_EXPERIMENTS}
-              element={<MyExperiments />}
-            />
+              {/* History routes */}
+              <Route
+                path={ROUTES.HISTORY}
+                element={<ActivityLog />}
+              />
+              <Route
+                path={ROUTES.HISTORY_TASKS}
+                element={<MyTasks />}
+              />
+              <Route
+                path={ROUTES.HISTORY_EXPERIMENTS}
+                element={<MyExperiments />}
+              />
 
-            {/* Bookmarks */}
-            <Route
-              path={ROUTES.BOOKMARKS}
-              element={<PlaceholderPage title="Bookmarks" />}
-            />
+              {/* Bookmarks */}
+              <Route
+                path={ROUTES.BOOKMARKS}
+                element={<PlaceholderPage title="Bookmarks" />}
+              />
 
-            {/* Profile */}
-            <Route
-              path={ROUTES.PROFILE}
-              element={<Settings />}
-            />
-          </Route>
-        </Routes>
-      </BrowserRouter>
-    </QueryClientProvider>
+              {/* Profile */}
+              <Route
+                path={ROUTES.PROFILE}
+                element={<Settings />}
+              />
+            </Route>
+
+            {/* 404 catch-all */}
+            <Route path="*" element={<NotFound />} />
+          </Routes>
+
+          <ToastContainer />
+        </BrowserRouter>
+      </QueryClientProvider>
+    </ErrorBoundary>
   );
 }

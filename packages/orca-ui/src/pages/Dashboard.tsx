@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import apiClient from "@/api/client";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
+import { CardRowSkeleton } from "@/components/ui/Skeleton";
 import { formatDate } from "@/lib/utils";
 import { ROUTES } from "@/lib/constants";
 import type {
@@ -84,7 +85,9 @@ export function Dashboard() {
         data-testid="summary-cards"
       >
         {overviewLoading ? (
-          <p className="col-span-4 text-muted-foreground">Loading stats…</p>
+          <div className="col-span-full">
+            <CardRowSkeleton count={4} />
+          </div>
         ) : overviewError ? (
           <p
             className="col-span-4 text-destructive"
