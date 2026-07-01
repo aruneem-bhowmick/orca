@@ -90,6 +90,8 @@ All secrets are sourced from environment variables. No secret appears in any con
 
 **What is logged:** HTTP method, path, status code, and elapsed time (request logging middleware); upstream service health check results; WebSocket relay start and end events with experiment ID and user ID (no token values); aggregator errors with the failing URL and exception type.
 
+**Privacy note:** IP addresses and device information may constitute personal data under GDPR, CCPA, and similar regulations. Enable these fields only with appropriate legal basis and retention policies.
+
 ## Data handling
 
 ### What Orca stores
@@ -201,9 +203,10 @@ Runtime dependencies are declared in each package's `pyproject.toml` with minimu
 For any deployment where the BFF is reachable from outside a trusted private network:
 
 - [ ] Set `JWT_SECRET_KEY` to a cryptographically random value of at least 32 bytes; never use the default `dev-secret-change-in-prod`
-- [ ] Terminate TLS at a reverse proxy (nginx, Caddy, ALB, or equivalent) in front of the BFF; set `secure=True` on the refresh token cookie (`orca_web/api/routers/auth.py`, `_set_refresh_cookie`)
+- [ ] Terminate TLS at a reverse proxy (nginx, Caddy, ALB, or equivalent) in front of the BFF; set `secure=True` on the refresh token cookie (`orca_web/api/routers/auth.py`, `_set_refresh_cookie`) and route WebSocket connections to `/orcalab/ws/experiments/{id}/live` over secure WebSockets (`wss://`)
 - [ ] Set `CORS_ORIGINS` to the exact production frontend URL; do not rely on the wildcard fallback
 - [ ] Place OrcaMind, OrcaLab, OrcaNet, PostgreSQL, Redis, MinIO, MLflow, and Prefect behind a private network boundary with no inbound access from the public internet
+- [ ] Verify the status of internal service authentication; until inter-service API key auth is implemented, track and ensure network isolation is enforced (see [Internal service authentication](#internal-service-authentication))
 - [ ] Replace all dev-mode credential placeholders: `POSTGRES_PASSWORD`, `MINIO_ROOT_USER`, `MINIO_ROOT_PASSWORD`, and any service-level `MINIO_ACCESS_KEY` / `MINIO_SECRET_KEY` values
 - [ ] Store LLM API keys (`OPENAI_API_KEY`, `ANTHROPIC_API_KEY`) and OAuth secrets in a secrets manager or your deployment platform's secrets store — not in Compose files or `.env` files committed to source control
 - [ ] Enable PostgreSQL TLS and use connection strings with `sslmode=require`
