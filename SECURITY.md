@@ -33,6 +33,7 @@ Infrastructure services used by the ecosystem:
 The **Orca Web BFF** is the only service that should receive traffic from outside the private deployment network. All user authentication happens here. OrcaMind, OrcaLab, OrcaNet, PostgreSQL, Redis, MinIO, MLflow, and Prefect must sit behind a private network boundary. Exposing any of them directly to the public internet is a misconfiguration.
 
 In the Docker Compose stack, all services share a single bridge network (`orca-dev-network`). In Kubernetes, network policies must enforce equivalent isolation.
+**Warning:** The default bridge network does not restrict inter-service traffic. Services can reach each other without authentication (see Internal service authentication gap below). Do not deploy this stack to production without adding network-layer controls.
 
 ## Authentication
 
