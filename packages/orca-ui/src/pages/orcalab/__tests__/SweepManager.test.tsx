@@ -355,7 +355,7 @@ describe("SweepManager", () => {
     expect(screen.getByTestId("new-sweep-dialog")).toBeInTheDocument();
 
     // Verify task selection is initially empty
-    const select = screen.getByTestId("sweep-task-select");
+    const select = screen.getByTestId("sweep-task-select") as HTMLSelectElement;
     expect(select.value || "").toBe("");
 
     // Now resolve the tasks request

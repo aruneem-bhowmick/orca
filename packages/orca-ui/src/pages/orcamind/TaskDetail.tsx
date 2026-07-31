@@ -222,6 +222,7 @@ function PredictPerformanceSection({ taskId }: { taskId: string }) {
  */
 export function TaskDetail() {
   const { id: taskId } = useParams<{ id: string }>();
+  const navigate = useNavigate();
   const [bookmarked, setBookmarked] = useState(false);
   const [bookmarkId, setBookmarkId] = useState<string | null>(null);
   const isBookmarkPending = useRef(false);
