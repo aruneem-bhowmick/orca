@@ -45,7 +45,7 @@ let wsControls: WsControls;
 
 vi.mock("@/hooks/useWebSocket", () => ({
   useWebSocket: () => {
-    const { useState } = require("react");
+    const { useState } = require("react") as typeof import("react");
     const [messages, setMessages] = useState<MetricUpdate[]>([]);
     const [isConnected, setIsConnected] = useState(false);
     const sendSpy = vi.fn();

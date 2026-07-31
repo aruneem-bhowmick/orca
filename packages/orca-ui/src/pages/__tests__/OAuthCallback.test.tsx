@@ -5,8 +5,7 @@
  * missing provider handling, and API failure handling.
  */
 import { describe, it, expect, vi, beforeEach } from "vitest";
-import { screen, waitFor } from "@testing-library/react";
-import { render } from "@/test/test-utils";
+import { render, screen, waitFor } from "@testing-library/react";
 import { OAuthCallback } from "@/pages/OAuthCallback";
 import * as authApi from "@/api/auth";
 import { useAuthStore } from "@/store/auth";
@@ -35,7 +34,6 @@ function renderWithParams(searchParams: string) {
         </Routes>
       </MemoryRouter>
     </QueryClientProvider>,
-    { wrapper: undefined as unknown as undefined },
   );
 }
 

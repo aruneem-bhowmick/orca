@@ -43,7 +43,9 @@ function renderPage(url: string) {
 }
 
 describe("RecommendationCards", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
   it("renders a card for each recommendation", () => {
     render(<RecommendationCards recommendations={mockRecommendations} />);
@@ -110,7 +112,9 @@ describe("RecommendationCards", () => {
 });
 
 describe("Recommendations page", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
 
   it("renders the page heading", async () => {
     await renderPage("/dashboard/orcamind/recommendations");
